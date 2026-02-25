@@ -100,7 +100,16 @@ def mock_clusters(docs: list[str], s: int = 42) -> tuple[pd.DataFrame, np.ndarra
         best = max(scores, key=scores.get) if max(scores.values()) > 0 else rng.integers(0, 5)
         labels.append(best)
 
-    features = rng.normal(0, 0.1, UKT_FEATURE_DIM)
+    # Build UKT feature vector matching real BERTopic's layout:
+    #   indices 16-31 = normalized topic distribution (semantic-embedding region)
+    #   indices 32-47 = simulated topic embedding means
+    features = np.zeros(UKT_FEATURE_DIM)
+    topic_counts = pd.Series(labels).value_counts().values.astype(float)
+    if len(topic_counts) > 0:
+        topic_counts = topic_counts / (topic_counts.sum() + 1e-8)
+    features[16:16 + min(16, len(topic_counts))] = topic_counts[:16]
+    # Simulated topic embedding centroids
+    features[32:37] = rng.uniform(0.1, 0.5, 5)
 
     df = pd.DataFrame(dict(
         Document=docs,

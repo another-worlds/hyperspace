@@ -84,18 +84,44 @@ def train_sparse_ae(
         active_mask = mean_activation > mean_activation.mean()
 
         # Concept-kernel alignment: map each concept to feature regions
-        from hyperspace.models.knowledge_matrix import FEATURE_REGION_LABELS
+        from hyperspace.models.knowledge_matrix import (
+            FEATURE_REGION_LABELS, _feature_name, _region_for_index,
+        )
+        from hyperspace.config import REGION_DESCRIPTIONS
         concept_labels = []
         for c in range(hidden_dim):
             region_scores = {}
             for (lo, hi), label in FEATURE_REGION_LABELS.items():
                 region_scores[label] = float(np.abs(concept_vectors[c, lo:hi]).sum())
             dominant = max(region_scores, key=region_scores.get)
+
+            # Find the top 3 features this concept loads on
+            top_idx = np.argsort(np.abs(concept_vectors[c]))[-3:][::-1]
+            top_feats = [
+                dict(index=int(i), name=_feature_name(i),
+                     loading=float(concept_vectors[c, i]))
+                for i in top_idx
+            ]
+            feat_strs = [f"'{f['name']}' ({f['loading']:+.3f})" for f in top_feats]
+
+            # Generate narrative
+            status = "ACTIVE" if active_mask[c] else "dormant"
+            narrative = (
+                f"Concept C{c:02d} [{status}] — primarily encodes "
+                f"{dominant.replace('-', ' ')} information "
+                f"(activation: {mean_activation[c]:.4f}).\n"
+                f"Top feature loadings: {', '.join(feat_strs)}.\n"
+                f"Region: {REGION_DESCRIPTIONS.get(dominant, dominant)}"
+            )
+
             concept_labels.append(dict(
                 concept_id=f"C{c:02d}",
                 dominant_region=dominant,
                 mean_activation=float(mean_activation[c]),
                 active=bool(active_mask[c]),
+                top_features=top_feats,
+                label=f"C{c:02d}: {dominant.replace('-', ' ')} ({status})",
+                narrative=narrative,
             ))
 
         return dict(

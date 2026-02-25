@@ -27,7 +27,7 @@ def fit_tft(
     Returns None on failure.
     """
     try:
-        import pytorch_lightning as pl
+        import lightning.pytorch as pl
         from pytorch_forecasting import TemporalFusionTransformer, TimeSeriesDataSet
         from pytorch_forecasting.metrics import QuantileLoss
 
@@ -126,8 +126,20 @@ def mock_forecast(prediction_len: int, s: int = 42) -> dict:
     """Generate a mock multi-quantile forecast when TFT unavailable."""
     rng = seed(s)
     base = np.cumsum(rng.normal(0.02, 0.1, prediction_len)) + 5
-    # Still produce a UKT feature vector (random noise)
-    features = rng.normal(0, 0.1, UKT_FEATURE_DIM)
+    # Produce a UKT feature vector matching real TFT's layout:
+    #   indices 0-15  = temporal attention pattern
+    #   indices 16-23 = encoder variable importance
+    #   indices 24-31 = decoder variable importance
+    features = np.zeros(UKT_FEATURE_DIM)
+    # Simulated attention weights (temporal region)
+    att = rng.dirichlet(np.ones(16))
+    features[:16] = att
+    # Simulated encoder importance
+    enc = rng.uniform(0.05, 0.4, 8)
+    features[16:24] = enc
+    # Simulated decoder importance
+    dec = rng.uniform(0.05, 0.3, 8)
+    features[24:32] = dec
     return dict(
         q10=base - rng.uniform(0.3, 0.6, prediction_len),
         q50=base,

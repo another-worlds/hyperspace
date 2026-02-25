@@ -108,3 +108,109 @@ PIPELINE_STEPS: list[str] = [
     "agent_sim",
     "final_interpretation",
 ]
+
+# --------------------------------------------------------------------------- #
+# Semantic feature names: human-readable labels for each UKT feature index    #
+# --------------------------------------------------------------------------- #
+FEATURE_NAMES: list[str] = [
+    # 0-15: temporal-pattern region (populated by Finance / TFT)
+    "attention_recent_1d",      # 0  — attention weight on most-recent encoder step
+    "attention_recent_2d",      # 1
+    "attention_recent_3d",      # 2
+    "attention_mid_week",       # 3  — attention on ~5-day horizon
+    "attention_mid_2wk",        # 4
+    "attention_mid_month",      # 5
+    "attention_long_6wk",       # 6
+    "attention_long_2mo",       # 7
+    "attention_long_quarter",   # 8
+    "attention_decay_fast",     # 9
+    "attention_decay_slow",     # 10
+    "attention_regime_shift",   # 11 — attention spike at regime boundary
+    "attention_trend_strength", # 12
+    "attention_volatility",     # 13
+    "attention_tail_15",        # 14
+    "attention_tail_16",        # 15
+
+    # 16-31: semantic-embedding region (populated by Clusters / BERTopic)
+    "topic_share_dominant",     # 16 — fraction of docs in largest topic
+    "topic_share_2nd",          # 17
+    "topic_share_3rd",          # 18
+    "topic_share_4th",          # 19
+    "topic_share_5th",          # 20
+    "topic_share_6th",          # 21
+    "topic_share_minor",        # 22
+    "topic_share_outlier",      # 23
+    "encoder_var_imp_1",        # 24 — TFT encoder variable importance
+    "encoder_var_imp_2",        # 25
+    "encoder_var_imp_3",        # 26
+    "encoder_var_imp_4",        # 27
+    "decoder_var_imp_1",        # 28 — TFT decoder variable importance
+    "decoder_var_imp_2",        # 29
+    "decoder_var_imp_3",        # 30
+    "decoder_var_imp_4",        # 31
+
+    # 32-47: structural-centrality region (populated by Graph engine)
+    "centrality_node_0",        # 32 — flattened node centrality (degree, betw, eig, pr)
+    "centrality_node_1",        # 33
+    "centrality_node_2",        # 34
+    "centrality_node_3",        # 35
+    "centrality_node_4",        # 36
+    "centrality_node_5",        # 37
+    "centrality_node_6",        # 38
+    "centrality_node_7",        # 39
+    "centrality_node_8",        # 40
+    "centrality_node_9",        # 41
+    "centrality_node_10",       # 42
+    "centrality_node_11",       # 43
+    "centrality_node_12",       # 44
+    "centrality_node_13",       # 45
+    "centrality_node_14",       # 46
+    "centrality_node_15",       # 47
+
+    # 48-63: dynamic-agent region (populated by Agent simulation)
+    "graph_density",            # 48
+    "graph_avg_clustering",     # 49
+    "graph_n_communities",      # 50
+    "agent_res_share_0",        # 51 — normalized resource share per agent
+    "agent_res_share_1",        # 52
+    "agent_res_share_2",        # 53
+    "agent_res_share_3",        # 54
+    "agent_res_share_4",        # 55
+    "alliance_eigen_1",         # 56 — top eigenvalue of alliance matrix
+    "alliance_eigen_2",         # 57
+    "alliance_eigen_3",         # 58
+    "alliance_eigen_4",         # 59
+    "alliance_eigen_5",         # 60
+    "alliance_eigen_6",         # 61
+    "alliance_eigen_7",         # 62
+    "alliance_eigen_8",         # 63
+]
+
+# Region-level semantic descriptions for human reports
+REGION_DESCRIPTIONS: dict[str, str] = {
+    "temporal-pattern": (
+        "Temporal attention patterns from the TFT encoder — captures which historical "
+        "time-steps the model attends to most when predicting future values. High "
+        "activation on recent steps indicates momentum-driven markets; spread across "
+        "distant steps indicates long-memory regimes."
+    ),
+    "semantic-embedding": (
+        "Topic distribution and embedding centroids from BERTopic clustering — "
+        "captures the informational landscape. A dominant topic share indicates "
+        "a focused discourse (e.g., one geopolitical event dominating headlines); "
+        "flatter distributions indicate a fragmented information environment."
+    ),
+    "structural-centrality": (
+        "Node centrality features from the geopolitical graph — degree, betweenness, "
+        "eigenvector, and PageRank for each actor. High betweenness for a node means "
+        "it is a critical bridge in the alliance network; high eigenvector centrality "
+        "means it is connected to other powerful nodes."
+    ),
+    "dynamic-agent": (
+        "Agent simulation outcomes — resource distribution and alliance matrix "
+        "eigenvalues after bounded-rational agents interact for N steps. The "
+        "eigenvalue spectrum of the alliance matrix captures structural polarization: "
+        "a single dominant eigenvalue means one cohesive bloc, multiple comparable "
+        "eigenvalues indicate a multipolar world."
+    ),
+}

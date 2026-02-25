@@ -269,12 +269,14 @@ def render_results() -> None:
     st.markdown("### Semantic Interpretability Report")
     for snap in snapshots:
         with st.expander(f"Step {snap['step']}: {snap['block_name']}", expanded=False):
-            st.code(snap["report"], language="text")
+            st.markdown(snap["report"])
             for kl in snap["kernel_labels"]:
                 st.markdown(
                     f'<span class="concept-badge">{kl["label"]}</span>',
                     unsafe_allow_html=True,
                 )
+                if kl.get("narrative"):
+                    st.caption(kl["narrative"])
 
     # Concept-kernel map (from SAE)
     concept_kernel_map = st.session_state.get("concept_kernel_map", [])

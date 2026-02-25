@@ -70,15 +70,40 @@ def render() -> None:
             fig_rr = kernel_viz.plot_reality_regression(final_snap)
             st.plotly_chart(fig_rr, use_container_width=True)
 
-        # Kernel labels (semantic interpretation)
-        st.markdown("### Discovered Kernels")
+        # Kernel labels (rich semantic interpretation)
+        st.markdown("### Discovered Kernels — Semantic Interpretation")
         for kl in final_snap["kernel_labels"]:
-            st.markdown(
-                f'<span class="concept-badge">{kl["label"]}</span> '
-                f'<small>Region: {kl["dominant_region"]} | '
-                f'Top features: {kl["top_feature_indices"]}</small>',
-                unsafe_allow_html=True,
-            )
+            with st.expander(
+                f"{kl['label']}",
+                expanded=kl["importance"] > 0.2,
+            ):
+                st.markdown(kl["narrative"])
+                # Show top features as a mini table
+                if kl.get("top_features"):
+                    feat_df = pd.DataFrame(kl["top_features"])
+                    st.dataframe(
+                        feat_df[["name", "region", "loading"]].rename(
+                            columns={"name": "Feature", "region": "Region",
+                                     "loading": "Loading"}
+                        ),
+                        use_container_width=True, hide_index=True,
+                    )
+                # Region breakdown
+                if kl.get("region_scores"):
+                    scores = kl["region_scores"]
+                    fig_rs = px.bar(
+                        x=list(scores.keys()), y=list(scores.values()),
+                        color=list(scores.values()),
+                        color_continuous_scale="Viridis",
+                        **PLOTLY_LAYOUT,
+                        title="Region Energy Distribution",
+                    )
+                    fig_rs.update_layout(
+                        height=200, paper_bgcolor="#0d1117",
+                        plot_bgcolor="#0d1117", showlegend=False,
+                        xaxis_title="Region", yaxis_title="Abs. Loading Sum",
+                    )
+                    st.plotly_chart(fig_rs, use_container_width=True)
 
         # SAE concept discovery
         if sae_result:
@@ -91,16 +116,35 @@ def render() -> None:
             c2.metric("Final Loss", f"{sae_result['final_loss']:.4f}")
             c3.metric("Total Concepts", str(sae_result["total_concepts"]))
 
-            # Concept labels
+            # Concept labels — full semantic output
             st.markdown("#### Discovered Concepts")
-            for cl in sae_result.get("concept_labels", []):
-                if cl["active"]:
-                    st.markdown(
-                        f'<span class="concept-badge">{cl["concept_id"]}: '
-                        f'{cl["dominant_region"]}</span> '
-                        f'<small>Mean activation: {cl["mean_activation"]:.4f}</small>',
-                        unsafe_allow_html=True,
-                    )
+            active_concepts = [cl for cl in sae_result.get("concept_labels", [])
+                               if cl["active"]]
+            dormant_concepts = [cl for cl in sae_result.get("concept_labels", [])
+                                if not cl["active"]]
+
+            if active_concepts:
+                st.markdown("**Active concepts** (above-mean activation):")
+                for cl in active_concepts:
+                    with st.expander(cl.get("label", cl["concept_id"])):
+                        st.markdown(cl.get("narrative", ""))
+                        if cl.get("top_features"):
+                            feat_df = pd.DataFrame(cl["top_features"])
+                            st.dataframe(
+                                feat_df[["name", "loading"]].rename(
+                                    columns={"name": "Feature",
+                                             "loading": "Loading"}
+                                ),
+                                use_container_width=True, hide_index=True,
+                            )
+
+            if dormant_concepts:
+                with st.expander(
+                    f"Dormant concepts ({len(dormant_concepts)})",
+                    expanded=False,
+                ):
+                    for cl in dormant_concepts:
+                        st.caption(cl.get("label", cl["concept_id"]))
 
             # Loss curve
             loss_hist = sae_result.get("loss_history", [])
@@ -140,8 +184,8 @@ def render() -> None:
             st.plotly_chart(fig_ck, use_container_width=True)
             st.dataframe(pd.DataFrame(concept_kernel_map), use_container_width=True)
 
-        # Step-by-step interpretation logs
+        # Step-by-step interpretation logs (now with rich text)
         st.markdown("### Step-by-Step Interpretability Reports")
         for snap in snapshots:
             with st.expander(f"Step {snap['step']}: {snap['block_name']}"):
-                st.code(snap["report"], language="text")
+                st.markdown(snap["report"])
