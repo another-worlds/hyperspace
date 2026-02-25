@@ -47,7 +47,7 @@ def get_ohlcv(tickers: list[str], period: str = "1y") -> tuple[pd.DataFrame, str
         return real, "Live: yfinance"
 
     # Fallback to synthetic
-    frames = [generate_ohlcv(t, seed=hash(t) % 10000) for t in tickers]
+    frames = [generate_ohlcv(t, s=hash(t) % 10000) for t in tickers]
     return pd.concat(frames, ignore_index=True), "Fallback: synthetic"
 
 

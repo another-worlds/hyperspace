@@ -63,7 +63,14 @@ def analyze_graph(G: nx.Graph) -> dict:
         eigenvector = nx.eigenvector_centrality_numpy(G, weight="weight")
     except Exception:
         eigenvector = degree_cent
-    pagerank = nx.pagerank(G, weight="weight")
+    try:
+        # PageRank requires non-negative weights; use absolute values
+        G_abs = G.copy()
+        for u, v in G_abs.edges():
+            G_abs[u][v]["weight"] = abs(G_abs[u][v]["weight"])
+        pagerank = nx.pagerank(G_abs, weight="weight")
+    except Exception:
+        pagerank = degree_cent
 
     # Community detection
     try:
