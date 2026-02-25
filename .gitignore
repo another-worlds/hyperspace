@@ -16,6 +16,8 @@ env/
 .ruff_cache/
 mlruns/
 wandb/
+lightning_logs/
+checkpoints/
 *.ckpt
 *.pt
 *.pth
