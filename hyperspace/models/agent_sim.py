@@ -1,0 +1,140 @@
+"""Agentic simulation: data-driven cluster agents with UKT feature extraction."""
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+
+import numpy as np
+import pandas as pd
+
+from hyperspace.config import GEOPOLITICAL_NODES, UKT_FEATURE_DIM
+
+
+@dataclass
+class ClusterAgent:
+    """Bounded-rational agent representing a geopolitical cluster."""
+    name: str
+    x: float
+    y: float
+    resources: float = 100.0
+    alliances: dict[str, float] = field(default_factory=dict)
+    history: list[float] = field(default_factory=list)
+
+    def step(self, agents: dict[str, "ClusterAgent"], rng: np.random.Generator,
+             resource_flow: float, alliance_fluidity: float, shock_prob: float) -> str:
+        log = ""
+        for ally_name, strength in list(self.alliances.items()):
+            if ally_name in agents:
+                transfer = resource_flow * strength * rng.uniform(0.5, 1.5)
+                self.resources += transfer * 0.1
+                agents[ally_name].resources -= transfer * 0.05
+        for ally_name in list(self.alliances.keys()):
+            drift = rng.normal(0, alliance_fluidity * 0.05)
+            self.alliances[ally_name] = np.clip(
+                self.alliances[ally_name] + drift, -1, 1)
+        if rng.random() < shock_prob:
+            loss = rng.uniform(5, 25)
+            self.resources = max(10, self.resources - loss)
+            log = f"SHOCK: {self.name} lost {loss:.1f} resources"
+        self.history.append(self.resources)
+        return log
+
+
+def initialize_agents_from_data(
+    graph_analysis: dict | None = None,
+    agreement_matrix: pd.DataFrame | None = None,
+) -> dict[str, ClusterAgent]:
+    """Create agents with data-driven parameters.
+
+    Args:
+        graph_analysis: Output from graph_engine.analyze_graph().
+        agreement_matrix: Pairwise country agreement from political data.
+
+    Returns:
+        Dict of name -> ClusterAgent.
+    """
+    agents: dict[str, ClusterAgent] = {}
+    node_names = list(GEOPOLITICAL_NODES.keys())
+
+    for name in node_names:
+        attrs = GEOPOLITICAL_NODES[name]
+        # Base resources from influence
+        base_resources = attrs["influence"] * 100 + 20
+
+        # Boost from graph centrality if available
+        if graph_analysis and "eigenvector" in graph_analysis:
+            eig = graph_analysis["eigenvector"].get(name, 0.5)
+            base_resources = eig * 150 + 20
+
+        agent = ClusterAgent(
+            name=name,
+            x=attrs["lon"] / 40,
+            y=attrs["lat"] / 20,
+            resources=base_resources,
+        )
+
+        # Set alliances from agreement matrix or graph weights
+        for other in node_names:
+            if other != name:
+                if agreement_matrix is not None and name in agreement_matrix.columns:
+                    if other in agreement_matrix.columns:
+                        agent.alliances[other] = float(
+                            agreement_matrix.loc[name, other])
+                        continue
+                # Fall back to influence-based default
+                agent.alliances[other] = 0.0
+
+        agents[name] = agent
+
+    # Fill in missing alliances from hardcoded edges
+    from hyperspace.config import GEOPOLITICAL_EDGES
+    for src, dst, w, _, _ in GEOPOLITICAL_EDGES:
+        if src in agents and dst in agents:
+            if agents[src].alliances.get(dst, 0.0) == 0.0:
+                agents[src].alliances[dst] = w
+            if agents[dst].alliances.get(src, 0.0) == 0.0:
+                agents[dst].alliances[src] = w
+
+    return agents
+
+
+def run_simulation(
+    agents: dict[str, ClusterAgent],
+    steps: int = 50,
+    resource_flow: float = 5.0,
+    alliance_fluidity: float = 0.5,
+    shock_prob: float = 0.1,
+    s: int = 42,
+) -> tuple[dict[str, ClusterAgent], list[str], np.ndarray]:
+    """Run the agent simulation.
+
+    Returns:
+        (agents, log_entries, features_for_ukt)
+    """
+    rng = np.random.default_rng(s)
+    log_entries: list[str] = []
+
+    for step in range(steps):
+        for agent in agents.values():
+            msg = agent.step(agents, rng, resource_flow, alliance_fluidity, shock_prob)
+            if msg:
+                log_entries.append(f"[Step {step:03d}] {msg}")
+
+    # Build UKT feature vector (dynamic-agent region: indices 48-63)
+    features_for_ukt = np.zeros(UKT_FEATURE_DIM)
+    resources = np.array([a.resources for a in agents.values()])
+    # Normalized resource distribution
+    res_norm = resources / (resources.sum() + 1e-8)
+    features_for_ukt[48:48 + min(8, len(res_norm))] = res_norm[:8]
+
+    # Alliance matrix eigenvalues (captures structural properties)
+    node_names = list(agents.keys())
+    n = len(node_names)
+    alliance_mat = np.zeros((n, n))
+    for i, name in enumerate(node_names):
+        for j, other in enumerate(node_names):
+            if other in agents[name].alliances:
+                alliance_mat[i, j] = agents[name].alliances[other]
+    eigenvalues = np.sort(np.linalg.eigvalsh(alliance_mat))[::-1]
+    features_for_ukt[56:56 + min(8, len(eigenvalues))] = eigenvalues[:8]
+
+    return agents, log_entries, features_for_ukt
