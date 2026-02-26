@@ -95,10 +95,9 @@ def render() -> None:
             fig = px.imshow(
                 alliance_mat, x=node_names, y=node_names,
                 color_continuous_scale="RdBu_r", text_auto=".2f",
-                **PLOTLY_LAYOUT,
                 title="Alliance Strengths After Simulation",
             )
-            fig.update_layout(height=400, paper_bgcolor="#0d1117", plot_bgcolor="#0d1117")
+            fig.update_layout(**PLOTLY_LAYOUT, height=400)
             st.plotly_chart(fig, use_container_width=True)
 
             # Metrics

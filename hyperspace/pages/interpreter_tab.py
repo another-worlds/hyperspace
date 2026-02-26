@@ -170,10 +170,9 @@ def render() -> None:
                     x=[f"C{i:02d}" for i in range(act.shape[1])],
                     y=block_names[:act.shape[0]],
                     color_continuous_scale="Viridis",
-                    **PLOTLY_LAYOUT,
                     title="Concept Activations (Blocks x Concepts)",
                 )
-                fig.update_layout(height=300, paper_bgcolor="#0d1117", plot_bgcolor="#0d1117")
+                fig.update_layout(**PLOTLY_LAYOUT, height=300)
                 st.plotly_chart(fig, use_container_width=True)
 
         # Concept-kernel mapping

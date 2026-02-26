@@ -80,24 +80,26 @@ def mock_clusters(docs: list[str], s: int = 42) -> tuple[pd.DataFrame, np.ndarra
 
     rng = seed(s)
     keywords = {
-        0: ["NATO", "EU", "Europe", "sanction"],
-        1: ["China", "BRI", "Belt", "Silk", "ASEAN"],
-        2: ["Russia", "CIS", "Soviet"],
-        3: ["India", "US", "Indo", "nuclear"],
-        4: ["Kazakhstan", "Central Asia", "multi-vector", "abstain"],
+        0: ["USA", "US", "America", "NATO", "sanction", "Quad"],
+        1: ["China", "BRI", "Belt", "Beijing", "semiconductor"],
+        2: ["Russia", "Moscow", "Kremlin", "energy", "sanctions"],
+        3: ["India", "Indo", "nuclear", "BRICS", "Delhi"],
+        4: ["Britain", "UK", "British", "AUKUS", "Commonwealth"],
+        5: ["Brazil", "BRICS", "Latin", "Mercosur", "climate"],
     }
     topic_names = {
-        0: "NATO/EU Security Architecture",
-        1: "China-Led Economic Integration",
-        2: "Russia/CIS Bloc Dynamics",
-        3: "India-US Strategic Convergence",
-        4: "Kazakhstan Multi-Vector Diplomacy",
+        0: "US-Led Western Alliance & Sanctions",
+        1: "China Economic Expansion & Tech Competition",
+        2: "Russia Strategic Posture & Energy Diplomacy",
+        3: "India Multi-Alignment & Defence Partnerships",
+        4: "Britain Post-Brexit Global Pivot",
+        5: "Brazil BRICS Mediation & South-South Ties",
     }
     labels = []
     for doc in docs:
         scores = {t: sum(1 for kw in kws if kw.lower() in doc.lower())
                   for t, kws in keywords.items()}
-        best = max(scores, key=scores.get) if max(scores.values()) > 0 else rng.integers(0, 5)
+        best = max(scores, key=scores.get) if max(scores.values()) > 0 else rng.integers(0, 6)
         labels.append(best)
 
     # Build UKT feature vector matching real BERTopic's layout:

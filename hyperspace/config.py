@@ -45,59 +45,60 @@ PLOTLY_LAYOUT = dict(
 )
 
 GEOPOLITICAL_NODES: dict[str, dict] = {
-    "USA":        dict(influence=0.95, lat=38.9, lon=-77.0, color="#3498db", bloc="NATO"),
-    "NATO-EU":    dict(influence=0.80, lat=50.8, lon=4.4,   color="#2980b9", bloc="NATO"),
-    "Russia":     dict(influence=0.70, lat=55.8, lon=37.6,  color="#e74c3c", bloc="CIS"),
-    "China":      dict(influence=0.88, lat=39.9, lon=116.4, color="#e67e22", bloc="SCO"),
-    "India":      dict(influence=0.72, lat=28.6, lon=77.2,  color="#2ecc71", bloc="NAM"),
-    "Kazakhstan": dict(influence=0.35, lat=51.2, lon=71.4,  color="#f1c40f", bloc="CIS"),
-    "CIS-bloc":   dict(influence=0.40, lat=53.9, lon=27.6,  color="#e74c3c", bloc="CIS"),
-    "ASEAN":      dict(influence=0.45, lat=13.8, lon=100.5, color="#1abc9c", bloc="NAM"),
+    "USA":     dict(influence=0.95, lat=38.9, lon=-77.0,  color="#3498db", bloc="NATO"),
+    "Russia":  dict(influence=0.75, lat=55.8, lon=37.6,   color="#e74c3c", bloc="CIS"),
+    "China":   dict(influence=0.90, lat=39.9, lon=116.4,  color="#e67e22", bloc="SCO"),
+    "Britain": dict(influence=0.70, lat=51.5, lon=-0.1,   color="#2980b9", bloc="NATO"),
+    "India":   dict(influence=0.72, lat=28.6, lon=77.2,   color="#2ecc71", bloc="NAM"),
+    "Brazil":  dict(influence=0.55, lat=-15.8, lon=-47.9, color="#9b59b6", bloc="BRICS"),
 }
 
 GEOPOLITICAL_EDGES: list[tuple] = [
-    ("USA", "NATO-EU",     0.92,  "alliance",       "Financial + military integration"),
-    ("USA", "India",       0.58,  "alignment",      "Post-1991 convergence trajectory"),
-    ("USA", "China",      -0.45,  "competition",    "Trade tension + tech decoupling"),
-    ("Russia", "China",    0.74,  "alignment",      "Strategic partnership deepening"),
-    ("Russia", "CIS-bloc", 0.65,  "alliance",       "Post-Soviet integration"),
-    ("Kazakhstan", "China", 0.84, "financial_flow", "BRI investment corridor"),
-    ("Kazakhstan", "Russia", 0.55, "alliance",      "CSTO + EAEU membership"),
-    ("Kazakhstan", "USA",   0.22, "alignment",      "Multi-vector diplomacy"),
-    ("CIS-bloc", "NATO-EU", -0.68, "competition",   "Negative-sum structural tension"),
-    ("India", "Russia",     0.40, "alignment",      "Legacy defence partnership"),
-    ("ASEAN", "China",      0.35, "financial_flow", "Trade corridor + BRI"),
-    ("ASEAN", "USA",        0.30, "alignment",      "Security partnerships"),
+    ("USA", "Britain",    0.92,  "alliance",       "Five Eyes + NATO special relationship"),
+    ("USA", "India",      0.58,  "alignment",      "Quad partnership + defense convergence"),
+    ("USA", "China",     -0.45,  "competition",    "Trade war + tech decoupling + Taiwan"),
+    ("USA", "Russia",    -0.72,  "competition",    "Sanctions + NATO expansion + proxy conflicts"),
+    ("USA", "Brazil",     0.35,  "alignment",      "Trade + regional security cooperation"),
+    ("Russia", "China",   0.78,  "alignment",      "Strategic partnership + energy + SCO axis"),
+    ("Russia", "India",   0.40,  "alignment",      "Legacy defence + S-400 + energy trade"),
+    ("Russia", "Brazil",  0.20,  "alignment",      "BRICS cooperation + commodity trade"),
+    ("Russia", "Britain", -0.65, "competition",    "Post-2022 sanctions + diplomatic rupture"),
+    ("China", "India",   -0.25,  "competition",    "Border disputes + LAC tensions"),
+    ("China", "Britain", -0.30,  "competition",    "Hong Kong fallout + tech restrictions"),
+    ("China", "Brazil",   0.60,  "financial_flow", "BRI + commodity imports + infrastructure"),
+    ("Britain", "India",  0.52,  "alignment",      "Commonwealth ties + FTA negotiations"),
+    ("India", "Brazil",   0.38,  "alignment",      "IBSA + BRICS + South-South cooperation"),
+    ("Brazil", "Britain", 0.25,  "alignment",      "Trade + climate finance partnership"),
 ]
 
 NEWS_SNIPPETS: list[str] = [
-    "India and the US strengthen defense ties in the Indo-Pacific, signaling a post-1991 strategic shift away from non-alignment.",
-    "Kazakhstan abstains on key UN General Assembly vote, balancing between Russian and Western pressure.",
-    "China's Belt and Road Initiative expands into Central Asian energy infrastructure, deepening Kazakhstan dependence.",
-    "NATO accelerates Eastern European deployments amid renewed tensions with CIS bloc members.",
-    "Russia and China conduct joint naval exercises in the South China Sea for the third consecutive year.",
-    "ASEAN nations express concern over South China Sea militarization but avoid direct confrontation with Beijing.",
-    "Kazakhstan's multi-vector foreign policy tested as sanctions pressure mounts on Russian trade partners.",
-    "India-US nuclear cooperation deal marks new era of Indo-American strategic partnership.",
-    "CIS economic integration falters as member states seek alternative trade routes to avoid sanctions.",
-    "UN voting records show Kazakhstan shifting from automatic Russia-alignment toward selective abstention.",
-    "Die Europaeische Union verstaerkt Sanktionen gegen russische Energieimporte nach 2022.",
-    "China strengthens investments in Central Asian infrastructure through the Silk Road corridor.",
-    "L'ASEAN negocie de nouveaux accords commerciaux multilateraux face aux tensions sino-americaines.",
-    "India expands military-technical cooperation with Israel and France in parallel with Russian ties.",
-    "Turkey balances NATO membership with independent Middle East policy and S-400 procurement.",
-    "Brazil-India-South Africa trilateral dialogue deepens on climate and trade reform.",
-    "African Union members split on UN vote patterns, reflecting China-US influence competition.",
-    "Post-2022 energy crisis reshapes European dependency maps, accelerating renewable transition.",
-    "Central Asian water disputes intensify amid climate change and upstream dam projects.",
-    "Cybersecurity alliances emerge as new axis of geopolitical alignment in 2025-2026.",
+    "USA and Britain reaffirm Five Eyes intelligence sharing after new cybersecurity threats from Russia and China.",
+    "Russia and China sign expanded energy cooperation deal, deepening strategic partnership in the face of Western sanctions.",
+    "India navigates balancing act between US Quad partnership and legacy Russian defence ties over S-400 deliveries.",
+    "Brazil positions itself as key BRICS mediator, hosting summit on global financial architecture reform.",
+    "Britain imposes fresh sanctions on Russian oligarchs while expanding Indo-Pacific trade partnerships.",
+    "China's Belt and Road Initiative reaches Latin America as Brazil signs infrastructure investment framework.",
+    "US-China trade tensions escalate with new semiconductor export controls targeting advanced chip manufacturing.",
+    "Russia conducts joint naval exercises with China in the Pacific, signaling deepening military coordination.",
+    "India and Britain finalize free trade agreement, strengthening post-Brexit Commonwealth economic ties.",
+    "Brazil-India-South Africa trilateral dialogue advances climate finance and UN Security Council reform.",
+    "USA strengthens Quad alliance with India, Japan, and Australia to counter Chinese maritime expansion.",
+    "Russia's energy pivot to China accelerates as European gas imports drop to historic lows.",
+    "Britain expands AUKUS defence technology sharing amid growing Chinese military presence in the South China Sea.",
+    "China and India hold border talks after renewed tensions along the Line of Actual Control.",
+    "Brazil emerges as swing vote in UN General Assembly on Ukraine-related resolutions, reflecting BRICS dynamics.",
+    "USA and India sign nuclear cooperation agreement extending civil nuclear energy collaboration.",
+    "Russia and Brazil expand agricultural trade routes bypassing Western financial infrastructure.",
+    "China invests heavily in British technology startups despite political friction over Hong Kong and Taiwan.",
+    "India launches independent satellite navigation system, reducing reliance on US GPS and Russian GLONASS.",
+    "BRICS New Development Bank approves infrastructure loans for Brazil and India, challenging World Bank dominance.",
 ]
 
 # UKT feature dimension (shared across all blocks)
 UKT_FEATURE_DIM: int = 64
 
-# Default tickers for finance block
-DEFAULT_TICKERS: list[str] = ["AAPL", "TSLA", "NVDA"]
+# Default tickers for finance block — country-representative ETFs / major stocks
+DEFAULT_TICKERS: list[str] = ["SPY", "EWZ", "INDA"]
 
 # Pipeline step names
 PIPELINE_STEPS: list[str] = [

@@ -18,8 +18,8 @@ UN_VOTES_DESC_URL = (
 
 # Key countries we care about (matching GEOPOLITICAL_NODES)
 KEY_COUNTRIES = [
-    "United States", "Russia", "China", "India",
-    "Kazakhstan", "France", "United Kingdom", "Brazil",
+    "United States", "Russia", "China",
+    "United Kingdom", "India", "Brazil",
 ]
 
 

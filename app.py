@@ -47,8 +47,8 @@ with st.sidebar:
 
     # Ticker selection (shared across tabs)
     tickers = st.multiselect(
-        "Finance Tickers",
-        ["AAPL", "TSLA", "NVDA", "MSFT", "GOOGL", "AMZN"],
+        "Finance Tickers (Country ETFs)",
+        ["SPY", "EWZ", "INDA", "FXI", "EWU", "ERUS", "RSX"],
         default=DEFAULT_TICKERS,
         key="tickers",
     )

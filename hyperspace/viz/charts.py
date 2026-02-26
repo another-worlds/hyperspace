@@ -71,12 +71,8 @@ def heatmap_chart(matrix: np.ndarray, x_labels: list[str],
         x=x_labels, y=y_labels,
         color_continuous_scale="RdBu_r",
         text_auto=".2f",
-        **PLOTLY_LAYOUT,
     )
-    fig.update_layout(
-        title=title, height=350,
-        paper_bgcolor="#0d1117", plot_bgcolor="#0d1117",
-    )
+    fig.update_layout(**PLOTLY_LAYOUT, title=title, height=350)
     return fig
 
 

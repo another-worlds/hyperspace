@@ -22,7 +22,8 @@ def render() -> None:
 
     fc1, fc2 = st.columns(2)
     tickers = fc1.multiselect(
-        "Tickers", ["AAPL", "TSLA", "NVDA", "MSFT", "GOOGL", "AMZN"],
+        "Tickers (Country ETFs)",
+        ["SPY", "EWZ", "INDA", "FXI", "EWU", "ERUS", "RSX"],
         default=DEFAULT_TICKERS,
     )
     fc2.markdown("")
@@ -101,10 +102,9 @@ def render() -> None:
                     fig = px.imshow(
                         att.reshape(-1, att.shape[-1]) if att.ndim > 2 else att.reshape(1, -1),
                         color_continuous_scale="Viridis",
-                        **PLOTLY_LAYOUT,
                         title="Attention over Encoder Time Steps",
                     )
-                    fig.update_layout(height=250, paper_bgcolor="#0d1117", plot_bgcolor="#0d1117")
+                    fig.update_layout(**PLOTLY_LAYOUT, height=250)
                     st.plotly_chart(fig, use_container_width=True)
 
                     if "encoder_importance" in finance_result:
@@ -130,8 +130,7 @@ def render() -> None:
                 import plotly.express as px
                 fig = px.imshow(
                     corr, text_auto=".2f", color_continuous_scale="RdBu_r",
-                    **PLOTLY_LAYOUT,
                     title="Cross-Ticker Correlation Matrix",
                 )
-                fig.update_layout(height=350, paper_bgcolor="#0d1117", plot_bgcolor="#0d1117")
+                fig.update_layout(**PLOTLY_LAYOUT, height=350)
                 st.plotly_chart(fig, use_container_width=True)

@@ -33,10 +33,9 @@ def build_geopolitical_graph(
         for u, v in G.edges():
             # Map node names to country names in UN data
             name_map = {
-                "USA": "United States", "NATO-EU": "United Kingdom",
-                "Russia": "Russia", "China": "China", "India": "India",
-                "Kazakhstan": "Kazakhstan", "CIS-bloc": "Russia",
-                "ASEAN": "Brazil",
+                "USA": "United States", "Russia": "Russia",
+                "China": "China", "Britain": "United Kingdom",
+                "India": "India", "Brazil": "Brazil",
             }
             un_u = name_map.get(u)
             un_v = name_map.get(v)
