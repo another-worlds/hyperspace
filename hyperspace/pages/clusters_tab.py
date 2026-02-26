@@ -63,10 +63,9 @@ def render() -> None:
                 fig = px.bar(
                     x=[str(x) for x in tc.index], y=tc.values,
                     color=tc.values, color_continuous_scale="Viridis",
-                    **PLOTLY_LAYOUT,
                     title="Document Count per Topic",
                 )
-                fig.update_layout(height=350, paper_bgcolor="#0d1117", plot_bgcolor="#0d1117")
+                fig.update_layout(**PLOTLY_LAYOUT, height=350)
                 st.plotly_chart(fig, use_container_width=True)
 
                 # Show sample docs per topic
@@ -89,10 +88,9 @@ def render() -> None:
                 fig = px.bar(
                     x=tc.index, y=tc.values,
                     color=tc.values, color_continuous_scale="Viridis",
-                    **PLOTLY_LAYOUT,
                     title="Cluster Distribution",
                 )
-                fig.update_layout(height=350, paper_bgcolor="#0d1117", plot_bgcolor="#0d1117")
+                fig.update_layout(**PLOTLY_LAYOUT, height=350)
                 st.plotly_chart(fig, use_container_width=True)
 
             # UKT contribution

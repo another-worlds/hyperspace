@@ -95,12 +95,10 @@ def render() -> None:
                         x=list(scores.keys()), y=list(scores.values()),
                         color=list(scores.values()),
                         color_continuous_scale="Viridis",
-                        **PLOTLY_LAYOUT,
                         title="Region Energy Distribution",
                     )
                     fig_rs.update_layout(
-                        height=200, paper_bgcolor="#0d1117",
-                        plot_bgcolor="#0d1117", showlegend=False,
+                        **PLOTLY_LAYOUT, height=200, showlegend=False,
                         xaxis_title="Region", yaxis_title="Abs. Loading Sum",
                     )
                     st.plotly_chart(fig_rs, use_container_width=True)
@@ -152,11 +150,10 @@ def render() -> None:
                 st.markdown("#### SAE Training Loss")
                 fig = px.line(
                     x=list(range(len(loss_hist))), y=loss_hist,
-                    **PLOTLY_LAYOUT,
                     title="Sparse Autoencoder Loss Curve",
                 )
                 fig.update_layout(
-                    height=250, paper_bgcolor="#0d1117", plot_bgcolor="#0d1117",
+                    **PLOTLY_LAYOUT, height=250,
                     xaxis_title="Epoch", yaxis_title="Loss",
                 )
                 st.plotly_chart(fig, use_container_width=True)

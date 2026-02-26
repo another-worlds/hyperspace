@@ -70,10 +70,9 @@ def render() -> None:
             fig = px.bar(
                 cent_df.melt(id_vars="Node", var_name="Metric", value_name="Score"),
                 x="Node", y="Score", color="Metric", barmode="group",
-                **PLOTLY_LAYOUT,
                 title="Centrality Measures by Node",
             )
-            fig.update_layout(height=400, paper_bgcolor="#0d1117", plot_bgcolor="#0d1117")
+            fig.update_layout(**PLOTLY_LAYOUT, height=400)
             st.plotly_chart(fig, use_container_width=True)
 
             # Graph metrics
