@@ -1,70 +1,68 @@
-"""Real news/text data via RSS feeds and sklearn, with fallback."""
+"""Country-focused news ingestion from open APIs (no static fallback)."""
 from __future__ import annotations
+
+from datetime import datetime
+from urllib.parse import quote_plus
 
 import streamlit as st
 
-from hyperspace.config import NEWS_SNIPPETS
+from hyperspace.config import GEOPOLITICAL_NODES
 
 
-@st.cache_resource(ttl=3600, show_spinner=False)
-def fetch_rss_headlines(max_per_feed: int = 25) -> list[str] | None:
-    """Fetch real headlines from RSS feeds. Returns None on failure."""
-    try:
-        import feedparser
-        feeds = {
-            "BBC World": "http://feeds.bbci.co.uk/news/world/rss.xml",
-            "BBC Tech": "http://feeds.bbci.co.uk/news/technology/rss.xml",
-            "BBC Business": "http://feeds.bbci.co.uk/news/business/rss.xml",
-        }
-        headlines: list[str] = []
-        for name, url in feeds.items():
-            feed = feedparser.parse(url)
-            for entry in feed.entries[:max_per_feed]:
-                title = entry.get("title", "")
-                summary = entry.get("summary", "")
-                text = f"{title}. {summary}".strip() if summary else title.strip()
-                if len(text) > 20:
-                    headlines.append(text)
-        return headlines if len(headlines) >= 10 else None
-    except Exception:
-        return None
+@st.cache_resource(ttl=1800, show_spinner=False)
+def fetch_gdelt_country_news(days_back: int = 30, max_records: int = 120) -> list[str] | None:
+    """Fetch country-focused geopolitical news from GDELT DOC 2.0 API.
 
-
-@st.cache_resource(show_spinner=False)
-def fetch_newsgroups(n_docs: int = 200) -> list[str] | None:
-    """Fetch from sklearn 20newsgroups -- always available offline."""
-    try:
-        from sklearn.datasets import fetch_20newsgroups
-        categories = [
-            "talk.politics.misc", "talk.politics.mideast",
-            "talk.politics.guns", "sci.space", "sci.crypt",
-            "soc.religion.christian",
-        ]
-        data = fetch_20newsgroups(
-            subset="train", categories=categories,
-            remove=("headers", "footers", "quotes"),
-        )
-        docs = [d[:500].strip() for d in data.data if len(d.strip()) > 50]
-        return docs[:n_docs] if len(docs) >= 20 else None
-    except Exception:
-        return None
-
-
-def get_text_data() -> tuple[list[str], str]:
-    """Get text documents with fallback chain.
-
-    Returns:
-        (documents, source_label)
+    GDELT is open and keyless. We query for configured countries and return
+    lightweight text snippets that include title/source/date.
     """
-    # Try RSS feeds first
-    rss = fetch_rss_headlines()
-    if rss and len(rss) >= 15:
-        return rss, "Live: RSS feeds"
+    try:
+        import requests
 
-    # Try 20newsgroups
-    ng = fetch_newsgroups(200)
-    if ng and len(ng) >= 20:
-        return ng, "Offline: 20newsgroups"
+        countries = list(GEOPOLITICAL_NODES.keys())
+        query = " OR ".join([f'"{c}"' for c in countries])
+        timespan = f"{max(1, days_back)}d"
+        url = (
+            "https://api.gdeltproject.org/api/v2/doc/doc?"
+            f"query={quote_plus(query)}&mode=ArtList&format=json"
+            f"&maxrecords={max_records}&sort=DateDesc&timespan={timespan}"
+        )
 
-    # Ultimate fallback
-    return NEWS_SNIPPETS, "Fallback: built-in snippets"
+        resp = requests.get(url, timeout=20)
+        resp.raise_for_status()
+        payload = resp.json()
+        articles = payload.get("articles", [])
+
+        docs: list[str] = []
+        for a in articles:
+            title = (a.get("title") or "").strip()
+            seen = (a.get("seendate") or "").strip()
+            source = (a.get("sourceCommonName") or "").strip()
+            text = " ".join(p for p in [title, source, seen] if p)
+            if len(text) > 20:
+                docs.append(text)
+
+        return docs if len(docs) >= 20 else None
+    except Exception:
+        return None
+
+
+def get_text_data(start_date: datetime | None = None,
+                  end_date: datetime | None = None) -> tuple[list[str], str]:
+    """Get country-focused text documents from open news APIs only.
+
+    Time window is derived from finance dates when provided to keep modal alignment.
+    Raises RuntimeError if the live API is unavailable.
+    """
+    days_back = 30
+    if start_date and end_date:
+        days_back = max(7, min(90, (end_date.date() - start_date.date()).days))
+
+    gdelt_docs = fetch_gdelt_country_news(days_back=days_back)
+    if gdelt_docs:
+        return gdelt_docs, f"Live: GDELT DOC 2.0 ({days_back}d window)"
+
+    raise RuntimeError(
+        "No live news data source available (GDELT unavailable). "
+        "Fallback datasets were intentionally removed."
+    )

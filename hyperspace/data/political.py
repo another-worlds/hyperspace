@@ -24,7 +24,7 @@ KEY_COUNTRIES = [
 
 
 @st.cache_resource(ttl=86400, show_spinner=False)
-def fetch_un_votes() -> pd.DataFrame | None:
+def fetch_un_votes(min_year: int = 2000, max_year: int | None = None) -> pd.DataFrame | None:
     """Fetch UN General Assembly voting data. Returns None on failure.
 
     Falls back gracefully if Harvard Dataverse is unreachable.
@@ -38,7 +38,9 @@ def fetch_un_votes() -> pd.DataFrame | None:
         # Filter to key countries and recent years
         if "Countryname" in df.columns and "year" in df.columns:
             df = df[df["Countryname"].isin(KEY_COUNTRIES)]
-            df = df[df["year"] >= 2000]
+            df = df[df["year"] >= min_year]
+            if max_year is not None:
+                df = df[df["year"] <= max_year]
             return df if len(df) > 50 else None
         return None
     except Exception:
@@ -77,17 +79,17 @@ def build_synthetic_agreement() -> pd.DataFrame:
     return pd.DataFrame(mat, index=nodes, columns=nodes)
 
 
-def get_political_data() -> tuple[pd.DataFrame | None, pd.DataFrame, str]:
+def get_political_data(min_year: int = 2000, max_year: int | None = None) -> tuple[pd.DataFrame | None, pd.DataFrame, str]:
     """Get political data with fallback.
 
     Returns:
         (un_votes_df_or_none, agreement_matrix, source_label)
     """
-    un_df = fetch_un_votes()
+    un_df = fetch_un_votes(min_year=min_year, max_year=max_year)
     if un_df is not None:
         agreement = compute_voting_agreement(un_df)
         if agreement is not None:
-            return un_df, agreement, "Live: Harvard Dataverse UN Votes"
+            return un_df, agreement, f"Live: Harvard Dataverse UN Votes ({min_year}-{max_year or 'latest'})"
 
     # Fallback to synthetic
     return None, build_synthetic_agreement(), "Fallback: synthetic agreement"

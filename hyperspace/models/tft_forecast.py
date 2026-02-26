@@ -12,6 +12,43 @@ from hyperspace.data.finance import get_ohlcv, get_tft_data
 from hyperspace.data.synthetic import generate_tft_dataset, seed
 
 
+def _finance_feature_meta_from_attention(attention: np.ndarray, encoder_importance: np.ndarray,
+                                         decoder_importance: np.ndarray) -> dict[int, dict]:
+    """Build metadata labels for finance UKT slots from model interpretation output."""
+    meta: dict[int, dict] = {}
+    att_flat = attention.flatten()
+    for i in range(min(16, len(att_flat))):
+        lag = i + 1
+        meta[i] = {
+            "label": f"tft_attention_lag_{lag:02d}",
+            "block": "finance",
+            "metric": "attention_weight",
+            "time_scope": f"lag_{lag}",
+            "source": "TemporalFusionTransformer",
+        }
+
+    enc_flat = encoder_importance.flatten()
+    for i in range(min(8, len(enc_flat))):
+        idx = 16 + i
+        meta[idx] = {
+            "label": f"tft_encoder_importance_{i+1}",
+            "block": "finance",
+            "metric": "encoder_variable_importance",
+            "source": "TemporalFusionTransformer",
+        }
+
+    dec_flat = decoder_importance.flatten()
+    for i in range(min(8, len(dec_flat))):
+        idx = 24 + i
+        meta[idx] = {
+            "label": f"tft_decoder_importance_{i+1}",
+            "block": "finance",
+            "metric": "decoder_variable_importance",
+            "source": "TemporalFusionTransformer",
+        }
+    return meta
+
+
 @st.cache_resource(show_spinner=False)
 def fit_tft(
     tickers: tuple[str, ...],
@@ -23,7 +60,7 @@ def fit_tft(
     """Fit TFT on real or synthetic data. Return predictions + interpretation features.
 
     Returns dict with: quantiles, attention, encoder_importance, decoder_importance,
-    model_params, features_for_ukt, data_source.
+    model_params, features_for_ukt, feature_meta, data_source.
     Returns None on failure.
     """
     try:
@@ -96,8 +133,7 @@ def fit_tft(
         decoder_importance = interpretation["decoder_variables"].detach().cpu().numpy()
         static_importance = interpretation["static_variables"].detach().cpu().numpy()
 
-        # Build UKT feature vector: concatenate flattened attention + variable importance
-        # Place in temporal region (indices 0-15) and some in embedding region (16-31)
+        # Build UKT feature vector from attention and variable importance
         features_for_ukt = np.zeros(UKT_FEATURE_DIM)
         att_flat = attention.flatten()
         features_for_ukt[:min(16, len(att_flat))] = att_flat[:16]
@@ -105,6 +141,10 @@ def fit_tft(
         features_for_ukt[16:16 + min(8, len(enc_flat))] = enc_flat[:8]
         dec_flat = decoder_importance.flatten()
         features_for_ukt[24:24 + min(8, len(dec_flat))] = dec_flat[:8]
+
+        feature_meta = _finance_feature_meta_from_attention(
+            attention, encoder_importance, decoder_importance,
+        )
 
         return dict(
             quantiles=quantiles,
@@ -115,6 +155,7 @@ def fit_tft(
             static_importance=static_importance,
             model_params=sum(p.numel() for p in model.parameters()),
             features_for_ukt=features_for_ukt,
+            feature_meta=feature_meta,
             data_source=data_source,
         )
     except Exception as e:
@@ -140,10 +181,15 @@ def mock_forecast(prediction_len: int, s: int = 42) -> dict:
     # Simulated decoder importance
     dec = rng.uniform(0.05, 0.3, 8)
     features[24:32] = dec
+    feature_meta = {
+        i: {"label": f"mock_attention_lag_{i+1:02d}", "block": "finance", "metric": "attention_weight"}
+        for i in range(16)
+    }
     return dict(
         q10=base - rng.uniform(0.3, 0.6, prediction_len),
         q50=base,
         q90=base + rng.uniform(0.3, 0.6, prediction_len),
         features_for_ukt=features,
+        feature_meta=feature_meta,
         data_source="Fallback: mock forecast",
     )
