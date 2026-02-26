@@ -3,14 +3,13 @@ from __future__ import annotations
 
 import hashlib
 
-import numpy as np
 import pandas as pd
 import plotly.express as px
 import streamlit as st
 
 from hyperspace.config import PLOTLY_LAYOUT
 from hyperspace.data.news import get_text_data
-from hyperspace.models.topic_model import fit_topic_model, mock_clusters
+from hyperspace.models.topic_model import fit_topic_model
 from hyperspace.viz.charts import source_badge
 
 
@@ -18,7 +17,7 @@ def render() -> None:
     """Render the Informational Cluster Mapping tab."""
     st.markdown("## Informational Cluster Mapping")
     st.markdown(
-        "BERTopic multilingual clustering on real news/text data. "
+        "BERTopic multilingual clustering on live country-focused news. "
         "*Backbone: BERTopic + sentence-transformers.*"
     )
 
@@ -30,16 +29,16 @@ def render() -> None:
     if cluster_btn or cluster_result:
         if cluster_btn:
             with st.spinner("Fitting BERTopic on real documents..."):
-                docs, src = get_text_data()
+                try:
+                    docs, src = get_text_data()
+                except RuntimeError as exc:
+                    st.error(str(exc))
+                    return
                 docs_hash = hashlib.md5("".join(docs[:5]).encode()).hexdigest()[:8]
-                result = fit_topic_model(docs_hash)
+                result = fit_topic_model(docs_hash, docs=docs, data_source=src)
                 if result is None:
-                    mock_df, mock_features = mock_clusters(docs)
-                    result = dict(
-                        mock_df=mock_df, docs=docs,
-                        features_for_ukt=mock_features,
-                        data_source="Fallback: keyword clusters",
-                    )
+                    st.error("BERTopic unavailable; cluster fallback was intentionally removed.")
+                    return
                 st.session_state.cluster_result = result
                 cluster_result = result
 
@@ -78,20 +77,6 @@ def render() -> None:
                         for idx in indices:
                             if idx < len(docs):
                                 st.caption(docs[idx][:200] + "...")
-
-            elif "mock_df" in cluster_result:
-                mock_df = cluster_result["mock_df"]
-                st.markdown("### Cluster Results (Keyword Fallback)")
-                st.dataframe(mock_df, use_container_width=True, height=350)
-
-                tc = mock_df.Topic_Name.value_counts()
-                fig = px.bar(
-                    x=tc.index, y=tc.values,
-                    color=tc.values, color_continuous_scale="Viridis",
-                    title="Cluster Distribution",
-                )
-                fig.update_layout(**PLOTLY_LAYOUT, height=350)
-                st.plotly_chart(fig, use_container_width=True)
 
             # UKT contribution
             if "features_for_ukt" in cluster_result:

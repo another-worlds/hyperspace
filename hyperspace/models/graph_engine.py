@@ -94,12 +94,33 @@ def analyze_graph(G: nx.Graph) -> dict:
 
     # Build UKT feature vector (structural-centrality region: indices 32-47)
     features_for_ukt = np.zeros(UKT_FEATURE_DIM)
+    feature_meta: dict[int, dict] = {}
+    metric_names = ["degree_centrality", "betweenness", "eigenvector", "pagerank"]
     fm_flat = feature_matrix.flatten()
-    features_for_ukt[32:32 + min(16, len(fm_flat))] = fm_flat[:16]
+    n_fill = min(16, len(fm_flat))
+    features_for_ukt[32:32 + n_fill] = fm_flat[:n_fill]
+
+    for local_idx in range(n_fill):
+        node_idx = local_idx // 4
+        metric_idx = local_idx % 4
+        if node_idx < len(node_names):
+            node = node_names[node_idx]
+            metric = metric_names[metric_idx]
+            feature_meta[32 + local_idx] = {
+                "label": f"{node}_{metric}",
+                "entity": node,
+                "metric": metric,
+                "block": "graph",
+                "source": "networkx_centrality",
+            }
+
     # Add graph-level stats
     features_for_ukt[48] = density
     features_for_ukt[49] = avg_clustering
     features_for_ukt[50] = len(communities)
+    feature_meta[48] = {"label": "graph_density", "block": "graph", "metric": "density"}
+    feature_meta[49] = {"label": "graph_avg_clustering", "block": "graph", "metric": "avg_clustering"}
+    feature_meta[50] = {"label": "graph_n_communities", "block": "graph", "metric": "n_communities"}
 
     return dict(
         degree_centrality=degree_cent,
@@ -112,6 +133,7 @@ def analyze_graph(G: nx.Graph) -> dict:
         feature_matrix=feature_matrix,
         node_names=node_names,
         features_for_ukt=features_for_ukt,
+        feature_meta=feature_meta,
     )
 
 

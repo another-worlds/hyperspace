@@ -104,11 +104,11 @@ def run_simulation(
     alliance_fluidity: float = 0.5,
     shock_prob: float = 0.1,
     s: int = 42,
-) -> tuple[dict[str, ClusterAgent], list[str], np.ndarray]:
+) -> tuple[dict[str, ClusterAgent], list[str], np.ndarray, dict[int, dict]]:
     """Run the agent simulation.
 
     Returns:
-        (agents, log_entries, features_for_ukt)
+        (agents, log_entries, features_for_ukt, feature_meta)
     """
     rng = np.random.default_rng(s)
     log_entries: list[str] = []
@@ -121,10 +121,22 @@ def run_simulation(
 
     # Build UKT feature vector (dynamic-agent region: indices 48-63)
     features_for_ukt = np.zeros(UKT_FEATURE_DIM)
+    feature_meta: dict[int, dict] = {}
+    agent_names = list(agents.keys())
     resources = np.array([a.resources for a in agents.values()])
     # Normalized resource distribution
     res_norm = resources / (resources.sum() + 1e-8)
-    features_for_ukt[48:48 + min(8, len(res_norm))] = res_norm[:8]
+    n_res = min(8, len(res_norm))
+    features_for_ukt[48:48 + n_res] = res_norm[:n_res]
+    for i in range(n_res):
+        entity = agent_names[i] if i < len(agent_names) else f"agent_{i}"
+        feature_meta[48 + i] = {
+            "label": f"{entity}_resource_share",
+            "entity": entity,
+            "metric": "resource_share",
+            "block": "agents",
+            "source": "agent_simulation",
+        }
 
     # Alliance matrix eigenvalues (captures structural properties)
     node_names = list(agents.keys())
@@ -135,6 +147,14 @@ def run_simulation(
             if other in agents[name].alliances:
                 alliance_mat[i, j] = agents[name].alliances[other]
     eigenvalues = np.sort(np.linalg.eigvalsh(alliance_mat))[::-1]
-    features_for_ukt[56:56 + min(8, len(eigenvalues))] = eigenvalues[:8]
+    n_eig = min(8, len(eigenvalues))
+    features_for_ukt[56:56 + n_eig] = eigenvalues[:n_eig]
+    for i in range(n_eig):
+        feature_meta[56 + i] = {
+            "label": f"alliance_eigenvalue_{i+1}",
+            "metric": "alliance_spectrum",
+            "block": "agents",
+            "source": "agent_simulation",
+        }
 
-    return agents, log_entries, features_for_ukt
+    return agents, log_entries, features_for_ukt, feature_meta

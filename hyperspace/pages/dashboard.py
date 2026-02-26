@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import time
+from datetime import datetime
 from typing import Any
 
 import numpy as np
@@ -11,7 +12,10 @@ import streamlit as st
 from hyperspace.config import (
     DEFAULT_TICKERS, GEOPOLITICAL_NODES, PIPELINE_STEPS, UKT_FEATURE_DIM,
 )
-from hyperspace.models.knowledge_matrix import UniversalKnowledgeTensor
+from hyperspace.models.knowledge_matrix import (
+    UniversalKnowledgeTensor,
+    estimate_reality_regression_stability,
+)
 from hyperspace.viz.charts import source_badge
 from hyperspace.viz import kernel_viz
 
@@ -58,7 +62,7 @@ with full **semantic interpretability** at each stage.
     # Architecture diagram
     with st.expander("v3.0 Pipeline Architecture"):
         st.code("""
-Data Fetch (yfinance + RSS + UN Votes + 20newsgroups)
+Data Fetch (yfinance + GDELT + UN Votes)
           |
     [Finance Block] --> TFT train --> UKT row 1 --> SVD --> Interpret
           |
@@ -89,8 +93,21 @@ def run_pipeline() -> None:
 
         tickers = st.session_state.get("tickers", DEFAULT_TICKERS)
         ohlcv_df, fin_src = get_ohlcv(tickers)
-        docs, docs_src = get_text_data()
-        un_df, agreement, pol_src = get_political_data()
+        finance_start = None
+        finance_end = None
+        if "Date" in ohlcv_df.columns and len(ohlcv_df) > 0:
+            finance_start = pd.to_datetime(ohlcv_df["Date"]).min().to_pydatetime()
+            finance_end = pd.to_datetime(ohlcv_df["Date"]).max().to_pydatetime()
+
+        try:
+            docs, docs_src = get_text_data(start_date=finance_start, end_date=finance_end)
+        except RuntimeError as exc:
+            status.update(label="Pipeline blocked: no live news source", state="error")
+            st.error(str(exc))
+            return
+        min_year = finance_start.year if finance_start else 2000
+        max_year = finance_end.year if finance_end else None
+        un_df, agreement, pol_src = get_political_data(min_year=min_year, max_year=max_year)
 
         data_sources["Finance"] = fin_src
         data_sources["Clusters"] = docs_src
@@ -98,6 +115,12 @@ def run_pipeline() -> None:
         st.session_state.data_sources = data_sources
         st.session_state.raw_ohlcv = ohlcv_df
         st.session_state.raw_docs = docs
+        st.session_state.timeframe_context = {
+            "start_date": finance_start.date().isoformat() if finance_start else None,
+            "end_date": finance_end.date().isoformat() if finance_end else None,
+            "min_year": min_year,
+            "max_year": max_year,
+        }
         st.write(f"Data fetched: {fin_src} | {docs_src} | {pol_src}")
 
         # ---- Step 2: Finance Block ----
@@ -117,31 +140,35 @@ def run_pipeline() -> None:
             tft_result = mock
             data_sources["Finance"] = mock["data_source"]
 
-        snap = ukt.add_block("Finance", finance_features)
+        snap = ukt.add_block(
+            "Finance", finance_features,
+            feature_meta=tft_result.get("feature_meta", {}),
+            timeframe_context=st.session_state.timeframe_context,
+        )
         snapshots.append(snap)
         st.session_state.finance_result = tft_result
         st.write(f"Finance: {snap['report'].split(chr(10))[0]}")
 
         # ---- Step 3: Cluster Block ----
         st.write("Fitting BERTopic on real documents...")
-        from hyperspace.models.topic_model import fit_topic_model, mock_clusters
+        from hyperspace.models.topic_model import fit_topic_model
 
         import hashlib
         docs_hash = hashlib.md5("".join(docs[:5]).encode()).hexdigest()[:8]
-        cluster_result = fit_topic_model(docs_hash)
-        if cluster_result is not None:
-            cluster_features = cluster_result["features_for_ukt"]
-            data_sources["Clusters"] = cluster_result["data_source"]
-        else:
-            cluster_df, cluster_features = mock_clusters(docs)
-            cluster_result = dict(
-                mock_df=cluster_df, docs=docs,
-                features_for_ukt=cluster_features,
-                data_source="Fallback: keyword clusters",
-            )
-            data_sources["Clusters"] = cluster_result["data_source"]
+        cluster_result = fit_topic_model(docs_hash, docs=docs, data_source=docs_src)
+        if cluster_result is None:
+            status.update(label="Pipeline blocked: BERTopic unavailable", state="error")
+            st.error("BERTopic is unavailable; cluster fallback was intentionally removed.")
+            return
 
-        snap = ukt.add_block("Clusters", cluster_features)
+        cluster_features = cluster_result["features_for_ukt"]
+        data_sources["Clusters"] = cluster_result["data_source"]
+
+        snap = ukt.add_block(
+            "Clusters", cluster_features,
+            feature_meta=cluster_result.get("feature_meta", {}),
+            timeframe_context=st.session_state.timeframe_context,
+        )
         snapshots.append(snap)
         st.session_state.cluster_result = cluster_result
         st.write(f"Clusters: {snap['report'].split(chr(10))[0]}")
@@ -154,11 +181,16 @@ def run_pipeline() -> None:
         graph_analysis = analyze_graph(G)
         graph_features = graph_analysis["features_for_ukt"]
 
-        snap = ukt.add_block("Graph", graph_features)
+        snap = ukt.add_block(
+            "Graph", graph_features,
+            feature_meta=graph_analysis.get("feature_meta", {}),
+            timeframe_context=st.session_state.timeframe_context,
+        )
         snapshots.append(snap)
         st.session_state.graph_result = dict(
             G=G, pos=pos, analysis=graph_analysis,
             features_for_ukt=graph_features,
+            feature_meta=graph_analysis.get("feature_meta", {}),
             data_source=pol_src,
         )
         st.write(f"Graph: {snap['report'].split(chr(10))[0]}")
@@ -170,13 +202,18 @@ def run_pipeline() -> None:
         )
 
         agents = initialize_agents_from_data(graph_analysis, agreement)
-        agents, log_entries, agent_features = run_simulation(agents, steps=50)
+        agents, log_entries, agent_features, agent_feature_meta = run_simulation(agents, steps=50)
 
-        snap = ukt.add_block("Agents", agent_features)
+        snap = ukt.add_block(
+            "Agents", agent_features,
+            feature_meta=agent_feature_meta,
+            timeframe_context=st.session_state.timeframe_context,
+        )
         snapshots.append(snap)
         st.session_state.sim_result = dict(
             agents=agents, log=log_entries,
             features_for_ukt=agent_features,
+            feature_meta=agent_feature_meta,
         )
         st.write(f"Agents: {snap['report'].split(chr(10))[0]}")
 
@@ -198,6 +235,12 @@ def run_pipeline() -> None:
         st.session_state.concept_kernel_map = concept_kernel_map
         st.session_state.ukt_snapshots = snapshots
         st.session_state.data_sources = data_sources
+
+        final_matrix = ukt.get_final_matrix()
+        if final_matrix is not None:
+            st.session_state.ukt_multirun_stability = estimate_reality_regression_stability(
+                final_matrix, n_runs=8, noise_std=0.01, seed=42,
+            )
 
         status.update(label="Pipeline complete!", state="complete")
 
@@ -242,6 +285,14 @@ def render_results() -> None:
         m4.metric("Active Concepts", "N/A")
 
     m5.metric("Recon Error", f"{final_snap['reconstruction_error']:.6f}")
+
+    stability = st.session_state.get("ukt_multirun_stability")
+    if isinstance(stability, dict) and stability.get("n_runs", 0) > 0:
+        st.caption(
+            "UKT multi-run reality-regression stability "
+            f"(n={stability['n_runs']}): mean cosine={stability['mean_cosine']:.3f}, "
+            f"min cosine={stability['min_cosine']:.3f}, std={stability['std_cosine']:.3f}"
+        )
 
     st.markdown("---")
 
