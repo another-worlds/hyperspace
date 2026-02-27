@@ -118,7 +118,7 @@ def render() -> None:
             if "features_for_ukt" in finance_result:
                 with st.expander("UKT Contribution (Finance Feature Vector)"):
                     fv = finance_result["features_for_ukt"]
-                    st.bar_chart(pd.DataFrame(fv, columns=["Value"]))
+                    st.bar_chart(pd.DataFrame({"Value": fv}))
 
             # Correlation heatmap
             st.markdown("### Cross-Ticker Correlation")

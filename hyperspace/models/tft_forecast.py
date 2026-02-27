@@ -49,7 +49,7 @@ def _finance_feature_meta_from_attention(attention: np.ndarray, encoder_importan
     return meta
 
 
-@st.cache_resource(show_spinner=False)
+@st.cache_data(show_spinner=False)
 def fit_tft(
     tickers: tuple[str, ...],
     hidden: int = 32,

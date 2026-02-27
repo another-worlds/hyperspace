@@ -26,6 +26,8 @@ def init_session_state() -> None:
         ukt_snapshots=[],
         # Final SAE result
         sae_result=None,
+        # Concept-kernel correspondence map (from SAE, list of dicts)
+        concept_kernel_map=[],
         # Raw data (cached across reruns)
         raw_ohlcv=None,
         raw_docs=None,
@@ -65,3 +67,7 @@ def reset_pipeline() -> None:
     st.session_state.sim_result = None
     st.session_state.interpreter_result = None
     st.session_state.sae_result = None
+    st.session_state.concept_kernel_map = []
+    st.session_state.raw_docs = None
+    st.session_state.raw_un_votes = None
+    st.session_state.data_sources = {}

@@ -15,7 +15,7 @@ def _flatten_yf_columns(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-@st.cache_resource(ttl=3600, show_spinner=False)
+@st.cache_data(ttl=3600, show_spinner=False)
 def fetch_real_ohlcv(tickers: tuple[str, ...], period: str = "1y") -> pd.DataFrame | None:
     """Fetch real OHLCV data via yfinance. Returns None on failure.
 

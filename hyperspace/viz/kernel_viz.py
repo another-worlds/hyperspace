@@ -80,14 +80,15 @@ def plot_reality_regression(snapshot: dict) -> go.Figure:
         xaxis_title="Feature Index",
         yaxis_title="Weight",
     )
-    # Add region annotations
-    fig.add_annotation(x=8, y=max(abs(rr)) * 1.1, text="Temporal",
+    # Add region annotations (use np.max + np.abs to avoid ambiguous array truth value)
+    annotation_y = float(np.max(np.abs(rr))) * 1.1
+    fig.add_annotation(x=8, y=annotation_y, text="Temporal",
                        showarrow=False, font=dict(color="#3498db", size=10))
-    fig.add_annotation(x=24, y=max(abs(rr)) * 1.1, text="Semantic",
+    fig.add_annotation(x=24, y=annotation_y, text="Semantic",
                        showarrow=False, font=dict(color="#e67e22", size=10))
-    fig.add_annotation(x=40, y=max(abs(rr)) * 1.1, text="Structural",
+    fig.add_annotation(x=40, y=annotation_y, text="Structural",
                        showarrow=False, font=dict(color="#2ecc71", size=10))
-    fig.add_annotation(x=56, y=max(abs(rr)) * 1.1, text="Dynamic",
+    fig.add_annotation(x=56, y=annotation_y, text="Dynamic",
                        showarrow=False, font=dict(color="#e74c3c", size=10))
     return fig
 

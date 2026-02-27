@@ -1,4 +1,4 @@
-"""Country-focused news ingestion from open APIs (no static fallback)."""
+"""Country-focused news ingestion from open APIs with static snippet fallback."""
 from __future__ import annotations
 
 from datetime import datetime
@@ -6,10 +6,10 @@ from urllib.parse import quote_plus
 
 import streamlit as st
 
-from hyperspace.config import GEOPOLITICAL_NODES
+from hyperspace.config import GEOPOLITICAL_NODES, NEWS_SNIPPETS
 
 
-@st.cache_resource(ttl=1800, show_spinner=False)
+@st.cache_data(ttl=1800, show_spinner=False)
 def fetch_gdelt_country_news(days_back: int = 30, max_records: int = 120) -> list[str] | None:
     """Fetch country-focused geopolitical news from GDELT DOC 2.0 API.
 
@@ -62,7 +62,11 @@ def get_text_data(start_date: datetime | None = None,
     if gdelt_docs:
         return gdelt_docs, f"Live: GDELT DOC 2.0 ({days_back}d window)"
 
+    # Emergency fallback: curated geopolitical snippets from config
+    # Used when GDELT is unavailable (offline, rate-limited, or CI environments).
+    if NEWS_SNIPPETS:
+        return list(NEWS_SNIPPETS), "Fallback: static geopolitical snippets"
+
     raise RuntimeError(
-        "No live news data source available (GDELT unavailable). "
-        "Fallback datasets were intentionally removed."
+        "No news data source available (GDELT unavailable and no static snippets configured)."
     )
