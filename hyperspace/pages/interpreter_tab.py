@@ -27,6 +27,7 @@ def render() -> None:
 
     snapshots = st.session_state.get("ukt_snapshots", [])
     sae_result = st.session_state.get("sae_result")
+    policy_mode = st.session_state.get("policy_language_mode", False)
 
     if interpret_btn or sae_result:
         if interpret_btn:
@@ -54,6 +55,7 @@ def render() -> None:
             return
 
         final_snap = snapshots[-1]
+        stability = st.session_state.get("ukt_multirun_stability")
 
         # Kernel matrix from UKT
         st.markdown("### Universal Kernel Matrix")
@@ -70,38 +72,67 @@ def render() -> None:
             fig_rr = kernel_viz.plot_reality_regression(final_snap)
             st.plotly_chart(fig_rr, use_container_width=True)
 
-        # Kernel labels (rich semantic interpretation)
-        st.markdown("### Discovered Kernels — Semantic Interpretation")
-        for kl in final_snap["kernel_labels"]:
-            with st.expander(
-                f"{kl['label']}",
-                expanded=kl["importance"] > 0.2,
-            ):
-                st.markdown(kl["narrative"])
-                # Show top features as a mini table
-                if kl.get("top_features"):
-                    feat_df = pd.DataFrame(kl["top_features"])
-                    st.dataframe(
-                        feat_df[["name", "region", "loading"]].rename(
-                            columns={"name": "Feature", "region": "Region",
-                                     "loading": "Loading"}
-                        ),
-                        use_container_width=True, hide_index=True,
-                    )
-                # Region breakdown
-                if kl.get("region_scores"):
-                    scores = kl["region_scores"]
-                    fig_rs = px.bar(
-                        x=list(scores.keys()), y=list(scores.values()),
-                        color=list(scores.values()),
-                        color_continuous_scale="Viridis",
-                        title="Region Energy Distribution",
-                    )
-                    fig_rs.update_layout(
-                        **PLOTLY_LAYOUT, height=200, showlegend=False,
-                        xaxis_title="Region", yaxis_title="Abs. Loading Sum",
-                    )
-                    st.plotly_chart(fig_rs, use_container_width=True)
+        # B1: Policy language mode branch
+        if policy_mode:
+            from hyperspace.pages.governance import render_kernel_policy_mode
+            st.markdown("---")
+            render_kernel_policy_mode(final_snap["kernel_labels"])
+        else:
+            # Standard technical view with A1 + C1 enhancements
+            st.markdown("### Discovered Kernels — Semantic Interpretation")
+            from hyperspace.pages.governance import (
+                render_contest_popover,
+                render_annotation_widget,
+            )
+            for kl in final_snap["kernel_labels"]:
+                with st.expander(
+                    f"{kl['label']}",
+                    expanded=kl["importance"] > 0.2,
+                ):
+                    st.markdown(kl["narrative"])
+
+                    # Show top features as a mini table
+                    if kl.get("top_features"):
+                        feat_df = pd.DataFrame(kl["top_features"])
+                        st.dataframe(
+                            feat_df[["name", "region", "loading"]].rename(
+                                columns={"name": "Feature", "region": "Region",
+                                         "loading": "Loading"}
+                            ),
+                            use_container_width=True, hide_index=True,
+                        )
+
+                    # Region breakdown
+                    if kl.get("region_scores"):
+                        scores = kl["region_scores"]
+                        fig_rs = px.bar(
+                            x=list(scores.keys()), y=list(scores.values()),
+                            color=list(scores.values()),
+                            color_continuous_scale="Viridis",
+                            title="Region Energy Distribution",
+                        )
+                        fig_rs.update_layout(
+                            **PLOTLY_LAYOUT, height=200, showlegend=False,
+                            xaxis_title="Region", yaxis_title="Abs. Loading Sum",
+                        )
+                        st.plotly_chart(fig_rs, use_container_width=True)
+
+                    # A1: Contest This button
+                    st.markdown("---")
+                    col_contest, col_annotate = st.columns([1, 2])
+                    with col_contest:
+                        render_contest_popover(
+                            kl, stability=stability,
+                            key_suffix=f"interpreter_{kl['kernel_id']}",
+                        )
+
+                    # C1: Multi-stakeholder annotation widget
+                    with col_annotate:
+                        render_annotation_widget(
+                            kernel_id=kl["kernel_id"],
+                            label=kl.get("label", kl["kernel_id"]),
+                            key_suffix=f"interpreter_{kl['kernel_id']}",
+                        )
 
         # SAE concept discovery
         if sae_result:
@@ -123,6 +154,7 @@ def render() -> None:
 
             if active_concepts:
                 st.markdown("**Active concepts** (above-mean activation):")
+                from hyperspace.pages.governance import render_annotation_widget
                 for cl in active_concepts:
                     with st.expander(cl.get("label", cl["concept_id"])):
                         st.markdown(cl.get("narrative", ""))
@@ -135,6 +167,12 @@ def render() -> None:
                                 ),
                                 use_container_width=True, hide_index=True,
                             )
+                        # C1: Allow annotations on concepts too
+                        render_annotation_widget(
+                            kernel_id=f"concept_{cl['concept_id']}",
+                            label=cl.get("label", cl["concept_id"]),
+                            key_suffix=f"concept_{cl['concept_id']}",
+                        )
 
             if dormant_concepts:
                 with st.expander(
@@ -179,6 +217,12 @@ def render() -> None:
             fig_ck = kernel_viz.plot_concept_kernel_map(concept_kernel_map)
             st.plotly_chart(fig_ck, use_container_width=True)
             st.dataframe(pd.DataFrame(concept_kernel_map), use_container_width=True)
+
+        # Stakeholder annotation summary
+        st.markdown("---")
+        st.markdown("### Stakeholder Annotation Record")
+        from hyperspace.pages.governance import render_annotations_summary
+        render_annotations_summary()
 
         # Step-by-step interpretation logs (now with rich text)
         st.markdown("### Step-by-Step Interpretability Reports")

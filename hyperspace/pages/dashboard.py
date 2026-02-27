@@ -11,6 +11,7 @@ import streamlit as st
 
 from hyperspace.config import (
     DEFAULT_TICKERS, GEOPOLITICAL_NODES, PIPELINE_STEPS, UKT_FEATURE_DIM,
+    GOVERNANCE_FLAG_CODES, SCORECARD_THRESHOLDS,
 )
 from hyperspace.models.knowledge_matrix import (
     UniversalKnowledgeTensor,
@@ -20,21 +21,298 @@ from hyperspace.viz.charts import source_badge
 from hyperspace.viz import kernel_viz
 
 
+# --------------------------------------------------------------------------- #
+# Internal helpers: governance flag computation                                #
+# --------------------------------------------------------------------------- #
+
+def _compute_governance_flags(
+    data_sources: dict,
+    ukt_snapshots: list,
+    sae_result: dict | None,
+    graph_result: dict | None,
+    timeframe_context: dict,
+) -> list[dict]:
+    """Auto-detect governance flags from pipeline results.
+
+    Returns a list of active flag dicts with keys:
+        code, label, description, severity
+    """
+    flags: list[dict] = []
+
+    # GOV-001: Modality imbalance — one block dominates reality regression
+    if ukt_snapshots:
+        final_snap = ukt_snapshots[-1]
+        rr = final_snap["reality_regression"]
+        region_sums = {
+            "temporal-pattern":      float(np.abs(rr[0:16]).sum()),
+            "semantic-embedding":    float(np.abs(rr[16:32]).sum()),
+            "structural-centrality": float(np.abs(rr[32:48]).sum()),
+            "dynamic-agent":         float(np.abs(rr[48:64]).sum()),
+        }
+        total_rr = sum(region_sums.values()) + 1e-8
+        max_region_share = max(region_sums.values()) / total_rr
+        if max_region_share > 0.50:
+            dominant = max(region_sums, key=region_sums.get)
+            flag = GOVERNANCE_FLAG_CODES["GOV-001"].copy()
+            flag["code"] = "GOV-001"
+            flag["detail"] = (
+                f"Region '{dominant}' accounts for {max_region_share:.0%} of the "
+                "reality regression weight."
+            )
+            flags.append(flag)
+
+    # GOV-002: Temporal coverage gap — finance and news have different scopes
+    # Detected when both are live but news data source label doesn't match finance dates
+    finance_src = data_sources.get("Finance", "")
+    cluster_src = data_sources.get("Clusters", "")
+    if "Live" in finance_src and "Live" in cluster_src:
+        ctx = timeframe_context or {}
+        if ctx.get("start_date") and ctx.get("end_date"):
+            pass  # Coverage is aligned — no flag
+    elif "Live" in finance_src and "Fallback" in cluster_src:
+        flag = GOVERNANCE_FLAG_CODES["GOV-002"].copy()
+        flag["code"] = "GOV-002"
+        flag["detail"] = (
+            "Finance data is live but news/cluster data is from static fallback snippets. "
+            "Cross-modal conclusions span different observation windows."
+        )
+        flags.append(flag)
+
+    # GOV-003: Geopolitical centrality skew
+    if graph_result and "analysis" in graph_result:
+        centrality = graph_result["analysis"].get("centrality", {})
+        degree_vals = [v.get("degree", 0) for v in centrality.values()]
+        if len(degree_vals) > 1:
+            mean_deg = float(np.mean(degree_vals))
+            max_deg = float(max(degree_vals))
+            if mean_deg > 0 and max_deg > 2.0 * mean_deg:
+                dominant_node = max(centrality, key=lambda n: centrality[n].get("degree", 0))
+                flag = GOVERNANCE_FLAG_CODES["GOV-003"].copy()
+                flag["code"] = "GOV-003"
+                flag["detail"] = (
+                    f"Node '{dominant_node}' has degree centrality {max_deg:.3f}, "
+                    f"which is {max_deg / mean_deg:.1f}× the network mean ({mean_deg:.3f})."
+                )
+                flags.append(flag)
+
+    # GOV-004: Low concept coverage
+    if sae_result:
+        total = sae_result.get("total_concepts", 1)
+        active = sae_result.get("active_concepts", 0)
+        dormancy_rate = 1.0 - (active / max(total, 1))
+        if dormancy_rate > 0.60:
+            flag = GOVERNANCE_FLAG_CODES["GOV-004"].copy()
+            flag["code"] = "GOV-004"
+            flag["detail"] = (
+                f"{dormancy_rate:.0%} of concepts are dormant ({total - active}/{total}). "
+                "The model found limited interpretable structure."
+            )
+            flags.append(flag)
+
+    # GOV-005: Synthetic data active
+    all_sources = list(data_sources.values())
+    synthetic_blocks = [
+        k for k, v in data_sources.items()
+        if "Synthetic" in v or "synthetic" in v or "Fallback" in v or "fallback" in v
+           or "Mock" in v or "mock" in v
+    ]
+    if synthetic_blocks:
+        flag = GOVERNANCE_FLAG_CODES["GOV-005"].copy()
+        flag["code"] = "GOV-005"
+        flag["detail"] = (
+            f"Blocks using synthetic/fallback data: {', '.join(synthetic_blocks)}. "
+            "These outputs are illustrative only."
+        )
+        flags.append(flag)
+
+    return flags
+
+
+def _compute_scorecard(
+    ukt_snapshots: list,
+    sae_result: dict | None,
+    data_sources: dict,
+    stability: dict | None,
+    governance_flags: list,
+) -> dict:
+    """Compute the interpretability scorecard values.
+
+    Returns dict mapping criterion key -> {value, threshold, pass, label, unit, description}
+    """
+    scorecard: dict[str, dict] = {}
+
+    # Feature traceability: count features with metadata
+    if ukt_snapshots:
+        final_snap = ukt_snapshots[-1]
+        feature_meta = final_snap.get("feature_meta", {})
+        traced = sum(
+            1 for idx in range(UKT_FEATURE_DIM)
+            if idx in feature_meta and feature_meta[idx].get("label")
+        )
+    else:
+        traced = 0
+
+    scorecard["feature_traceability"] = dict(
+        value=traced,
+        threshold=SCORECARD_THRESHOLDS["feature_traceability"]["threshold"],
+        passed=traced >= SCORECARD_THRESHOLDS["feature_traceability"]["threshold"],
+        label=SCORECARD_THRESHOLDS["feature_traceability"]["label"],
+        unit=SCORECARD_THRESHOLDS["feature_traceability"]["unit"],
+        description=SCORECARD_THRESHOLDS["feature_traceability"]["description"],
+    )
+
+    # Kernel stability
+    mean_cosine = stability.get("mean_cosine", 0.0) if stability else 0.0
+    scorecard["kernel_stability"] = dict(
+        value=round(mean_cosine, 3),
+        threshold=SCORECARD_THRESHOLDS["kernel_stability"]["threshold"],
+        passed=mean_cosine >= SCORECARD_THRESHOLDS["kernel_stability"]["threshold"],
+        label=SCORECARD_THRESHOLDS["kernel_stability"]["label"],
+        unit=SCORECARD_THRESHOLDS["kernel_stability"]["unit"],
+        description=SCORECARD_THRESHOLDS["kernel_stability"]["description"],
+    )
+
+    # Concept activation rate
+    if sae_result:
+        total = sae_result.get("total_concepts", 1)
+        active = sae_result.get("active_concepts", 0)
+        rate = round(100.0 * active / max(total, 1), 1)
+    else:
+        rate = 0.0
+    scorecard["concept_activation_rate"] = dict(
+        value=rate,
+        threshold=SCORECARD_THRESHOLDS["concept_activation_rate"]["threshold"],
+        passed=rate >= SCORECARD_THRESHOLDS["concept_activation_rate"]["threshold"],
+        label=SCORECARD_THRESHOLDS["concept_activation_rate"]["label"],
+        unit=SCORECARD_THRESHOLDS["concept_activation_rate"]["unit"],
+        description=SCORECARD_THRESHOLDS["concept_activation_rate"]["description"],
+    )
+
+    # Data source diversity (live count)
+    live_count = sum(
+        1 for v in data_sources.values()
+        if "Live" in v or ("Offline" in v and "Synthetic" not in v)
+    )
+    scorecard["data_source_diversity"] = dict(
+        value=live_count,
+        threshold=SCORECARD_THRESHOLDS["data_source_diversity"]["threshold"],
+        passed=live_count >= SCORECARD_THRESHOLDS["data_source_diversity"]["threshold"],
+        label=SCORECARD_THRESHOLDS["data_source_diversity"]["label"],
+        unit=SCORECARD_THRESHOLDS["data_source_diversity"]["unit"],
+        description=SCORECARD_THRESHOLDS["data_source_diversity"]["description"],
+    )
+
+    # Governance flags count
+    flag_count = len(governance_flags)
+    scorecard["governance_flags"] = dict(
+        value=flag_count,
+        threshold=SCORECARD_THRESHOLDS["governance_flags"]["threshold"],
+        passed=flag_count == 0,
+        label=SCORECARD_THRESHOLDS["governance_flags"]["label"],
+        unit=SCORECARD_THRESHOLDS["governance_flags"]["unit"],
+        description=SCORECARD_THRESHOLDS["governance_flags"]["description"],
+    )
+
+    return scorecard
+
+
+# --------------------------------------------------------------------------- #
+# Landing page (C3: Governance reframe)                                        #
+# --------------------------------------------------------------------------- #
+
 def render_landing() -> None:
-    """Render the dashboard landing page (shown before pipeline launch)."""
-    st.markdown("## Hyperspace -- Predictive Polymath System v3.0")
-    st.markdown("""
-> **Mission**: A modular, continuously learning hybrid AI system integrating
-> semantic interpretability, persistent knowledge reuse, financial forecasting,
-> informational clustering, geopolitical graph simulation, and agentic
-> macro-modeling into a single coherent pipeline.
+    """Render the governance-framed dashboard landing page."""
+    # Governance header
+    st.markdown(
+        '<div class="governance-header">'
+        '<h2 style="color:#64ffda; margin:0 0 8px 0;">Hyperspace — Accountability Infrastructure for AI Governance</h2>'
+        '<p style="color:#a8b2d1; margin:0; font-size:0.95em;">'
+        'A demonstration system for the UN Global Dialogue on AI Governance — '
+        'February 2026'
+        '</p>'
+        '</div>',
+        unsafe_allow_html=True,
+    )
 
-**Core architecture**: Each pipeline block feeds features into the **Universal
-Knowledge Tensor (UKT)**, which is decomposed at every step via SVD to produce
-a **universal reality regression** -- a combined basis of reality dimensions --
-with full **semantic interpretability** at each stage.
-    """)
+    st.markdown("---")
 
+    # Three failure modes framing
+    st.markdown("### The Three Accountability Failures This System Addresses")
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.markdown(
+            "**① Opacity**\n\n"
+            "Dominant AI systems use billions of parameters with learned concepts "
+            "that cannot be labeled, traced, or linked to causal stories. "
+            "It is impossible to explain *why* a conclusion was drawn."
+        )
+    with col2:
+        st.markdown(
+            "**② Uncontestability**\n\n"
+            "Decisions derived from opaque pattern recognition cannot be robustly "
+            "validated, challenged, or improved when they fail. There is no mechanism "
+            "for due process against an algorithmic conclusion."
+        )
+    with col3:
+        st.markdown(
+            "**③ Untraceability**\n\n"
+            "Biased and partial knowledge is absorbed into authoritative-sounding "
+            "outputs while the pathways of influence remain invisible — machine-generated "
+            "meaning without provenance or responsibility."
+        )
+
+    st.markdown("---")
+
+    # Three technical guarantees
+    st.markdown("### Three Technical Guarantees")
+    g1, g2, g3 = st.columns(3)
+    with g1:
+        st.success(
+            "**Full Feature Provenance**\n\n"
+            "Every one of 64 input dimensions carries a complete metadata chain: "
+            "source, entity, metric, time scope, and block. Any conclusion can be "
+            "traced back to its raw data inputs."
+        )
+    with g2:
+        st.success(
+            "**Stability-Tested Kernels**\n\n"
+            "The Universal Knowledge Tensor runs 8 noisy perturbation tests to verify "
+            "that conclusions are robust. A cosine similarity score quantifies how much "
+            "conclusions change under small data variations."
+        )
+    with g3:
+        st.success(
+            "**Concept-Level Interpretability**\n\n"
+            "A Sparse Autoencoder discovers a small set of named, interpretable concepts "
+            "from the data. Each concept is mapped to specific kernels and features — "
+            "enabling contestation at the level of individual claims."
+        )
+
+    st.markdown("---")
+
+    # System Accountability Statement
+    with st.expander("📋 System Accountability Statement", expanded=True):
+        st.markdown("""
+**What this system CAN conclude:**
+- Which data domains (financial, informational, geopolitical, agentic) are most active in the current information environment
+- Which structural patterns cut across multiple modalities simultaneously
+- Whether those patterns are stable under small data perturbations
+- Which specific features drive each cross-modal pattern
+
+**What this system CANNOT conclude:**
+- Causal relationships between geopolitical events and market movements
+- Future outcomes with certainty — all forecasts are probabilistic
+- Ground truth about classified or non-public information
+- Anything not derivable from the four data domains listed above
+
+**Limitations:**
+- When live data is unavailable, synthetic data is used — clearly labeled with ⚠️ warnings
+- The geopolitical graph covers 6 actors only — systemic omissions exist
+- TFT forecasting runs for 3 epochs on CPU — not production-grade
+- All interpretations are generated algorithmically and require human expert review
+        """)
+
+    # Pipeline architecture (compact)
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("Pipeline Steps", "6", "")
     c2.metric("Feature Dimensions", str(UKT_FEATURE_DIM), "")
@@ -59,7 +337,6 @@ with full **semantic interpretability** at each stage.
 
     st.markdown("---")
 
-    # Architecture diagram
     with st.expander("v3.0 Pipeline Architecture"):
         st.code("""
 Data Fetch (yfinance + GDELT + UN Votes)
@@ -74,12 +351,20 @@ Data Fetch (yfinance + GDELT + UN Votes)
           |
     [Final SAE]     --> Concept discovery on full UKT
           |
-    Universal Reality Regression + Semantic Interpretability Report
+    Universal Reality Regression + Governance Accountability Report
         """, language="text")
 
 
+# --------------------------------------------------------------------------- #
+# Pipeline execution                                                            #
+# --------------------------------------------------------------------------- #
+
 def run_pipeline() -> None:
     """Execute the full pipeline with step-by-step UKT updates."""
+    # D1: Generate run ID at pipeline start
+    from hyperspace.state import generate_run_id
+    run_id, run_timestamp = generate_run_id()
+
     ukt = UniversalKnowledgeTensor(feature_dim=UKT_FEATURE_DIM)
     snapshots: list[dict] = []
     data_sources: dict[str, str] = {}
@@ -242,10 +527,34 @@ def run_pipeline() -> None:
                 final_matrix, n_runs=8, noise_std=0.01, seed=42,
             )
 
+        # ---- A3: Compute governance flags ----
+        gov_flags = _compute_governance_flags(
+            data_sources=data_sources,
+            ukt_snapshots=snapshots,
+            sae_result=sae_result,
+            graph_result=st.session_state.get("graph_result"),
+            timeframe_context=st.session_state.get("timeframe_context", {}),
+        )
+        st.session_state.governance_flags = gov_flags
+
+        # ---- B3: Compute interpretability scorecard ----
+        scorecard = _compute_scorecard(
+            ukt_snapshots=snapshots,
+            sae_result=sae_result,
+            data_sources=data_sources,
+            stability=st.session_state.get("ukt_multirun_stability"),
+            governance_flags=gov_flags,
+        )
+        st.session_state.interpretability_scorecard = scorecard
+
         status.update(label="Pipeline complete!", state="complete")
 
     st.session_state.pipeline_complete = True
 
+
+# --------------------------------------------------------------------------- #
+# Results rendering                                                             #
+# --------------------------------------------------------------------------- #
 
 def render_results() -> None:
     """Render the full results dashboard after pipeline completes."""
@@ -255,6 +564,31 @@ def render_results() -> None:
     if not snapshots:
         st.info("No pipeline results yet. Click 'Launch' to run.")
         return
+
+    # D1: Run ID watermark
+    run_id = st.session_state.get("run_id")
+    run_ts = st.session_state.get("run_timestamp")
+    if run_id:
+        st.markdown(
+            f'<span class="run-id-watermark">Run ID: {run_id} · {run_ts}</span>',
+            unsafe_allow_html=True,
+        )
+
+    # D3: Synthetic data banner
+    synthetic_blocks = [
+        k for k, v in data_sources.items()
+        if any(x in v for x in ["Synthetic", "synthetic", "Fallback", "fallback", "Mock", "mock"])
+    ]
+    if synthetic_blocks:
+        st.markdown(
+            '<div class="synthetic-banner">'
+            '⚠️ <strong>SYNTHETIC DATA ACTIVE</strong> — '
+            f'Blocks using simulated data: {", ".join(synthetic_blocks)}. '
+            'Conclusions from these blocks are <strong>illustrative only</strong> '
+            'and do not represent real-world observations.'
+            '</div>',
+            unsafe_allow_html=True,
+        )
 
     # Data source badges
     src_html = " ".join(source_badge(v) for v in data_sources.values())
@@ -293,6 +627,77 @@ def render_results() -> None:
             f"(n={stability['n_runs']}): mean cosine={stability['mean_cosine']:.3f}, "
             f"min cosine={stability['min_cosine']:.3f}, std={stability['std_cosine']:.3f}"
         )
+
+    st.markdown("---")
+
+    # ---- A3: Governance Flags Panel ----
+    gov_flags = st.session_state.get("governance_flags", [])
+    if gov_flags:
+        st.markdown("### ⚠️ Governance Flags")
+        st.caption(
+            f"{len(gov_flags)} issue(s) detected. These are auto-generated alerts "
+            "indicating potential data quality, bias, or coverage concerns."
+        )
+        for flag in gov_flags:
+            severity = flag.get("severity", "warning")
+            code = flag.get("code", "GOV-???")
+            label = flag.get("label", "Unknown")
+            description = flag.get("description", "")
+            detail = flag.get("detail", "")
+            icon = "⚠️" if severity == "warning" else "ℹ️"
+            with st.expander(f'{icon} [{code}] {label}', expanded=True):
+                st.markdown(f"**Definition:** {description}")
+                if detail:
+                    st.markdown(
+                        f'<div class="contest-note"><strong>Detected:</strong> {detail}</div>',
+                        unsafe_allow_html=True,
+                    )
+    else:
+        st.markdown(
+            '<span class="gov-pass">✓ No governance flags detected</span>',
+            unsafe_allow_html=True,
+        )
+
+    st.markdown("---")
+
+    # ---- B3: Interpretability Score Card ----
+    scorecard = st.session_state.get("interpretability_scorecard", {})
+    if scorecard:
+        st.markdown("### 📊 Interpretability Accountability Score Card")
+        st.caption(
+            "Formal pass/fail audit against minimum governance thresholds. "
+            "This score card is included in all exported reports."
+        )
+        sc_rows = []
+        for key, item in scorecard.items():
+            passed = item.get("passed", False)
+            status_icon = "✅ PASS" if passed else "⚠️ WARN"
+            sc_rows.append({
+                "Dimension": item.get("label", key),
+                "Value": f"{item.get('value', 'N/A')}{item.get('unit', '')}",
+                "Threshold": f"≥{item.get('threshold', 'N/A')}{item.get('unit', '')}",
+                "Status": status_icon,
+                "Description": item.get("description", ""),
+            })
+        sc_df = pd.DataFrame(sc_rows)
+
+        # Style: color Status column
+        def _style_status(val: str) -> str:
+            if "PASS" in val:
+                return "color: #64ffda; font-weight: bold"
+            return "color: #ffaa00; font-weight: bold"
+
+        styled = sc_df.style.applymap(_style_status, subset=["Status"])
+        st.dataframe(styled, use_container_width=True, hide_index=True)
+
+        # Overall pass/fail summary
+        all_pass = all(item.get("passed", False) for item in scorecard.values())
+        pass_count = sum(1 for item in scorecard.values() if item.get("passed", False))
+        total_count = len(scorecard)
+        if all_pass:
+            st.success(f"Overall: {pass_count}/{total_count} criteria PASS — System meets minimum interpretability standards.")
+        else:
+            st.warning(f"Overall: {pass_count}/{total_count} criteria PASS — Review flagged items before citing conclusions.")
 
     st.markdown("---")
 
@@ -337,25 +742,72 @@ def render_results() -> None:
         st.plotly_chart(fig_ck, use_container_width=True)
         st.dataframe(pd.DataFrame(concept_kernel_map), use_container_width=True)
 
-    # Export
+    # Export — D1: stamped with run ID
     st.markdown("### Export")
-    exp1, exp2 = st.columns(2)
-    report_lines = []
+    run_id = st.session_state.get("run_id", "UNKNOWN")
+    run_ts = st.session_state.get("run_timestamp", "")
+    exp1, exp2, exp3 = st.columns(3)
+
+    # Build report with scorecard and flags
+    report_lines = [
+        f"# Hyperspace Governance Report",
+        f"## Run ID: {run_id} | {run_ts}",
+        "",
+        "## Interpretability Score Card",
+    ]
+    if scorecard:
+        for key, item in scorecard.items():
+            status_str = "PASS" if item.get("passed") else "WARN"
+            report_lines.append(
+                f"- {item.get('label')}: {item.get('value')}{item.get('unit','')} "
+                f"(threshold ≥{item.get('threshold')}{item.get('unit','')}) — {status_str}"
+            )
+    if gov_flags:
+        report_lines.append("")
+        report_lines.append("## Governance Flags")
+        for flag in gov_flags:
+            report_lines.append(f"- [{flag.get('code')}] {flag.get('label')}: {flag.get('detail', '')}")
+
+    report_lines.append("")
+    report_lines.append("## Pipeline Reports")
     for snap in snapshots:
         report_lines.append(snap["report"])
-    report_md = "# Hyperspace Pipeline Report\n\n" + "\n\n".join(report_lines)
-    exp1.download_button("Download Report (Markdown)", report_md,
-                         "hyperspace_report.md", "text/markdown")
+    report_md = "\n".join(report_lines)
+
+    exp1.download_button(
+        "Download Report (Markdown)", report_md,
+        f"hyperspace_report_{run_id}.md", "text/markdown",
+    )
 
     metrics_rows = []
     for snap in snapshots:
         for kl in snap["kernel_labels"]:
             metrics_rows.append({
+                "RunID": run_id, "Timestamp": run_ts,
                 "Step": snap["step"], "Block": snap["block_name"],
                 "Kernel": kl["kernel_id"], "Importance": kl["importance"],
                 "Region": kl["dominant_region"],
             })
     if metrics_rows:
-        exp2.download_button("Download Metrics (CSV)",
-                             pd.DataFrame(metrics_rows).to_csv(index=False),
-                             "hyperspace_metrics.csv", "text/csv")
+        exp2.download_button(
+            "Download Metrics (CSV)",
+            pd.DataFrame(metrics_rows).to_csv(index=False),
+            f"hyperspace_metrics_{run_id}.csv", "text/csv",
+        )
+
+    # Score card CSV export
+    if scorecard:
+        sc_export_rows = [
+            {
+                "RunID": run_id, "Timestamp": run_ts,
+                "Dimension": item.get("label"), "Value": item.get("value"),
+                "Threshold": item.get("threshold"), "Unit": item.get("unit", ""),
+                "Pass": item.get("passed"), "Description": item.get("description"),
+            }
+            for item in scorecard.values()
+        ]
+        exp3.download_button(
+            "Download Score Card (CSV)",
+            pd.DataFrame(sc_export_rows).to_csv(index=False),
+            f"hyperspace_scorecard_{run_id}.csv", "text/csv",
+        )

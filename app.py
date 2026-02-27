@@ -4,10 +4,11 @@ Hyperspace -- Predictive Polymath System v3.0
 Entry point for the Streamlit dashboard.
 
 Architecture:
-  - Dashboard landing page with launch button and UKT visualization
-  - 6 tabbed blocks: Finance, Clusters, Politics, Agents, Interpreter, Pipeline
+  - Governance-framed landing page with launch button and UKT visualization
+  - 7 tabbed blocks: Finance, Clusters, Politics, Agents, Interpreter, Pipeline, Counterfactual
   - Universal Knowledge Tensor (UKT) updated at every step with SVD decomposition
   - Semantic interpretability at each pipeline stage
+  - Governance features: flags, score card, provenance tracing, annotations, jurisdiction labels
 
 Run:  pip install -r requirements.txt && streamlit run app.py
 """
@@ -18,13 +19,13 @@ warnings.filterwarnings("ignore")
 
 import streamlit as st
 
-from hyperspace.config import DARK_CSS, DEFAULT_TICKERS
+from hyperspace.config import DARK_CSS, DEFAULT_TICKERS, GLOSSARY
 from hyperspace.state import init_session_state
 
 # ── Page config ──────────────────────────────────────────────────────
 st.set_page_config(
-    page_title="Hyperspace -- PPS v3.0",
-    page_icon="*",
+    page_title="Hyperspace -- AI Governance Demo",
+    page_icon="⚖",
     layout="wide",
     initial_sidebar_state="expanded",
 )
@@ -36,13 +37,26 @@ init_session_state()
 # ── Sidebar ──────────────────────────────────────────────────────────
 with st.sidebar:
     st.markdown("# Hyperspace")
-    st.markdown("### Predictive Polymath System v3.0")
-    st.markdown("---")
+    st.markdown("### AI Accountability Infrastructure")
     st.markdown(
         '<span class="concept-badge">UKT: Online</span> '
-        '<span class="concept-badge">Semantic Interpreter: Ready</span>',
+        '<span class="concept-badge">Governance: Active</span>',
         unsafe_allow_html=True,
     )
+    st.markdown("---")
+
+    # B1: Policy Language Mode toggle
+    policy_mode = st.toggle(
+        "🗂️ Governance Language Mode",
+        value=st.session_state.get("policy_language_mode", False),
+        key="policy_language_mode",
+        help=(
+            "Switch kernel narratives from technical notation (loading values, "
+            "feature indices) to plain-English policy briefing language. "
+            "Designed for legal, diplomatic, and civil society delegates."
+        ),
+    )
+
     st.markdown("---")
 
     # Ticker selection (shared across tabs)
@@ -54,21 +68,71 @@ with st.sidebar:
     )
 
     st.markdown("---")
-    st.markdown("**v3.0 Architecture**")
-    st.markdown(
-        "Hierarchical JEPA semantics -- Realist geopolitical constraints -- "
-        "Lifelong kernel reuse -- Multi-horizon calibration"
-    )
-    st.caption("Hyperspace Prototype -- February 2026")
 
-    # Show data source status if pipeline has run
+    # D1: Run ID display (post-pipeline)
+    run_id = st.session_state.get("run_id")
+    run_ts = st.session_state.get("run_timestamp")
+    if run_id:
+        st.markdown("**Run Identifier**")
+        st.markdown(
+            f'<span class="run-id-watermark">ID: {run_id}</span>  \n'
+            f'<span class="run-id-watermark">{run_ts}</span>',
+            unsafe_allow_html=True,
+        )
+        st.markdown("---")
+
+    # Data source status + C2 jurisdiction badges (post-pipeline)
     data_sources = st.session_state.get("data_sources", {})
     if data_sources:
-        st.markdown("---")
         st.markdown("**Data Sources**")
         for block, src in data_sources.items():
             icon = "+" if "Live" in src or "Offline" in src else "!"
             st.caption(f"[{icon}] {block}: {src}")
+
+        # C2: Jurisdiction badges
+        from hyperspace.pages.governance import render_jurisdiction_badges
+        render_jurisdiction_badges(data_sources)
+
+        # Governance flags summary in sidebar
+        gov_flags = st.session_state.get("governance_flags", [])
+        if gov_flags:
+            st.markdown(
+                f'<span class="gov-flag">⚠ {len(gov_flags)} governance flag(s)</span>',
+                unsafe_allow_html=True,
+            )
+        else:
+            st.markdown(
+                '<span class="gov-pass">✓ No flags</span>',
+                unsafe_allow_html=True,
+            )
+
+        st.markdown("---")
+
+    # A2: Provenance Trace Panel (post-pipeline)
+    snapshots = st.session_state.get("ukt_snapshots", [])
+    if snapshots:
+        st.markdown("**🔍 Feature Provenance Trace**")
+        from hyperspace.pages.governance import render_provenance_panel
+        render_provenance_panel(snapshots)
+        st.markdown("---")
+
+    # D2: Glossary
+    with st.expander("📖 Glossary", expanded=False):
+        st.markdown(
+            "Plain-English definitions for all technical terms used in this system. "
+            "Intended for legal, policy, and diplomatic delegates."
+        )
+        for term, definition in GLOSSARY.items():
+            st.markdown(f"**{term}**")
+            st.caption(definition)
+            st.markdown("")
+
+    st.markdown("---")
+    st.markdown("**v3.0 Architecture**")
+    st.markdown(
+        "Interpretability · Traceability · Contestability as first-class requirements"
+    )
+    st.caption("UN Global Dialogue on AI Governance · February 2026")
 
 # ── Main area: Dashboard or Tabs ─────────────────────────────────────
 if not st.session_state.pipeline_launched:
@@ -99,6 +163,7 @@ else:
         agents_tab,
         interpreter_tab,
         pipeline_tab,
+        counterfactual_tab,
     )
 
     # Run pipeline if not yet complete
@@ -118,6 +183,7 @@ else:
         "Agentic Sim",
         "Semantic Interpreter",
         "Full Pipeline",
+        "⚖ Counterfactual",
     ])
 
     with tabs[0]:
@@ -132,6 +198,8 @@ else:
         interpreter_tab.render()
     with tabs[5]:
         pipeline_tab.render()
+    with tabs[6]:
+        counterfactual_tab.render()
 
     # Reset button
     st.markdown("---")
