@@ -1,6 +1,8 @@
 """Full Pipeline tab: end-to-end orchestration with UKT evolution display."""
 from __future__ import annotations
 
+from datetime import datetime
+
 import pandas as pd
 import streamlit as st
 
@@ -138,7 +140,7 @@ def render() -> None:
     report_lines = []
     for snap in snapshots:
         report_lines.append(snap["report"])
-    report_md = f"# Hyperspace Pipeline Report\n## Date: 2026-02-25\n\n" + "\n\n".join(report_lines)
+    report_md = f"# Hyperspace Pipeline Report\n## Date: {datetime.now().date()}\n\n" + "\n\n".join(report_lines)
     exp1.download_button("Download Report (Markdown)", report_md,
                          "hyperspace_report.md", "text/markdown")
 

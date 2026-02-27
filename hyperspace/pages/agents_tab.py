@@ -42,14 +42,15 @@ def render() -> None:
                 _, agreement, _ = get_political_data()
 
                 agents = initialize_agents_from_data(graph_analysis, agreement)
-                agents, log_entries, features = run_simulation(
+                agents, log_entries, features, feature_meta = run_simulation(
                     agents, steps=sim_steps,
                     resource_flow=resource_flow,
                     alliance_fluidity=alliance_fluidity,
                     shock_prob=shock_prob,
                 )
                 sim_result = dict(
-                    agents=agents, log=log_entries, features_for_ukt=features,
+                    agents=agents, log=log_entries,
+                    features_for_ukt=features, feature_meta=feature_meta,
                 )
                 st.session_state.sim_result = sim_result
 
@@ -121,4 +122,4 @@ def render() -> None:
             if "features_for_ukt" in sim_result:
                 with st.expander("UKT Contribution (Agent Feature Vector)"):
                     fv = sim_result["features_for_ukt"]
-                    st.bar_chart(pd.DataFrame(fv, columns=["Value"]))
+                    st.bar_chart(pd.DataFrame({"Value": fv}))

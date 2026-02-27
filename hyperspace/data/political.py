@@ -23,7 +23,7 @@ KEY_COUNTRIES = [
 ]
 
 
-@st.cache_resource(ttl=86400, show_spinner=False)
+@st.cache_data(ttl=86400, show_spinner=False)
 def fetch_un_votes(min_year: int = 2000, max_year: int | None = None) -> pd.DataFrame | None:
     """Fetch UN General Assembly voting data. Returns None on failure.
 

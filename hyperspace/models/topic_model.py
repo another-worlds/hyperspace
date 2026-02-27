@@ -64,19 +64,35 @@ def fit_topic_model(docs_key: str, docs: list[str] | None = None, data_source: s
         except Exception:
             pass
 
-        # Build UKT feature vector from topic distribution statistics
+        # Build UKT feature vector from topic distribution statistics.
+        # Only the semantic-embedding region (indices 16-31) is populated here.
+        # The structural-centrality region (32-47) is reserved exclusively for
+        # the graph engine block to preserve UKT semantic coherence.
         features_for_ukt = np.zeros(UKT_FEATURE_DIM)
         topic_counts = pd.Series(topics).value_counts().values.astype(float)
         # Normalize topic distribution
         if len(topic_counts) > 0:
             topic_counts = topic_counts / (topic_counts.sum() + 1e-8)
-        # Place in semantic-embedding region (indices 16-31)
+        # Place topic shares in semantic-embedding region (indices 16-31)
         features_for_ukt[16:16 + min(16, len(topic_counts))] = topic_counts[:16]
-        # Add topic embedding means if available
+        # If topic embeddings are available, summarize them into the remaining
+        # semantic slots (24-31) using the L2 norm of the mean embedding — a
+        # scalar summary that stays within the semantic region and does not
+        # collide with the structural-centrality region (32-47).
         if topic_embeddings is not None and len(topic_embeddings) > 0:
             te_mean = topic_embeddings.mean(axis=0)
-            n_fill = min(16, len(te_mean))
-            features_for_ukt[32:32 + n_fill] = te_mean[:n_fill]
+            # Scalar statistics: norm, std, min, max of mean embedding vector
+            te_stats = np.array([
+                float(np.linalg.norm(te_mean)),
+                float(np.std(te_mean)),
+                float(np.min(te_mean)),
+                float(np.max(te_mean)),
+                float(np.mean(np.abs(te_mean))),
+                float(np.percentile(te_mean, 25)),
+                float(np.percentile(te_mean, 75)),
+                float(np.linalg.norm(te_mean) / (np.std(te_mean) + 1e-8)),
+            ])
+            features_for_ukt[24:32] = te_stats
 
         feature_meta = _topic_feature_meta(model, topics)
 
