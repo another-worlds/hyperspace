@@ -34,6 +34,48 @@ div[data-testid="stMetric"] div[data-testid="stMetricValue"] {
 .source-badge.fallback {
     background: #4a2020; color: #ff6b6b; border: 1px solid #6a2d2d;
 }
+.gov-flag {
+    display: inline-block; padding: 3px 10px; margin: 3px 2px;
+    border-radius: 8px; font-size: 0.78em; font-weight: 700;
+    background: #4a2000; color: #ffaa00; border: 1px solid #aa6600;
+    font-family: 'Fira Code', monospace;
+}
+.gov-pass {
+    display: inline-block; padding: 3px 10px; margin: 3px 2px;
+    border-radius: 8px; font-size: 0.78em; font-weight: 700;
+    background: #0a2a1a; color: #64ffda; border: 1px solid #2d6a4f;
+    font-family: 'Fira Code', monospace;
+}
+.jurisdiction-badge {
+    display: inline-block; padding: 2px 8px; margin: 2px;
+    border-radius: 10px; font-size: 0.72em; font-weight: 600;
+    background: #1a1a3e; color: #a0aaff; border: 1px solid #3040a0;
+}
+.synthetic-banner {
+    background: linear-gradient(90deg, #2a1500, #3a2000);
+    border: 1px solid #aa5500; border-radius: 8px;
+    padding: 10px 16px; margin: 8px 0; color: #ffcc88;
+    font-weight: 600; font-size: 0.92em;
+}
+.governance-header {
+    background: linear-gradient(135deg, #0a1628 0%, #0f2040 100%);
+    border: 1px solid #1a4080; border-radius: 12px;
+    padding: 20px 24px; margin: 8px 0;
+}
+.run-id-watermark {
+    font-family: 'Fira Code', monospace; font-size: 0.70em;
+    color: #445566; padding: 2px 6px;
+}
+.contest-note {
+    background: #0d1a2e; border-left: 3px solid #ffaa00;
+    padding: 8px 12px; margin: 4px 0; font-size: 0.84em;
+    color: #c9d1d9; border-radius: 0 6px 6px 0;
+}
+.annotation-tag {
+    display: inline-block; padding: 2px 8px; margin: 2px;
+    border-radius: 10px; font-size: 0.72em; font-weight: 600;
+    background: #2a1a3e; color: #cc99ff; border: 1px solid #6040a0;
+}
 </style>
 """
 
@@ -213,5 +255,192 @@ REGION_DESCRIPTIONS: dict[str, str] = {
         "eigenvalue spectrum of the alliance matrix captures structural polarization: "
         "a single dominant eigenvalue means one cohesive bloc, multiple comparable "
         "eigenvalues indicate a multipolar world."
+    ),
+}
+
+# --------------------------------------------------------------------------- #
+# Governance: Data source jurisdiction labels                                  #
+# --------------------------------------------------------------------------- #
+DATA_SOURCE_JURISDICTIONS: dict[str, dict] = {
+    "yfinance":            dict(tag="US-REGULATED",    color="#3060c0", note="SEC-regulated market data"),
+    "GDELT":               dict(tag="OPEN-PUBLIC",     color="#208040", note="Open-access global event database"),
+    "Harvard Dataverse":   dict(tag="ACADEMIC-LICENSED", color="#806020", note="Academic open-data license (CC0/CC-BY)"),
+    "synthetic":           dict(tag="SYNTHETIC",       color="#802020", note="Machine-generated data — not real-world observations"),
+    "fallback":            dict(tag="SYNTHETIC",       color="#802020", note="Machine-generated fallback — not real-world observations"),
+}
+
+# --------------------------------------------------------------------------- #
+# Governance: interpretability score card thresholds                          #
+# --------------------------------------------------------------------------- #
+SCORECARD_THRESHOLDS: dict[str, dict] = {
+    "feature_traceability": dict(
+        label="Feature Traceability",
+        unit="/ 64",
+        threshold=57,       # ≥90% of 64 features
+        description="Features with semantic metadata labels attached.",
+    ),
+    "kernel_stability": dict(
+        label="Kernel Stability (cosine)",
+        unit="",
+        threshold=0.75,
+        description="Mean cosine similarity of reality regression across 8 noisy runs. ≥0.75 = stable.",
+    ),
+    "concept_activation_rate": dict(
+        label="Concept Activation Rate",
+        unit="%",
+        threshold=30.0,
+        description="Percentage of SAE concepts with above-mean activation. ≥30% = adequate concept coverage.",
+    ),
+    "data_source_diversity": dict(
+        label="Live Data Sources",
+        unit="/ 4",
+        threshold=2,
+        description="Number of pipeline blocks using live (non-synthetic) data. ≥2 = adequate real-world grounding.",
+    ),
+    "governance_flags": dict(
+        label="Governance Flags Active",
+        unit="",
+        threshold=0,        # 0 = PASS; any flag = WARN
+        description="Auto-detected data quality, bias, or coverage issues. 0 = no issues detected.",
+    ),
+}
+
+# --------------------------------------------------------------------------- #
+# Governance: Policy language mode — kernel label replacements                #
+# Maps dominant_region + dominant_block combinations to policy-friendly names #
+# --------------------------------------------------------------------------- #
+POLICY_KERNEL_NAMES: dict[str, str] = {
+    "temporal-pattern":      "Market Momentum Indicator",
+    "semantic-embedding":    "Information Landscape Signal",
+    "structural-centrality": "Alliance Network Structure",
+    "dynamic-agent":         "Geopolitical Power Distribution",
+}
+
+POLICY_CONFIDENCE_BANDS: list[tuple[float, str, str]] = [
+    # (threshold, label, explanation)
+    (0.40, "Strong signal",   "This factor explains a dominant share of the observed variance across all modalities."),
+    (0.25, "Moderate signal", "This factor accounts for a meaningful but not dominant share of variance."),
+    (0.10, "Weak signal",     "This factor explains a minor portion of variance; treat with caution."),
+    (0.00, "Negligible",      "This factor explains very little variance and may reflect noise."),
+]
+
+# --------------------------------------------------------------------------- #
+# Governance: Glossary definitions for non-technical delegates                #
+# --------------------------------------------------------------------------- #
+GLOSSARY: dict[str, str] = {
+    "Universal Knowledge Tensor (UKT)": (
+        "A unified mathematical structure that combines data from multiple sources "
+        "(financial markets, news, geopolitical networks, agent simulations) into a "
+        "single comparable format. Think of it as a structured table where each row "
+        "is a data domain and each column is a measurable dimension."
+    ),
+    "SVD Kernel": (
+        "A statistically discovered 'theme' or pattern that cuts across multiple data "
+        "domains simultaneously. Each kernel explains a portion of the total variation "
+        "observed. Kernels are ranked by how much variation they explain (importance %)."
+    ),
+    "Reality Regression": (
+        "A weighted summary vector that combines all kernels into a single direction "
+        "representing the system's overall 'reading' of the current state. It is the "
+        "system's best approximation of what is happening across all data domains at once."
+    ),
+    "Sparse Autoencoder (SAE)": (
+        "A machine learning tool that compresses data into a small number of 'concepts' "
+        "and then reconstructs it. 'Sparse' means most concepts are inactive for any "
+        "given input — only the relevant ones activate. This makes the internal reasoning "
+        "more human-interpretable than a standard neural network."
+    ),
+    "Feature Traceability": (
+        "The degree to which every number fed into the system can be traced back to its "
+        "original source, collection method, time period, and entity. Full traceability "
+        "means any conclusion can be audited back to its raw data inputs."
+    ),
+    "Reconstruction Error": (
+        "How much information is lost when the system compresses data into kernels and "
+        "then reconstructs it. Lower is better. High reconstruction error means the "
+        "kernel structure does not fully capture the data — conclusions are less reliable."
+    ),
+    "Kernel Stability": (
+        "A test of how much the system's conclusions change when small random noise is "
+        "added to the input data. High stability (cosine similarity ≥ 0.75) means the "
+        "conclusions are robust. Low stability means conclusions are sensitive to minor "
+        "data variations — a governance risk."
+    ),
+    "Counterfactual Analysis": (
+        "A method of testing AI conclusions by asking 'What would the system have "
+        "concluded if one data source were removed or altered?' This is a core technique "
+        "for auditing AI systems and detecting over-reliance on any single data stream."
+    ),
+    "BERTopic": (
+        "A multilingual topic modelling algorithm that groups documents (news articles, "
+        "reports) into thematic clusters automatically. It uses neural sentence embeddings "
+        "to ensure semantically similar texts are grouped together regardless of language."
+    ),
+    "Temporal Fusion Transformer (TFT)": (
+        "A neural network architecture designed for time-series forecasting. It uses "
+        "'attention' mechanisms to learn which historical time periods are most relevant "
+        "for predicting the future. The attention weights are interpretable."
+    ),
+    "Governance Flag": (
+        "An automatically generated warning raised when the system detects a potential "
+        "data quality issue, analytical bias, or coverage gap. Flags are machine-readable "
+        "(coded GOV-001 through GOV-005) and included in all exported reports."
+    ),
+    "Provenance Chain": (
+        "The complete documented history of a single data point: what it measures, "
+        "where it came from, when it was collected, and how it influenced the final "
+        "conclusion. Provenance chains enable due process — any claim can be challenged "
+        "by examining its evidence chain."
+    ),
+}
+
+# --------------------------------------------------------------------------- #
+# Governance: Flag code definitions                                             #
+# --------------------------------------------------------------------------- #
+GOVERNANCE_FLAG_CODES: dict[str, dict] = {
+    "GOV-001": dict(
+        label="Modality Imbalance",
+        description=(
+            "More than 50% of active features originate from a single data block. "
+            "Conclusions may over-represent one modality (e.g., financial data) "
+            "at the expense of others (geopolitical, informational)."
+        ),
+        severity="warning",
+    ),
+    "GOV-002": dict(
+        label="Temporal Coverage Gap",
+        description=(
+            "Finance and news data cover different date ranges. Cross-modal conclusions "
+            "drawn from these sources may reflect different time periods, reducing "
+            "causal coherence."
+        ),
+        severity="warning",
+    ),
+    "GOV-003": dict(
+        label="Geopolitical Centrality Skew",
+        description=(
+            "One geopolitical actor's centrality score exceeds 2× the network average. "
+            "The structural analysis may disproportionately reflect that actor's "
+            "position, potentially introducing systemic bias."
+        ),
+        severity="warning",
+    ),
+    "GOV-004": dict(
+        label="Low Concept Coverage",
+        description=(
+            "More than 60% of SAE concepts are dormant (below-mean activation). "
+            "The system found limited interpretable structure in the data. "
+            "Conclusions should be treated as low-confidence."
+        ),
+        severity="warning",
+    ),
+    "GOV-005": dict(
+        label="Synthetic Data Active",
+        description=(
+            "One or more pipeline blocks are using machine-generated synthetic data "
+            "instead of live observations. All conclusions derived from synthetic "
+            "inputs are illustrative only and must not be treated as empirical findings."
+        ),
+        severity="info",
     ),
 }

@@ -15,14 +15,18 @@ from hyperspace.viz.charts import forecast_chart, source_badge
 
 def render() -> None:
     """Render the Full Pipeline tab."""
-    st.markdown("## Hyperspace Pipeline -- End-to-End Cycle")
+    st.markdown("## Hyperspace Pipeline — Governance Accountability View")
     st.markdown(
-        "Full orchestration: Finance -> Clustering -> Graph -> Agentic Sim -> "
-        "Semantic Interpretation. Each step updates the Universal Knowledge Tensor."
+        "End-to-end cycle: Finance → Clustering → Graph → Agentic Sim → "
+        "Semantic Interpretation. Each step updates the Universal Knowledge Tensor. "
+        "All conclusions are traceable, stability-tested, and contestable."
     )
 
     snapshots = st.session_state.get("ukt_snapshots", [])
     data_sources = st.session_state.get("data_sources", {})
+    run_id = st.session_state.get("run_id", "UNKNOWN")
+    run_ts = st.session_state.get("run_timestamp", "")
+    policy_mode = st.session_state.get("policy_language_mode", False)
 
     if not snapshots:
         st.info(
@@ -31,12 +35,42 @@ def render() -> None:
         )
         return
 
+    # D1: Run watermark
+    if run_id and run_id != "UNKNOWN":
+        st.markdown(
+            f'<span class="run-id-watermark">Run ID: {run_id} · {run_ts}</span>',
+            unsafe_allow_html=True,
+        )
+
+    # B1: Policy mode banner
+    if policy_mode:
+        st.info(
+            "🗂️ **Governance Language Mode is active.** "
+            "Visit the Semantic Interpreter tab to see policy-language kernel briefings."
+        )
+
     # Data source summary
     src_html = " ".join(source_badge(v) for v in data_sources.values())
     st.markdown(f"**Data Sources**: {src_html}", unsafe_allow_html=True)
     st.success("Hyperspace cycle complete. All blocks synchronized.")
 
     st.markdown("---")
+
+    # B3: Compact scorecard summary
+    scorecard = st.session_state.get("interpretability_scorecard", {})
+    if scorecard:
+        st.markdown("### Interpretability Score Card Summary")
+        sc_cols = st.columns(len(scorecard))
+        for col, (key, item) in zip(sc_cols, scorecard.items()):
+            passed = item.get("passed", False)
+            status_icon = "✅" if passed else "⚠️"
+            col.metric(
+                item.get("label", key),
+                f"{item.get('value', 'N/A')}{item.get('unit', '')}",
+                f"{status_icon} {'PASS' if passed else 'WARN'}",
+            )
+        st.markdown("---")
+
     st.markdown("### Unified Dashboard Summary")
 
     # Metrics row
@@ -85,12 +119,15 @@ def render() -> None:
             q = finance_result["quantiles"]
             if len(q.shape) == 3:
                 q_mean = q.mean(axis=0)
-                x_ax = list(range(q_mean.shape[0]))
-                fig = forecast_chart(
-                    x_ax, q_mean[:, 0], q_mean[:, q_mean.shape[1] // 2],
-                    q_mean[:, -1], title="Finance: TFT Forecast",
-                )
-                st.plotly_chart(fig, use_container_width=True)
+                if q_mean.shape[0] == 0 or q_mean.shape[1] < 2:
+                    st.warning("TFT quantile output has insufficient shape for forecast chart.")
+                else:
+                    x_ax = list(range(q_mean.shape[0]))
+                    fig = forecast_chart(
+                        x_ax, q_mean[:, 0], q_mean[:, q_mean.shape[1] // 2],
+                        q_mean[:, -1], title="Finance: TFT Forecast",
+                    )
+                    st.plotly_chart(fig, use_container_width=True)
         else:
             mock = mock_forecast(20)
             x_ax = list(range(20))
@@ -134,25 +171,98 @@ def render() -> None:
         fig_km.update_layout(height=300)
         st.plotly_chart(fig_km, use_container_width=True)
 
-    # Export
+    # C1: Annotation summary
+    annotations = st.session_state.get("stakeholder_annotations", [])
+    if annotations:
+        st.markdown("---")
+        st.markdown(f"### Stakeholder Annotations ({len(annotations)})")
+        from hyperspace.pages.governance import render_annotations_summary
+        render_annotations_summary()
+
+    # Export — D1: stamped with run ID
+    st.markdown("---")
     st.markdown("### Export")
-    exp1, exp2 = st.columns(2)
-    report_lines = []
+    exp1, exp2, exp3 = st.columns(3)
+
+    # Build report
+    report_lines = [
+        f"# Hyperspace Governance Report",
+        f"## Run ID: {run_id} | {run_ts}",
+        "",
+    ]
+
+    # Include scorecard in report
+    if scorecard:
+        report_lines.append("## Interpretability Score Card")
+        for key, item in scorecard.items():
+            status_str = "PASS" if item.get("passed") else "WARN"
+            report_lines.append(
+                f"- {item.get('label')}: {item.get('value')}{item.get('unit','')} "
+                f"(≥{item.get('threshold')}{item.get('unit','')}) — {status_str}"
+            )
+        report_lines.append("")
+
+    # Include governance flags
+    gov_flags = st.session_state.get("governance_flags", [])
+    if gov_flags:
+        report_lines.append("## Governance Flags")
+        for flag in gov_flags:
+            report_lines.append(
+                f"- [{flag.get('code')}] {flag.get('label')}: {flag.get('detail', '')}"
+            )
+        report_lines.append("")
+
+    report_lines.append("## Pipeline Reports")
     for snap in snapshots:
         report_lines.append(snap["report"])
-    report_md = f"# Hyperspace Pipeline Report\n## Date: {datetime.now().date()}\n\n" + "\n\n".join(report_lines)
-    exp1.download_button("Download Report (Markdown)", report_md,
-                         "hyperspace_report.md", "text/markdown")
+
+    # Include annotations
+    if annotations:
+        report_lines.append("")
+        report_lines.append("## Stakeholder Annotations")
+        for ann in annotations:
+            report_lines.append(
+                f"- [{ann.get('role')}] {ann.get('timestamp', '')}: {ann.get('text', '')}"
+            )
+
+    report_md = "\n".join(report_lines)
+    exp1.download_button(
+        "Download Report (Markdown)", report_md,
+        f"hyperspace_report_{run_id}.md", "text/markdown",
+        key="pipeline_download_report",
+    )
 
     metrics_rows = []
     for snap in snapshots:
         for kl in snap["kernel_labels"]:
             metrics_rows.append({
+                "RunID": run_id, "Timestamp": run_ts,
                 "Step": snap["step"], "Block": snap["block_name"],
                 "Kernel": kl["kernel_id"], "Importance": kl["importance"],
                 "Region": kl["dominant_region"],
             })
     if metrics_rows:
-        exp2.download_button("Download Metrics (CSV)",
-                             pd.DataFrame(metrics_rows).to_csv(index=False),
-                             "hyperspace_metrics.csv", "text/csv")
+        exp2.download_button(
+            "Download Metrics (CSV)",
+            pd.DataFrame(metrics_rows).to_csv(index=False),
+            f"hyperspace_metrics_{run_id}.csv", "text/csv",
+            key="pipeline_download_metrics",
+        )
+
+    # Scorecard CSV
+    if scorecard:
+        sc_export_rows = [
+            {
+                "RunID": run_id, "Timestamp": run_ts,
+                "Dimension": item.get("label"), "Value": item.get("value"),
+                "Threshold": item.get("threshold"), "Unit": item.get("unit", ""),
+                "Pass": item.get("passed"), "Description": item.get("description"),
+            }
+            for item in scorecard.values()
+        ]
+        exp3.download_button(
+            "Download Score Card (CSV)",
+            pd.DataFrame(sc_export_rows).to_csv(index=False),
+            f"hyperspace_scorecard_{run_id}.csv", "text/csv",
+            key="pipeline_download_scorecard",
+        )

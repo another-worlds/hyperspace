@@ -49,12 +49,18 @@ def render() -> None:
             # Display topics
             if "model" in cluster_result and cluster_result["model"] is not None:
                 model = cluster_result["model"]
-                topics = cluster_result["topics"]
+                topics = cluster_result.get("topics", [])
+                if not topics:
+                    st.warning("No topic assignments available.")
+                    return
                 docs = cluster_result.get("docs", [])
 
                 st.markdown("### Discovered Topics")
-                topic_info = model.get_topic_info()
-                st.dataframe(topic_info.head(15), use_container_width=True)
+                try:
+                    topic_info = model.get_topic_info()
+                    st.dataframe(topic_info.head(15), use_container_width=True)
+                except Exception as e:
+                    st.warning(f"Could not display topic info: {e}")
 
                 # Topic distribution
                 st.markdown("### Topic Distribution")

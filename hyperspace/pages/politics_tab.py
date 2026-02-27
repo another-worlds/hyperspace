@@ -43,9 +43,12 @@ def render() -> None:
             src = graph_result.get("data_source", "unknown")
             st.markdown(f"**Data source**: {source_badge(src)}", unsafe_allow_html=True)
 
-            G = graph_result["G"]
-            pos = graph_result["pos"]
-            analysis = graph_result["analysis"]
+            G = graph_result.get("G")
+            pos = graph_result.get("pos")
+            analysis = graph_result.get("analysis", {})
+            if G is None or not analysis:
+                st.warning("Graph data incomplete. Try rebuilding the graph.")
+                return
 
             # Graph visualization
             st.markdown("### Geopolitical Graph")
@@ -54,12 +57,17 @@ def render() -> None:
 
             # Centrality metrics
             st.markdown("### Centrality Analysis")
+            node_names = analysis.get("node_names", [])
+            degree_cent = analysis.get("degree_centrality", {})
+            betweenness = analysis.get("betweenness", {})
+            eigenvector = analysis.get("eigenvector", {})
+            pagerank = analysis.get("pagerank", {})
             cent_df = pd.DataFrame({
-                "Node": analysis["node_names"],
-                "Degree": [analysis["degree_centrality"][n] for n in analysis["node_names"]],
-                "Betweenness": [analysis["betweenness"][n] for n in analysis["node_names"]],
-                "Eigenvector": [analysis["eigenvector"][n] for n in analysis["node_names"]],
-                "PageRank": [analysis["pagerank"][n] for n in analysis["node_names"]],
+                "Node": node_names,
+                "Degree": [degree_cent.get(n, 0.0) for n in node_names],
+                "Betweenness": [betweenness.get(n, 0.0) for n in node_names],
+                "Eigenvector": [eigenvector.get(n, 0.0) for n in node_names],
+                "PageRank": [pagerank.get(n, 0.0) for n in node_names],
             })
             st.dataframe(cent_df.style.format({
                 "Degree": "{:.3f}", "Betweenness": "{:.3f}",
@@ -77,13 +85,14 @@ def render() -> None:
 
             # Graph metrics
             c1, c2, c3 = st.columns(3)
-            c1.metric("Density", f"{analysis['density']:.3f}")
-            c2.metric("Avg Clustering", f"{analysis['avg_clustering']:.3f}")
-            c3.metric("Communities", str(len(analysis["communities"])))
+            c1.metric("Density", f"{analysis.get('density', 0.0):.3f}")
+            c2.metric("Avg Clustering", f"{analysis.get('avg_clustering', 0.0):.3f}")
+            communities = analysis.get("communities", [])
+            c3.metric("Communities", str(len(communities)))
 
             # Community membership
             with st.expander("Community Detection Results"):
-                for i, comm in enumerate(analysis["communities"]):
+                for i, comm in enumerate(communities):
                     st.markdown(f"**Community {i + 1}**: {', '.join(comm)}")
 
             # Voting agreement heatmap (if available)

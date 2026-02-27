@@ -1,6 +1,8 @@
 """Session state management and pipeline progress tracking."""
 from __future__ import annotations
 
+import uuid
+from datetime import datetime
 from typing import Any
 
 import streamlit as st
@@ -32,6 +34,33 @@ def init_session_state() -> None:
         raw_ohlcv=None,
         raw_docs=None,
         raw_un_votes=None,
+        # Stability result (written by run_pipeline, cleared by reset)
+        ukt_multirun_stability=None,
+        # Timeframe context (written by run_pipeline, cleared by reset)
+        timeframe_context={},
+        # ------------------------------------------------------------------ #
+        # Governance features
+        # ------------------------------------------------------------------ #
+        # D1: Unique run identifier + timestamp for non-repudiation
+        run_id=None,
+        run_timestamp=None,
+        # A3: Auto-detected governance flags list[dict]
+        # Each dict: {code, label, description, severity}
+        governance_flags=[],
+        # B3: Interpretability score card dict
+        # Keys: feature_traceability, kernel_stability, concept_activation_rate,
+        #       data_source_diversity, governance_flags_count
+        interpretability_scorecard={},
+        # B1: Policy language mode toggle
+        policy_language_mode=False,
+        # A1: Per-kernel contest annotations dict[kernel_id -> str]
+        kernel_annotations={},
+        # C1: Multi-stakeholder annotations list[dict]
+        # Each dict: {kernel_id, role, text, timestamp}
+        stakeholder_annotations=[],
+        # B2: Counterfactual state
+        counterfactual_result=None,
+        counterfactual_removed_block=None,
     )
     for k, v in defaults.items():
         if k not in st.session_state:
@@ -54,6 +83,19 @@ def step_status(step_name: str) -> str:
     return info.get("status", "pending")
 
 
+def generate_run_id() -> tuple[str, str]:
+    """Generate a new unique run ID and ISO timestamp string.
+
+    Returns:
+        (run_id, timestamp_str) — both stored in session state.
+    """
+    run_id = str(uuid.uuid4())[:8].upper()
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M UTC")
+    st.session_state.run_id = run_id
+    st.session_state.run_timestamp = timestamp
+    return run_id, timestamp
+
+
 def reset_pipeline() -> None:
     """Reset pipeline state for a fresh run."""
     st.session_state.pipeline_launched = False
@@ -68,6 +110,19 @@ def reset_pipeline() -> None:
     st.session_state.interpreter_result = None
     st.session_state.sae_result = None
     st.session_state.concept_kernel_map = []
+    st.session_state.raw_ohlcv = None
     st.session_state.raw_docs = None
     st.session_state.raw_un_votes = None
     st.session_state.data_sources = {}
+    st.session_state.ukt_multirun_stability = None
+    st.session_state.timeframe_context = {}
+    # Reset governance state
+    st.session_state.run_id = None
+    st.session_state.run_timestamp = None
+    st.session_state.governance_flags = []
+    st.session_state.interpretability_scorecard = {}
+    st.session_state.kernel_annotations = {}
+    st.session_state.stakeholder_annotations = []
+    st.session_state.counterfactual_result = None
+    st.session_state.counterfactual_removed_block = None
+    # Note: policy_language_mode persists across resets (user preference)
