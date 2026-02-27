@@ -80,13 +80,13 @@ def _compute_governance_flags(
 
     # GOV-003: Geopolitical centrality skew
     if graph_result and "analysis" in graph_result:
-        centrality = graph_result["analysis"].get("centrality", {})
-        degree_vals = [v.get("degree", 0) for v in centrality.values()]
+        degree_cent = graph_result["analysis"].get("degree_centrality", {})
+        degree_vals = list(degree_cent.values())
         if len(degree_vals) > 1:
             mean_deg = float(np.mean(degree_vals))
             max_deg = float(max(degree_vals))
             if mean_deg > 0 and max_deg > 2.0 * mean_deg:
-                dominant_node = max(centrality, key=lambda n: centrality[n].get("degree", 0))
+                dominant_node = max(degree_cent, key=degree_cent.get)
                 flag = GOVERNANCE_FLAG_CODES["GOV-003"].copy()
                 flag["code"] = "GOV-003"
                 flag["detail"] = (
@@ -376,7 +376,7 @@ def run_pipeline() -> None:
         from hyperspace.data.news import get_text_data
         from hyperspace.data.political import get_political_data
 
-        tickers = st.session_state.get("tickers", DEFAULT_TICKERS)
+        tickers = st.session_state.get("tickers", DEFAULT_TICKERS) or DEFAULT_TICKERS
         ohlcv_df, fin_src = get_ohlcv(tickers)
         finance_start = None
         finance_end = None
@@ -432,7 +432,7 @@ def run_pipeline() -> None:
         )
         snapshots.append(snap)
         st.session_state.finance_result = tft_result
-        st.write(f"Finance: {snap['report'].split(chr(10))[0]}")
+        st.write(f"Finance: {(snap.get('report') or '').split(chr(10))[0]}")
 
         # ---- Step 3: Cluster Block ----
         st.write("Fitting BERTopic on real documents...")
@@ -456,7 +456,7 @@ def run_pipeline() -> None:
         )
         snapshots.append(snap)
         st.session_state.cluster_result = cluster_result
-        st.write(f"Clusters: {snap['report'].split(chr(10))[0]}")
+        st.write(f"Clusters: {(snap.get('report') or '').split(chr(10))[0]}")
 
         # ---- Step 4: Graph Block ----
         st.write("Analyzing geopolitical graph + centrality...")
@@ -478,7 +478,7 @@ def run_pipeline() -> None:
             feature_meta=graph_analysis.get("feature_meta", {}),
             data_source=pol_src,
         )
-        st.write(f"Graph: {snap['report'].split(chr(10))[0]}")
+        st.write(f"Graph: {(snap.get('report') or '').split(chr(10))[0]}")
 
         # ---- Step 5: Agent Simulation ----
         st.write("Running agent simulation (50 steps)...")
@@ -500,7 +500,7 @@ def run_pipeline() -> None:
             features_for_ukt=agent_features,
             feature_meta=agent_feature_meta,
         )
-        st.write(f"Agents: {snap['report'].split(chr(10))[0]}")
+        st.write(f"Agents: {(snap.get('report') or '').split(chr(10))[0]}")
 
         # ---- Step 6: Final Interpretation ----
         st.write("Running sparse autoencoder for concept discovery...")
@@ -548,8 +548,7 @@ def run_pipeline() -> None:
         st.session_state.interpretability_scorecard = scorecard
 
         status.update(label="Pipeline complete!", state="complete")
-
-    st.session_state.pipeline_complete = True
+        st.session_state.pipeline_complete = True
 
 
 # --------------------------------------------------------------------------- #
@@ -607,7 +606,7 @@ def render_results() -> None:
 
     graph_result = st.session_state.get("graph_result", {})
     if isinstance(graph_result, dict) and "analysis" in graph_result:
-        density = graph_result["analysis"]["density"]
+        density = graph_result["analysis"].get("density", 0.0)
         m3.metric("Graph Density", f"{density:.3f}")
     else:
         m3.metric("Graph Density", "N/A")
@@ -687,7 +686,10 @@ def render_results() -> None:
                 return "color: #64ffda; font-weight: bold"
             return "color: #ffaa00; font-weight: bold"
 
-        styled = sc_df.style.applymap(_style_status, subset=["Status"])
+        try:
+            styled = sc_df.style.map(_style_status, subset=["Status"])
+        except AttributeError:
+            styled = sc_df.style.applymap(_style_status, subset=["Status"])
         st.dataframe(styled, use_container_width=True, hide_index=True)
 
         # Overall pass/fail summary
@@ -777,6 +779,7 @@ def render_results() -> None:
     exp1.download_button(
         "Download Report (Markdown)", report_md,
         f"hyperspace_report_{run_id}.md", "text/markdown",
+        key="dashboard_download_report",
     )
 
     metrics_rows = []
@@ -793,6 +796,7 @@ def render_results() -> None:
             "Download Metrics (CSV)",
             pd.DataFrame(metrics_rows).to_csv(index=False),
             f"hyperspace_metrics_{run_id}.csv", "text/csv",
+            key="dashboard_download_metrics",
         )
 
     # Score card CSV export
@@ -810,4 +814,5 @@ def render_results() -> None:
             "Download Score Card (CSV)",
             pd.DataFrame(sc_export_rows).to_csv(index=False),
             f"hyperspace_scorecard_{run_id}.csv", "text/csv",
+            key="dashboard_download_scorecard",
         )

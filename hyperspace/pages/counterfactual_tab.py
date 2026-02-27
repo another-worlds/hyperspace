@@ -13,11 +13,7 @@ import streamlit as st
 from plotly.subplots import make_subplots
 
 from hyperspace.config import PLOTLY_LAYOUT, POLICY_KERNEL_NAMES
-from hyperspace.models.knowledge_matrix import (
-    UniversalKnowledgeTensor,
-    estimate_reality_regression_stability,
-    FEATURE_REGION_LABELS,
-)
+from hyperspace.models.knowledge_matrix import estimate_reality_regression_stability
 from hyperspace.models.sparse_ae import train_sparse_ae, map_concepts_to_kernels
 from hyperspace.viz import kernel_viz
 
@@ -37,8 +33,6 @@ def _run_counterfactual_ukt(
         return None
 
     # Reconstruct the sub-matrix
-    sub_matrix = np.stack([s["matrix"][s["step"] - 1, :] for s in remaining], axis=0)
-    # Each snapshot's matrix is cumulative; we need just that block's row
     # More reliably: reconstruct from scratch using the rows stored in the final matrix
     final_snap = snapshots[-1]
     block_names = [s["block_name"] for s in snapshots]
@@ -372,7 +366,7 @@ def render() -> None:
     region_bounds = [(0, 16), (16, 32), (32, 48), (48, 64)]
     impact_rows = []
     for rname, (lo, hi) in zip(region_names, region_bounds):
-        orig_energy = float(np.abs(rr_orig[lo:hi]).sum())
+        orig_energy = float(np.abs(rr_orig[lo:min(hi, len(rr_orig))]).sum())
         cf_energy_vals = rr_cf[lo:min(hi, len(rr_cf))]
         cf_energy = float(np.abs(cf_energy_vals).sum()) if len(cf_energy_vals) > 0 else 0.0
         delta = cf_energy - orig_energy
@@ -465,12 +459,15 @@ def render() -> None:
         )
 
     if orig_stability and cf_stability:
-        cf_report_lines += [
-            "",
-            "### Stability Impact",
-            f"- Original mean cosine: {orig_stability.get('mean_cosine', 'N/A'):.3f}",
-            f"- Counterfactual mean cosine: {cf_stability.get('mean_cosine', 'N/A'):.3f}",
-        ]
+        orig_mc = orig_stability.get("mean_cosine")
+        cf_mc = cf_stability.get("mean_cosine")
+        if orig_mc is not None and cf_mc is not None:
+            cf_report_lines += [
+                "",
+                "### Stability Impact",
+                f"- Original mean cosine: {orig_mc:.3f}",
+                f"- Counterfactual mean cosine: {cf_mc:.3f}",
+            ]
 
     cf_report_md = "\n".join(cf_report_lines)
     st.download_button(

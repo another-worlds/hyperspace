@@ -32,7 +32,7 @@ from hyperspace.config import (
 def _infer_jurisdiction(source_string: str) -> dict:
     """Infer jurisdiction metadata from a data source label string."""
     s = source_string.lower()
-    if "yfinance" in s or "yahoo" in s or "live" in s and "finance" in s:
+    if "yfinance" in s or "yahoo" in s or ("live" in s and "finance" in s):
         return DATA_SOURCE_JURISDICTIONS["yfinance"]
     if "gdelt" in s:
         return DATA_SOURCE_JURISDICTIONS["GDELT"]
@@ -151,14 +151,15 @@ def _build_feature_chain(
                 top_feats = cl.get("top_features", [])
                 for tf in top_feats:
                     if tf.get("index") == feature_idx:
+                        concept_num = cl.get("concept_idx", int(cl.get("concept_id", "C00").lstrip("C")))
                         chain["sae_concepts"].append({
-                            "concept_id": cl["concept_id"],
-                            "label": cl.get("label", cl["concept_id"]),
+                            "concept_id": cl.get("concept_id", "C??"),
+                            "label": cl.get("label", cl.get("concept_id", "C??")),
                             "loading": tf.get("loading", 0.0),
                             "mean_activation": sae_result.get(
                                 "concept_activations",
                                 np.zeros((1, 16))
-                            )[:, cl["concept_id"]].mean()
+                            )[:, concept_num].mean()
                             if sae_result.get("concept_activations") is not None
                             else 0.0,
                         })
@@ -432,7 +433,6 @@ def render_annotation_widget(
                     st.session_state.stakeholder_annotations = []
                 st.session_state.stakeholder_annotations.append(ann_entry)
                 st.success("Note saved.")
-                st.rerun()
 
 
 def render_annotations_summary() -> None:
@@ -559,4 +559,3 @@ def render_contest_popover(
                     st.session_state.stakeholder_annotations = []
                 st.session_state.stakeholder_annotations.append(ann_entry)
                 st.success("Objection recorded and will appear in the exported report.")
-                st.rerun()

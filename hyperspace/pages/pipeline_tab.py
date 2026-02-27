@@ -119,12 +119,15 @@ def render() -> None:
             q = finance_result["quantiles"]
             if len(q.shape) == 3:
                 q_mean = q.mean(axis=0)
-                x_ax = list(range(q_mean.shape[0]))
-                fig = forecast_chart(
-                    x_ax, q_mean[:, 0], q_mean[:, q_mean.shape[1] // 2],
-                    q_mean[:, -1], title="Finance: TFT Forecast",
-                )
-                st.plotly_chart(fig, use_container_width=True)
+                if q_mean.shape[0] == 0 or q_mean.shape[1] < 2:
+                    st.warning("TFT quantile output has insufficient shape for forecast chart.")
+                else:
+                    x_ax = list(range(q_mean.shape[0]))
+                    fig = forecast_chart(
+                        x_ax, q_mean[:, 0], q_mean[:, q_mean.shape[1] // 2],
+                        q_mean[:, -1], title="Finance: TFT Forecast",
+                    )
+                    st.plotly_chart(fig, use_container_width=True)
         else:
             mock = mock_forecast(20)
             x_ax = list(range(20))
@@ -222,7 +225,7 @@ def render() -> None:
                 f"- [{ann.get('role')}] {ann.get('timestamp', '')}: {ann.get('text', '')}"
             )
 
-    report_md = f"# Hyperspace Pipeline Report\n## Date: {run_ts}\n\n" + "\n".join(report_lines)
+    report_md = "\n".join(report_lines)
     exp1.download_button(
         "Download Report (Markdown)", report_md,
         f"hyperspace_report_{run_id}.md", "text/markdown",

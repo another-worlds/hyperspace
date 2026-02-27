@@ -110,6 +110,7 @@ def reset_pipeline() -> None:
     st.session_state.interpreter_result = None
     st.session_state.sae_result = None
     st.session_state.concept_kernel_map = []
+    st.session_state.raw_ohlcv = None
     st.session_state.raw_docs = None
     st.session_state.raw_un_votes = None
     st.session_state.data_sources = {}

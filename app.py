@@ -21,6 +21,7 @@ import streamlit as st
 
 from hyperspace.config import DARK_CSS, DEFAULT_TICKERS, GLOSSARY
 from hyperspace.state import init_session_state
+from hyperspace.pages import governance as governance_module
 
 # ── Page config ──────────────────────────────────────────────────────
 st.set_page_config(
@@ -90,8 +91,7 @@ with st.sidebar:
             st.caption(f"[{icon}] {block}: {src}")
 
         # C2: Jurisdiction badges
-        from hyperspace.pages.governance import render_jurisdiction_badges
-        render_jurisdiction_badges(data_sources)
+        governance_module.render_jurisdiction_badges(data_sources)
 
         # Governance flags summary in sidebar
         gov_flags = st.session_state.get("governance_flags", [])
@@ -112,8 +112,7 @@ with st.sidebar:
     snapshots = st.session_state.get("ukt_snapshots", [])
     if snapshots:
         st.markdown("**🔍 Feature Provenance Trace**")
-        from hyperspace.pages.governance import render_provenance_panel
-        render_provenance_panel(snapshots)
+        governance_module.render_provenance_panel(snapshots)
         st.markdown("---")
 
     # D2: Glossary

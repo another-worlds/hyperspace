@@ -197,8 +197,8 @@ def render() -> None:
                 st.plotly_chart(fig, use_container_width=True)
 
             # Concept activation heatmap
-            act = sae_result["concept_activations"]
-            if act.shape[0] > 1:
+            act = sae_result.get("concept_activations")
+            if act is not None and act.shape[0] > 1:
                 st.markdown("#### Concept Activation per Block")
                 fig = px.imshow(
                     act,

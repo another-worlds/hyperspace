@@ -13,7 +13,7 @@ def _topic_feature_meta(model, topics: list[int]) -> dict[int, dict]:
     """Build semantic feature metadata from discovered topics and keywords."""
     meta: dict[int, dict] = {}
     topic_ids = [t for t in pd.Series(topics).value_counts().index.tolist() if t != -1]
-    for rank, topic_id in enumerate(topic_ids[:16]):
+    for rank, topic_id in enumerate(topic_ids[:8]):
         label = f"topic_share_{topic_id}"
         try:
             terms = model.get_topic(topic_id) or []
@@ -73,8 +73,10 @@ def fit_topic_model(docs_key: str, docs: list[str] | None = None, data_source: s
         # Normalize topic distribution
         if len(topic_counts) > 0:
             topic_counts = topic_counts / (topic_counts.sum() + 1e-8)
-        # Place topic shares in semantic-embedding region (indices 16-31)
-        features_for_ukt[16:16 + min(16, len(topic_counts))] = topic_counts[:16]
+        # Place topic shares in semantic-embedding region (indices 16-23, up to 8 topics)
+        # Indices 24-31 are reserved for topic embedding statistics
+        n_topic_slots = min(8, len(topic_counts))
+        features_for_ukt[16:16 + n_topic_slots] = topic_counts[:n_topic_slots]
         # If topic embeddings are available, summarize them into the remaining
         # semantic slots (24-31) using the L2 norm of the mean embedding — a
         # scalar summary that stays within the semantic region and does not
@@ -105,7 +107,7 @@ def fit_topic_model(docs_key: str, docs: list[str] | None = None, data_source: s
             topic_embeddings=topic_embeddings,
             features_for_ukt=features_for_ukt,
             feature_meta=feature_meta,
-            data_source=data_source,
+            data_source=data_source or "Unknown",
         )
     except Exception as e:
         st.warning(f"BERTopic unavailable ({e}); no clustering fallback is used.")

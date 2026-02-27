@@ -12,6 +12,14 @@ from hyperspace.data.finance import get_ohlcv, get_tft_data
 from hyperspace.data.synthetic import generate_tft_dataset, seed
 
 
+def _to_numpy(x: Any) -> np.ndarray:
+    """Convert a torch.Tensor or np.ndarray to numpy array safely."""
+    import torch
+    if isinstance(x, torch.Tensor):
+        return x.detach().cpu().numpy()
+    return np.asarray(x)
+
+
 def _finance_feature_meta_from_attention(attention: np.ndarray, encoder_importance: np.ndarray,
                                          decoder_importance: np.ndarray) -> dict[int, dict]:
     """Build metadata labels for finance UKT slots from model interpretation output."""
@@ -122,16 +130,18 @@ def fit_tft(
 
         # Quantile predictions
         preds = model.predict(val_dl, mode="quantiles", return_x=True)
-        quantiles = preds.output.detach().cpu().numpy()
+        preds_out = preds.output if hasattr(preds, "output") else preds
+        quantiles = _to_numpy(preds_out)
 
         # Interpretation: extract attention + variable importance
         raw_preds = model.predict(val_dl, mode="raw", return_x=True)
-        interpretation = model.interpret_output(raw_preds.output, reduction="mean")
+        raw_out = raw_preds.output if hasattr(raw_preds, "output") else raw_preds
+        interpretation = model.interpret_output(raw_out, reduction="mean")
 
-        attention = interpretation["attention"].detach().cpu().numpy()
-        encoder_importance = interpretation["encoder_variables"].detach().cpu().numpy()
-        decoder_importance = interpretation["decoder_variables"].detach().cpu().numpy()
-        static_importance = interpretation["static_variables"].detach().cpu().numpy()
+        attention = _to_numpy(interpretation["attention"])
+        encoder_importance = _to_numpy(interpretation["encoder_variables"])
+        decoder_importance = _to_numpy(interpretation["decoder_variables"])
+        static_importance = _to_numpy(interpretation.get("static_variables", np.zeros(1)))
 
         # Build UKT feature vector from attention and variable importance
         features_for_ukt = np.zeros(UKT_FEATURE_DIM)
@@ -148,7 +158,7 @@ def fit_tft(
 
         return dict(
             quantiles=quantiles,
-            x=preds.x,
+            x=getattr(preds, "x", None),
             attention=attention,
             encoder_importance=encoder_importance,
             decoder_importance=decoder_importance,

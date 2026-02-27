@@ -20,18 +20,14 @@ def render() -> None:
         "probabilistic forecasting. *Backbone: TFT (Lim et al., 2021).*"
     )
 
-    fc1, fc2 = st.columns(2)
-    tickers = fc1.multiselect(
-        "Tickers (Country ETFs)",
-        ["SPY", "EWZ", "INDA", "FXI", "EWU", "ERUS", "RSX"],
-        default=DEFAULT_TICKERS,
-    )
-    fc2.markdown("")
+    # Use shared session state tickers (set by sidebar)
+    tickers = st.session_state.get("tickers", DEFAULT_TICKERS) or DEFAULT_TICKERS
+    st.caption(f"Using tickers from sidebar: {', '.join(tickers)}")
 
     sc1, sc2, sc3 = st.columns(3)
-    encoder_length = sc1.slider("Encoder Length", 24, 90, 48)
-    prediction_length = sc2.slider("Prediction Length", 6, 30, 12)
-    hidden_size = sc3.slider("Hidden Size", 16, 64, 32)
+    encoder_length = sc1.slider("Encoder Length", 24, 90, 48, key="finance_encoder_len")
+    prediction_length = sc2.slider("Prediction Length", 6, 30, 12, key="finance_pred_len")
+    hidden_size = sc3.slider("Hidden Size", 16, 64, 32, key="finance_hidden_size")
 
     compute_tft = st.button("Compute TFT Forecast", type="primary", key="finance_compute")
 
@@ -66,14 +62,17 @@ def render() -> None:
                 if len(q.shape) == 3:
                     q_mean = q.mean(axis=0)
                     x_axis = list(range(q_mean.shape[0]))
-                    fig = forecast_chart(
-                        x_axis,
-                        q_mean[:, 0] if q_mean.shape[1] > 0 else q_mean[:, 0],
-                        q_mean[:, q_mean.shape[1] // 2],
-                        q_mean[:, -1],
-                        title="TFT Multi-Quantile Forecast",
-                    )
-                    st.plotly_chart(fig, use_container_width=True)
+                    if q_mean.shape[1] < 2:
+                        st.warning("Insufficient quantile columns in forecast output.")
+                    else:
+                        fig = forecast_chart(
+                            x_axis,
+                            q_mean[:, 0],
+                            q_mean[:, q_mean.shape[1] // 2],
+                            q_mean[:, -1],
+                            title="TFT Multi-Quantile Forecast",
+                        )
+                        st.plotly_chart(fig, use_container_width=True)
                 elif len(q.shape) == 2:
                     x_axis = list(range(q.shape[0]))
                     fig = forecast_chart(

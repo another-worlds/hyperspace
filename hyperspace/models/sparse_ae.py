@@ -81,7 +81,7 @@ def train_sparse_ae(
 
         # Identify active concepts (above mean activation)
         mean_activation = concept_activations.mean(axis=0)
-        active_mask = mean_activation > mean_activation.mean()
+        active_mask = mean_activation >= mean_activation.mean()
 
         # Concept-kernel alignment: map each concept to feature regions
         from hyperspace.models.knowledge_matrix import (
@@ -115,7 +115,8 @@ def train_sparse_ae(
             )
 
             concept_labels.append(dict(
-                concept_id=f"C{c:02d}",
+                concept_id=f"C{c:02d}",  # human-readable label, kept for display
+                concept_idx=c,            # integer index for array operations
                 dominant_region=dominant,
                 mean_activation=float(mean_activation[c]),
                 active=bool(active_mask[c]),
