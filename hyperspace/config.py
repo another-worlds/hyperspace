@@ -113,29 +113,6 @@ GEOPOLITICAL_EDGES: list[tuple] = [
     ("Brazil", "Britain", 0.25,  "alignment",      "Trade + climate finance partnership"),
 ]
 
-NEWS_SNIPPETS: list[str] = [
-    "USA and Britain reaffirm Five Eyes intelligence sharing after new cybersecurity threats from Russia and China.",
-    "Russia and China sign expanded energy cooperation deal, deepening strategic partnership in the face of Western sanctions.",
-    "India navigates balancing act between US Quad partnership and legacy Russian defence ties over S-400 deliveries.",
-    "Brazil positions itself as key BRICS mediator, hosting summit on global financial architecture reform.",
-    "Britain imposes fresh sanctions on Russian oligarchs while expanding Indo-Pacific trade partnerships.",
-    "China's Belt and Road Initiative reaches Latin America as Brazil signs infrastructure investment framework.",
-    "US-China trade tensions escalate with new semiconductor export controls targeting advanced chip manufacturing.",
-    "Russia conducts joint naval exercises with China in the Pacific, signaling deepening military coordination.",
-    "India and Britain finalize free trade agreement, strengthening post-Brexit Commonwealth economic ties.",
-    "Brazil-India-South Africa trilateral dialogue advances climate finance and UN Security Council reform.",
-    "USA strengthens Quad alliance with India, Japan, and Australia to counter Chinese maritime expansion.",
-    "Russia's energy pivot to China accelerates as European gas imports drop to historic lows.",
-    "Britain expands AUKUS defence technology sharing amid growing Chinese military presence in the South China Sea.",
-    "China and India hold border talks after renewed tensions along the Line of Actual Control.",
-    "Brazil emerges as swing vote in UN General Assembly on Ukraine-related resolutions, reflecting BRICS dynamics.",
-    "USA and India sign nuclear cooperation agreement extending civil nuclear energy collaboration.",
-    "Russia and Brazil expand agricultural trade routes bypassing Western financial infrastructure.",
-    "China invests heavily in British technology startups despite political friction over Hong Kong and Taiwan.",
-    "India launches independent satellite navigation system, reducing reliance on US GPS and Russian GLONASS.",
-    "BRICS New Development Bank approves infrastructure loans for Brazil and India, challenging World Bank dominance.",
-]
-
 # UKT feature dimension (shared across all blocks)
 UKT_FEATURE_DIM: int = 64
 

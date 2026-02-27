@@ -7,8 +7,10 @@ import streamlit as st
 
 from hyperspace.config import PLOTLY_LAYOUT
 from hyperspace.data.political import get_political_data
+from hyperspace.data.map import get_country_stats
 from hyperspace.models.graph_engine import (
-    analyze_graph, build_geopolitical_graph, plot_geopolitical_graph,
+    analyze_graph, build_geopolitical_graph,
+    plot_geopolitical_graph, plot_geopolitical_map,
 )
 from hyperspace.viz.charts import source_badge
 
@@ -31,11 +33,16 @@ def render() -> None:
                 un_df, agreement, pol_src = get_political_data()
                 G, pos = build_geopolitical_graph(agreement_matrix=agreement)
                 analysis = analyze_graph(G)
+                try:
+                    country_stats, map_src = get_country_stats()
+                except RuntimeError:
+                    country_stats, map_src = None, "unavailable"
                 graph_result = dict(
                     G=G, pos=pos, analysis=analysis,
                     features_for_ukt=analysis["features_for_ukt"],
                     data_source=pol_src,
                     un_df=un_df, agreement=agreement,
+                    country_stats=country_stats, map_src=map_src,
                 )
                 st.session_state.graph_result = graph_result
 
@@ -50,8 +57,34 @@ def render() -> None:
                 st.warning("Graph data incomplete. Try rebuilding the graph.")
                 return
 
-            # Graph visualization
-            st.markdown("### Geopolitical Graph")
+            # Geographic map
+            country_stats = graph_result.get("country_stats")
+            map_src = graph_result.get("map_src", "")
+            st.markdown("### Geographic View")
+            if map_src and map_src != "unavailable":
+                st.markdown(
+                    f"**Map data**: {source_badge(map_src)}", unsafe_allow_html=True
+                )
+            fig_map = plot_geopolitical_map(G, country_stats=country_stats)
+            st.plotly_chart(fig_map, use_container_width=True)
+
+            # Country stats table
+            if country_stats:
+                rows = []
+                for node, cs in country_stats.items():
+                    rows.append({
+                        "Node": node,
+                        "Flag": cs["flag_emoji"],
+                        "Capital": cs["capital"],
+                        "Population (M)": round(cs["population"] / 1_000_000, 1),
+                        "Area (k km²)": round(cs["area_km2"] / 1_000, 0),
+                        "Region": cs["subregion"] or cs["region"],
+                        "UN Member": "✓" if cs["un_member"] else "✗",
+                    })
+                st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+
+            # Abstract graph
+            st.markdown("### Relation Graph")
             fig = plot_geopolitical_graph(G, pos)
             st.plotly_chart(fig, use_container_width=True)
 

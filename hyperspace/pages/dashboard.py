@@ -410,20 +410,18 @@ def run_pipeline() -> None:
 
         # ---- Step 2: Finance Block ----
         st.write("Training Temporal Fusion Transformer (3 epochs, CPU)...")
-        from hyperspace.models.tft_forecast import fit_tft, mock_forecast
+        from hyperspace.models.tft_forecast import fit_tft
 
         tft_result = fit_tft(
             tickers=tuple(tickers),
             hidden=32, encoder_len=48, prediction_len=12,
         )
-        if tft_result is not None:
-            finance_features = tft_result["features_for_ukt"]
-            data_sources["Finance"] = tft_result["data_source"]
-        else:
-            mock = mock_forecast(12)
-            finance_features = mock["features_for_ukt"]
-            tft_result = mock
-            data_sources["Finance"] = mock["data_source"]
+        if tft_result is None:
+            status.update(label="Pipeline blocked: TFT fitting failed", state="error")
+            st.error("TFT fitting failed. Ensure live market data is reachable.")
+            return
+        finance_features = tft_result["features_for_ukt"]
+        data_sources["Finance"] = tft_result["data_source"]
 
         snap = ukt.add_block(
             "Finance", finance_features,
