@@ -8,7 +8,6 @@ import streamlit as st
 
 from hyperspace.config import GEOPOLITICAL_NODES
 from hyperspace.models.graph_engine import build_geopolitical_graph, plot_geopolitical_graph
-from hyperspace.models.tft_forecast import mock_forecast
 from hyperspace.viz import kernel_viz
 from hyperspace.viz.charts import forecast_chart, source_badge
 
@@ -129,13 +128,7 @@ def render() -> None:
                     )
                     st.plotly_chart(fig, use_container_width=True)
         else:
-            mock = mock_forecast(20)
-            x_ax = list(range(20))
-            fig = forecast_chart(
-                x_ax, mock["q10"], mock["q50"], mock["q90"],
-                title="Finance: Mock Forecast",
-            )
-            st.plotly_chart(fig, use_container_width=True)
+            st.info("Finance forecast unavailable — run the full pipeline first.")
 
     with r1c2:
         # Graph

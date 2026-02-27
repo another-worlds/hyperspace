@@ -9,7 +9,6 @@ import streamlit as st
 
 from hyperspace.config import UKT_FEATURE_DIM
 from hyperspace.data.finance import get_ohlcv, get_tft_data
-from hyperspace.data.synthetic import generate_tft_dataset, seed
 
 
 def _to_numpy(x: Any) -> np.ndarray:
@@ -65,7 +64,7 @@ def fit_tft(
     prediction_len: int = 12,
     max_epochs: int = 3,
 ) -> dict | None:
-    """Fit TFT on real or synthetic data. Return predictions + interpretation features.
+    """Fit TFT on real OHLCV data. Return predictions + interpretation features.
 
     Returns dict with: quantiles, attention, encoder_importance, decoder_importance,
     model_params, features_for_ukt, feature_meta, data_source.
@@ -78,7 +77,6 @@ def fit_tft(
 
         pl.seed_everything(42)
 
-        # Get data (real or fallback)
         df, data_source = get_tft_data(list(tickers), encoder_len, prediction_len)
 
         max_time = df.time_idx.max()
@@ -128,12 +126,10 @@ def fit_tft(
         )
         trainer.fit(model, train_dataloaders=train_dl, val_dataloaders=val_dl)
 
-        # Quantile predictions
         preds = model.predict(val_dl, mode="quantiles", return_x=True)
         preds_out = preds.output if hasattr(preds, "output") else preds
         quantiles = _to_numpy(preds_out)
 
-        # Interpretation: extract attention + variable importance
         raw_preds = model.predict(val_dl, mode="raw", return_x=True)
         raw_out = raw_preds.output if hasattr(raw_preds, "output") else raw_preds
         interpretation = model.interpret_output(raw_out, reduction="mean")
@@ -143,7 +139,6 @@ def fit_tft(
         decoder_importance = _to_numpy(interpretation["decoder_variables"])
         static_importance = _to_numpy(interpretation.get("static_variables", np.zeros(1)))
 
-        # Build UKT feature vector from attention and variable importance
         features_for_ukt = np.zeros(UKT_FEATURE_DIM)
         att_flat = attention.flatten()
         features_for_ukt[:min(16, len(att_flat))] = att_flat[:16]
@@ -169,37 +164,5 @@ def fit_tft(
             data_source=data_source,
         )
     except Exception as e:
-        st.warning(f"TFT fitting unavailable ({e}); using synthetic fallback.")
+        st.error(f"TFT fitting failed: {e}")
         return None
-
-
-def mock_forecast(prediction_len: int, s: int = 42) -> dict:
-    """Generate a mock multi-quantile forecast when TFT unavailable."""
-    rng = seed(s)
-    base = np.cumsum(rng.normal(0.02, 0.1, prediction_len)) + 5
-    # Produce a UKT feature vector matching real TFT's layout:
-    #   indices 0-15  = temporal attention pattern
-    #   indices 16-23 = encoder variable importance
-    #   indices 24-31 = decoder variable importance
-    features = np.zeros(UKT_FEATURE_DIM)
-    # Simulated attention weights (temporal region)
-    att = rng.dirichlet(np.ones(16))
-    features[:16] = att
-    # Simulated encoder importance
-    enc = rng.uniform(0.05, 0.4, 8)
-    features[16:24] = enc
-    # Simulated decoder importance
-    dec = rng.uniform(0.05, 0.3, 8)
-    features[24:32] = dec
-    feature_meta = {
-        i: {"label": f"mock_attention_lag_{i+1:02d}", "block": "finance", "metric": "attention_weight"}
-        for i in range(16)
-    }
-    return dict(
-        q10=base - rng.uniform(0.3, 0.6, prediction_len),
-        q50=base,
-        q90=base + rng.uniform(0.3, 0.6, prediction_len),
-        features_for_ukt=features,
-        feature_meta=feature_meta,
-        data_source="Fallback: mock forecast",
-    )

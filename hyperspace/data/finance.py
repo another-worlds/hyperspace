@@ -1,11 +1,9 @@
-"""Real financial data via yfinance with synthetic fallback."""
+"""Real financial data via yfinance. No synthetic fallback."""
 from __future__ import annotations
 
 import numpy as np
 import pandas as pd
 import streamlit as st
-
-from hyperspace.data.synthetic import generate_ohlcv, generate_tft_dataset
 
 
 def _flatten_yf_columns(df: pd.DataFrame) -> pd.DataFrame:
@@ -24,7 +22,6 @@ def fetch_real_ohlcv(tickers: tuple[str, ...], period: str = "1y") -> pd.DataFra
     try:
         import yfinance as yf
     except ImportError:
-        st.warning("yfinance not installed — using synthetic data.")
         return None
 
     frames: list[pd.DataFrame] = []
@@ -37,13 +34,13 @@ def fetch_real_ohlcv(tickers: tuple[str, ...], period: str = "1y") -> pd.DataFra
                 df = _flatten_yf_columns(df.reset_index())
                 df["Ticker"] = ticker
                 frames.append(df)
-        except Exception as e:
-            st.caption(f"yfinance: {ticker} individual download failed ({e})")
+        except Exception:
+            pass
 
     if frames:
         return pd.concat(frames, ignore_index=True)
 
-    # Strategy 2: batch download (sometimes works when individual fails)
+    # Strategy 2: batch download
     try:
         ticker_str = " ".join(tickers)
         df = yf.download(ticker_str, period=period, progress=False,
@@ -66,10 +63,10 @@ def fetch_real_ohlcv(tickers: tuple[str, ...], period: str = "1y") -> pd.DataFra
                     continue
             if result_frames:
                 return pd.concat(result_frames, ignore_index=True)
-    except Exception as e:
-        st.caption(f"yfinance: batch download failed ({e})")
+    except Exception:
+        pass
 
-    # Strategy 3: try shorter period
+    # Strategy 3: shorter period
     if period != "6mo":
         try:
             for ticker in tickers:
@@ -87,19 +84,19 @@ def fetch_real_ohlcv(tickers: tuple[str, ...], period: str = "1y") -> pd.DataFra
 
 
 def get_ohlcv(tickers: list[str], period: str = "1y") -> tuple[pd.DataFrame, str]:
-    """Get OHLCV data with fallback chain.
+    """Get OHLCV data from yfinance. Raises RuntimeError if unavailable.
 
     Returns:
         (dataframe, source_label)
     """
-    # Try real data first
     real = fetch_real_ohlcv(tuple(tickers), period)
     if real is not None and len(real) > 50:
         return real, "Live: yfinance"
 
-    # Fallback to synthetic
-    frames = [generate_ohlcv(t, s=hash(t) % 10000) for t in tickers]
-    return pd.concat(frames, ignore_index=True), "Fallback: synthetic"
+    raise RuntimeError(
+        f"yfinance data unavailable for tickers {tickers}. "
+        "Check network connectivity."
+    )
 
 
 def prepare_tft_dataset_from_real(
@@ -118,7 +115,6 @@ def prepare_tft_dataset_from_real(
             tdf = ohlcv_df[ohlcv_df.Ticker == ticker].sort_values("Date").reset_index(drop=True)
             if len(tdf) < encoder_len + prediction_len + 10:
                 continue
-            # Compute regime from MA50
             tdf["ma50"] = tdf["Close"].rolling(50, min_periods=1).mean()
             tdf["regime"] = np.where(tdf["Close"] > tdf["ma50"], "bull", "bear")
             for t in range(len(tdf)):
@@ -141,20 +137,17 @@ def get_tft_data(
     encoder_len: int = 48,
     prediction_len: int = 12,
 ) -> tuple[pd.DataFrame, str]:
-    """Get TFT training data with fallback.
+    """Get TFT training data from real OHLCV. Raises RuntimeError if unavailable.
 
     Returns:
         (dataframe, source_label)
     """
-    # Try real OHLCV first
     ohlcv, src = get_ohlcv(tickers)
-    if "yfinance" in src:
-        tft_df = prepare_tft_dataset_from_real(ohlcv, encoder_len, prediction_len)
-        if tft_df is not None:
-            return tft_df, "Live: yfinance"
+    tft_df = prepare_tft_dataset_from_real(ohlcv, encoder_len, prediction_len)
+    if tft_df is not None:
+        return tft_df, "Live: yfinance"
 
-    # Fallback to synthetic
-    return generate_tft_dataset(
-        n_groups=max(3, len(tickers)),
-        length=encoder_len + prediction_len + 20,
-    ), "Fallback: synthetic"
+    raise RuntimeError(
+        "Unable to build TFT dataset from real OHLCV data. "
+        "Insufficient rows after filtering."
+    )

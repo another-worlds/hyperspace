@@ -8,7 +8,7 @@ import streamlit as st
 
 from hyperspace.config import DEFAULT_TICKERS, PLOTLY_LAYOUT
 from hyperspace.data.finance import get_ohlcv
-from hyperspace.models.tft_forecast import fit_tft, mock_forecast
+from hyperspace.models.tft_forecast import fit_tft
 from hyperspace.viz.charts import candlestick_chart, forecast_chart, source_badge
 
 
@@ -52,7 +52,8 @@ def render() -> None:
             with st.spinner("Fitting TFT (3 epochs, CPU)..."):
                 result = fit_tft(tuple(tickers), hidden_size, encoder_length, prediction_length)
             if result is None:
-                result = mock_forecast(prediction_length)
+                st.error("TFT fitting failed. Ensure live market data is reachable.")
+                return
             st.session_state.finance_result = result
             finance_result = result
 
@@ -80,13 +81,6 @@ def render() -> None:
                         title="TFT Multi-Quantile Forecast",
                     )
                     st.plotly_chart(fig, use_container_width=True)
-            elif "q50" in finance_result:
-                x_axis = list(range(len(finance_result["q50"])))
-                fig = forecast_chart(
-                    x_axis, finance_result["q10"], finance_result["q50"],
-                    finance_result["q90"], title="Mock Multi-Quantile Forecast",
-                )
-                st.plotly_chart(fig, use_container_width=True)
 
             # Show source badge
             src = finance_result.get("data_source", "unknown")
