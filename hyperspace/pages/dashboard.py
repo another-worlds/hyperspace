@@ -48,6 +48,7 @@ def _compute_governance_flags(
             "semantic-embedding":    float(np.abs(rr[16:32]).sum()),
             "structural-centrality": float(np.abs(rr[32:48]).sum()),
             "dynamic-agent":         float(np.abs(rr[48:64]).sum()),
+            "geospatial-kernel":     float(np.abs(rr[64:80]).sum()),
         }
         total_rr = sum(region_sums.values()) + 1e-8
         max_region_share = max(region_sums.values()) / total_rr
@@ -314,10 +315,10 @@ def render_landing() -> None:
 
     # Pipeline architecture (compact)
     c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Pipeline Steps", "6", "")
+    c1.metric("Pipeline Steps", "7", "")
     c2.metric("Feature Dimensions", str(UKT_FEATURE_DIM), "")
-    c3.metric("Blocks", "4", "Finance + Clusters + Graph + Agents")
-    c4.metric("Kernels (max)", "4", "grows with blocks")
+    c3.metric("Blocks", "5", "Finance + Clusters + Graph + Spatial + Agents")
+    c4.metric("Kernels (max)", "5", "grows with blocks")
 
     st.markdown("---")
 
@@ -339,17 +340,19 @@ def render_landing() -> None:
 
     with st.expander("v3.0 Pipeline Architecture"):
         st.code("""
-Data Fetch (yfinance + GDELT + UN Votes)
+Data Fetch (yfinance + GDELT + UN Votes + Open-Elevation + Open-Meteo + World Bank + UCDP)
           |
-    [Finance Block] --> TFT train --> UKT row 1 --> SVD --> Interpret
+    [Finance Block]  --> TFT train    --> UKT row 1 [0:16]  --> SVD --> Interpret
           |
-    [Cluster Block] --> BERTopic  --> UKT row 2 --> SVD --> Interpret
+    [Cluster Block]  --> BERTopic     --> UKT row 2 [16:32] --> SVD --> Interpret
           |
-    [Graph Block]   --> Centrality --> UKT row 3 --> SVD --> Interpret
+    [Graph Block]    --> Centrality   --> UKT row 3 [32:48] --> SVD --> Interpret
           |
-    [Agent Sim]     --> Simulate  --> UKT row 4 --> SVD --> Interpret
+    [Spatial Raster] --> SVD Kernels  --> UKT row 4 [64:80] --> SVD --> Interpret
           |
-    [Final SAE]     --> Concept discovery on full UKT
+    [Agent Sim]      --> Simulate     --> UKT row 5 [48:64] --> SVD --> Interpret
+          |
+    [Final SAE]      --> Concept discovery on full UKT (80-dim)
           |
     Universal Reality Regression + Governance Accountability Report
         """, language="text")
@@ -478,13 +481,44 @@ def run_pipeline() -> None:
         )
         st.write(f"Graph: {(snap.get('report') or '').split(chr(10))[0]}")
 
+        # ---- Step 3.5: Spatial Raster Kernelization ----
+        st.write("Fetching multimodal spatial rasters (elevation, climate, economics, conflict)...")
+        from hyperspace.data.spatial import fetch_all_spatial_data
+        from hyperspace.models.spatial_kernels import get_spatial_features
+
+        try:
+            raw_spatial = fetch_all_spatial_data()
+            spatial_result = get_spatial_features(
+                raw_spatial["physical_raster"],
+                raw_spatial["country_scalars"],
+                raw_spatial["scalar_names"],
+                raw_spatial["node_order"],
+                st.session_state.timeframe_context,
+            )
+            data_sources["Spatial"] = raw_spatial["source_label"]
+            snap = ukt.add_block(
+                "Spatial", spatial_result["features_for_ukt"],
+                feature_meta=spatial_result["feature_meta"],
+                timeframe_context=st.session_state.timeframe_context,
+            )
+            snapshots.append(snap)
+            st.session_state.spatial_result = spatial_result
+            st.write(f"Spatial: {(snap.get('report') or '').split(chr(10))[0]}")
+        except RuntimeError as exc:
+            status.update(label="Pipeline blocked: spatial data unavailable", state="error")
+            st.error(str(exc))
+            return
+
         # ---- Step 5: Agent Simulation ----
         st.write("Running agent simulation (50 steps)...")
         from hyperspace.models.agent_sim import (
             initialize_agents_from_data, run_simulation,
         )
 
-        agents = initialize_agents_from_data(graph_analysis, agreement)
+        agents = initialize_agents_from_data(
+            graph_analysis, agreement,
+            spatial_features=st.session_state.get("spatial_result"),
+        )
         agents, log_entries, agent_features, agent_feature_meta = run_simulation(agents, steps=50)
 
         snap = ukt.add_block(

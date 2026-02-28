@@ -28,12 +28,13 @@ def _pad_or_truncate(arr: np.ndarray, target_len: int) -> np.ndarray:
 
 
 # Feature provenance labels: indices 0-15 = temporal, 16-31 = embedding,
-# 32-47 = structural, 48-63 = agent/dynamic
+# 32-47 = structural, 48-63 = agent/dynamic, 64-79 = geospatial
 FEATURE_REGION_LABELS: dict[tuple[int, int], str] = {
-    (0, 16): "temporal-pattern",
+    (0, 16):  "temporal-pattern",
     (16, 32): "semantic-embedding",
     (32, 48): "structural-centrality",
     (48, 64): "dynamic-agent",
+    (64, 80): "geospatial-kernel",
 }
 
 

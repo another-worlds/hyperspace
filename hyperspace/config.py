@@ -114,7 +114,7 @@ GEOPOLITICAL_EDGES: list[tuple] = [
 ]
 
 # UKT feature dimension (shared across all blocks)
-UKT_FEATURE_DIM: int = 64
+UKT_FEATURE_DIM: int = 80
 
 # Default tickers for finance block — country-representative ETFs / major stocks
 DEFAULT_TICKERS: list[str] = ["SPY", "EWZ", "INDA"]
@@ -204,6 +204,24 @@ FEATURE_NAMES: list[str] = [
     "alliance_eigen_6",         # 61
     "alliance_eigen_7",         # 62
     "alliance_eigen_8",         # 63
+
+    # 64-79: geospatial-kernel region (populated by Spatial raster SVD)
+    "spatial_kernel_importance_0",   # 64 — normalised singular values (cross-layer kernels)
+    "spatial_kernel_importance_1",   # 65
+    "spatial_kernel_importance_2",   # 66
+    "spatial_kernel_importance_3",   # 67
+    "spatial_kernel_importance_4",   # 68
+    "spatial_kernel_importance_5",   # 69
+    "node_spatial_loading_USA",      # 70 — dominant kernel node loading per country
+    "node_spatial_loading_Russia",   # 71
+    "node_spatial_loading_China",    # 72
+    "node_spatial_loading_Britain",  # 73
+    "node_spatial_loading_India",    # 74
+    "node_spatial_loading_Brazil",   # 75
+    "spatial_summary_elevation",     # 76 — mean normalised elevation across nodes
+    "spatial_summary_temperature",   # 77 — mean normalised temperature across nodes
+    "spatial_summary_conflict",      # 78 — mean normalised conflict density across nodes
+    "spatial_summary_economic",      # 79 — mean normalised economic score across nodes
 ]
 
 # Region-level semantic descriptions for human reports
@@ -233,6 +251,14 @@ REGION_DESCRIPTIONS: dict[str, str] = {
         "a single dominant eigenvalue means one cohesive bloc, multiple comparable "
         "eigenvalues indicate a multipolar world."
     ),
+    "geospatial-kernel": (
+        "Multimodal spatial raster features kernelized via SVD across 10 data layers "
+        "(elevation, temperature, humidity, precipitation, GDP PPP, debt, military "
+        "spending, school enrollment, conflict event density, conflict fatality density) "
+        "sampled at 6 geopolitical nodes. The dominant kernel importances and node "
+        "loadings reveal which physical and socioeconomic dimensions co-vary most "
+        "strongly across the international system."
+    ),
 }
 
 # --------------------------------------------------------------------------- #
@@ -252,8 +278,8 @@ DATA_SOURCE_JURISDICTIONS: dict[str, dict] = {
 SCORECARD_THRESHOLDS: dict[str, dict] = {
     "feature_traceability": dict(
         label="Feature Traceability",
-        unit="/ 64",
-        threshold=57,       # ≥90% of 64 features
+        unit="/ 80",
+        threshold=72,       # ≥90% of 80 features
         description="Features with semantic metadata labels attached.",
     ),
     "kernel_stability": dict(

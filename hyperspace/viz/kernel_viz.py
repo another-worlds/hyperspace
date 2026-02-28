@@ -65,8 +65,10 @@ def plot_reality_regression(snapshot: dict) -> go.Figure:
             colors.append("#e67e22")  # semantic
         elif i < 48:
             colors.append("#2ecc71")  # structural
-        else:
+        elif i < 64:
             colors.append("#e74c3c")  # dynamic
+        else:
+            colors.append("#9b59b6")  # geospatial
 
     fig = go.Figure(go.Bar(
         x=list(range(n)), y=rr,
@@ -82,7 +84,7 @@ def plot_reality_regression(snapshot: dict) -> go.Figure:
     )
     # Add region annotations (use np.max + np.abs to avoid ambiguous array truth value)
     annotation_y = float(np.max(np.abs(rr))) * 1.1
-    fig.add_annotation(x=8, y=annotation_y, text="Temporal",
+    fig.add_annotation(x=8,  y=annotation_y, text="Temporal",
                        showarrow=False, font=dict(color="#3498db", size=10))
     fig.add_annotation(x=24, y=annotation_y, text="Semantic",
                        showarrow=False, font=dict(color="#e67e22", size=10))
@@ -90,6 +92,8 @@ def plot_reality_regression(snapshot: dict) -> go.Figure:
                        showarrow=False, font=dict(color="#2ecc71", size=10))
     fig.add_annotation(x=56, y=annotation_y, text="Dynamic",
                        showarrow=False, font=dict(color="#e74c3c", size=10))
+    fig.add_annotation(x=72, y=annotation_y, text="Geospatial",
+                       showarrow=False, font=dict(color="#9b59b6", size=10))
     return fig
 
 
