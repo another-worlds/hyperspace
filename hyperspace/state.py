@@ -22,6 +22,7 @@ def init_session_state() -> None:
         finance_result=None,
         cluster_result=None,
         graph_result=None,
+        spatial_result=None,
         sim_result=None,
         interpreter_result=None,
         # UKT snapshots (list of dicts, one per block)
@@ -106,6 +107,7 @@ def reset_pipeline() -> None:
     st.session_state.finance_result = None
     st.session_state.cluster_result = None
     st.session_state.graph_result = None
+    st.session_state.spatial_result = None
     st.session_state.sim_result = None
     st.session_state.interpreter_result = None
     st.session_state.sae_result = None

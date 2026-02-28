@@ -16,9 +16,9 @@ def render() -> None:
     """Render the Full Pipeline tab."""
     st.markdown("## Hyperspace Pipeline — Governance Accountability View")
     st.markdown(
-        "End-to-end cycle: Finance → Clustering → Graph → Agentic Sim → "
-        "Semantic Interpretation. Each step updates the Universal Knowledge Tensor. "
-        "All conclusions are traceable, stability-tested, and contestable."
+        "End-to-end cycle: Finance → Clustering → Graph → **Spatial Raster Kernelization** → "
+        "Agentic Sim → Semantic Interpretation. Each step updates the 80-dim Universal "
+        "Knowledge Tensor. All conclusions are traceable, stability-tested, and contestable."
     )
 
     snapshots = st.session_state.get("ukt_snapshots", [])

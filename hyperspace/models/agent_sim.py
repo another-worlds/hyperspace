@@ -18,6 +18,7 @@ class ClusterAgent:
     resources: float = 100.0
     alliances: dict[str, float] = field(default_factory=dict)
     history: list[float] = field(default_factory=list)
+    capability_multiplier: float = 1.0  # from spatial geographic resilience proxy
 
     def step(self, agents: dict[str, "ClusterAgent"], rng: np.random.Generator,
              resource_flow: float, alliance_fluidity: float, shock_prob: float) -> str:
@@ -42,12 +43,16 @@ class ClusterAgent:
 def initialize_agents_from_data(
     graph_analysis: dict | None = None,
     agreement_matrix: pd.DataFrame | None = None,
+    spatial_features: dict | None = None,
 ) -> dict[str, ClusterAgent]:
     """Create agents with data-driven parameters.
 
     Args:
         graph_analysis: Output from graph_engine.analyze_graph().
         agreement_matrix: Pairwise country agreement from political data.
+        spatial_features: Output from spatial_kernels.get_spatial_features().
+            If provided, per-node (10,) spatial vectors enrich resource init
+            and set capability_multiplier from geographic resilience proxy.
 
     Returns:
         Dict of name -> ClusterAgent.
@@ -55,21 +60,55 @@ def initialize_agents_from_data(
     agents: dict[str, ClusterAgent] = {}
     node_names = list(GEOPOLITICAL_NODES.keys())
 
+    # Pre-extract spatial vectors for enrichment if available
+    per_node_vectors: dict[str, np.ndarray] = {}
+    scalar_names: list[str] = []
+    if spatial_features is not None:
+        per_node_vectors = spatial_features.get("per_node_vectors", {})
+        scalar_names = spatial_features.get("scalar_names", [])
+
     for name in node_names:
         attrs = GEOPOLITICAL_NODES[name]
-        # Base resources from influence
+        # Base resources from eigenvector centrality if available
         base_resources = attrs["influence"] * 100 + 20
-
-        # Boost from graph centrality if available
         if graph_analysis and "eigenvector" in graph_analysis:
             eig = graph_analysis["eigenvector"].get(name, 0.5)
             base_resources = eig * 150 + 20
+
+        capability_mult = 1.0
+
+        if name in per_node_vectors and len(scalar_names) >= 6:
+            vec = per_node_vectors[name]  # (10,) normalized
+            # Scalar indices in the full (10,) vector:
+            # 0=elevation, 1=temp, 2=humidity, 3=precip (physical, rows 0-3)
+            # 4=gdp_ppp, 5=debt_pct_gdp, 6=military_pct_gdp, 7=tertiary_enroll
+            # 8=conflict_event_density, 9=conflict_fatality_density
+            gdp_norm       = float(vec[4]) if len(vec) > 4 else 0.5
+            enroll_norm    = float(vec[7]) if len(vec) > 7 else 0.5
+            conflict_norm  = float(vec[8]) if len(vec) > 8 else 0.0
+            elev_norm      = float(vec[0]) if len(vec) > 0 else 0.5
+            temp_norm      = float(vec[1]) if len(vec) > 1 else 0.5
+
+            economic_capacity = (gdp_norm + enroll_norm) / 2.0
+            conflict_stress   = np.clip(conflict_norm, 0.0, 1.0)
+            # Blended resource: 60% centrality base, 30% economic capacity, 10% conflict relief
+            base_resources = (
+                base_resources * 0.6
+                + economic_capacity * 150 * 0.3
+                + (1.0 - conflict_stress) * 20 * 0.1
+            )
+            # capability_multiplier: geographic resilience proxy (elevation × temperature diversity)
+            capability_mult = float(np.clip(
+                0.5 + 0.5 * (elev_norm + (1.0 - temp_norm)) / 2.0,
+                0.5, 2.0,
+            ))
 
         agent = ClusterAgent(
             name=name,
             x=attrs["lon"] / 40,
             y=attrs["lat"] / 20,
             resources=base_resources,
+            capability_multiplier=capability_mult,
         )
 
         # Set alliances from agreement matrix or graph weights

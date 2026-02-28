@@ -101,16 +101,18 @@ def _plot_rr_diff(
     colors_orig = []
     colors_cf = []
     region_colors = {
-        "temporal": "#3498db",
-        "semantic": "#e67e22",
+        "temporal":   "#3498db",
+        "semantic":   "#e67e22",
         "structural": "#2ecc71",
-        "dynamic": "#e74c3c",
+        "dynamic":    "#e74c3c",
+        "geospatial": "#9b59b6",
     }
     for i in range(max_n):
-        c = (region_colors["temporal"] if i < 16
-             else region_colors["semantic"] if i < 32
+        c = (region_colors["temporal"]   if i < 16
+             else region_colors["semantic"]   if i < 32
              else region_colors["structural"] if i < 48
-             else region_colors["dynamic"])
+             else region_colors["dynamic"]    if i < 64
+             else region_colors["geospatial"])
         colors_orig.append(c)
         colors_cf.append(c)
 
@@ -345,10 +347,10 @@ def render() -> None:
                               title=f"Reality Regression Diff ('{removed}' removed)")
     st.plotly_chart(fig_diff, use_container_width=True)
     st.caption(
-        "**Top panel:** Original reality regression across all 64 feature dimensions. "
+        "**Top panel:** Original reality regression across all 80 feature dimensions. "
         "**Middle panel:** Counterfactual (after block removal). "
         "**Bottom panel:** Difference (teal = CF increased, red = CF decreased). "
-        "Color bands: blue=temporal, orange=semantic, green=structural, red=dynamic."
+        "Color bands: blue=temporal, orange=semantic, green=structural, red=dynamic, purple=geospatial."
     )
 
     # Kernel importance comparison
@@ -362,8 +364,11 @@ def render() -> None:
 
     # Region-level impact analysis
     st.markdown("### Region-Level Impact Analysis")
-    region_names = ["temporal-pattern", "semantic-embedding", "structural-centrality", "dynamic-agent"]
-    region_bounds = [(0, 16), (16, 32), (32, 48), (48, 64)]
+    region_names = [
+        "temporal-pattern", "semantic-embedding",
+        "structural-centrality", "dynamic-agent", "geospatial-kernel",
+    ]
+    region_bounds = [(0, 16), (16, 32), (32, 48), (48, 64), (64, 80)]
     impact_rows = []
     for rname, (lo, hi) in zip(region_names, region_bounds):
         orig_energy = float(np.abs(rr_orig[lo:min(hi, len(rr_orig))]).sum())
