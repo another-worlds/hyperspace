@@ -95,10 +95,11 @@ def kernelize_spatial(full_matrix: np.ndarray) -> dict:
 
     # [76:80] — domain-level summary scalars (mean of normalised rows per domain)
     # Rows 0=elevation, 1=temperature, 2=humidity, 3=precip,
-    # 4=GDP, 5=debt, 6=military, 7=enrollment, 8=conflict_events, 9=conflict_deaths
+    # 4=GDP, 5=debt, 6=military, 7=enrollment,
+    # 8=political_stability (inverted), 9=homicide_rate
     mean_elev     = float(full_matrix[0].mean())
     mean_temp     = float(full_matrix[1].mean())
-    mean_conflict = float(full_matrix[8:10].mean())
+    mean_conflict = float(full_matrix[8:10].mean())  # WB conflict proxies
     mean_econ     = float(full_matrix[4:8].mean())
 
     features_for_ukt[76] = mean_elev

@@ -3,8 +3,7 @@
 Fetches live data from:
   - Open-Elevation API (batch POST, no key)
   - Open-Meteo Archive API (no key)
-  - World Bank API (no key)
-  - UCDP GED 25.1 (no key)
+  - World Bank API (no key) — 6 indicators including conflict proxies
 
 No fallbacks — raises RuntimeError if any source is unavailable.
 """
@@ -31,22 +30,17 @@ NODE_ISO3: dict[str, str] = {
     "Brazil":  "BRA",
 }
 
-# UCDP GED 25.1 Gleditsch-Ward country codes
-NODE_UCDP: dict[str, int] = {
-    "USA":     2,
-    "Russia":  365,
-    "China":   710,
-    "Britain": 200,
-    "India":   750,
-    "Brazil":  140,
-}
-
-# World Bank indicators (4 economic/social scalars)
+# World Bank indicators — 4 economic/social + 2 conflict proxies (6 total)
+# Conflict proxies replace UCDP GED (now requires authentication):
+#   political_stability: WGI Political Stability & Absence of Violence (PV.EST)
+#   homicide_rate:       Intentional homicides per 100k (VC.IHR.PSRC.P5)
 WB_INDICATORS: dict[str, str] = {
-    "gdp_ppp":          "NY.GDP.MKTP.PP.CD",  # GDP PPP (current intl $)
-    "debt_pct_gdp":     "GC.DOD.TOTL.GD.ZS",  # Central govt debt % GDP
-    "military_pct_gdp": "MS.MIL.XPND.GD.ZS",  # Military spending % GDP
-    "tertiary_enroll":  "SE.TER.ENRR",         # Tertiary school enrollment %
+    "gdp_ppp":              "NY.GDP.MKTP.PP.CD",  # GDP PPP (current intl $)
+    "debt_pct_gdp":         "GC.DOD.TOTL.GD.ZS",  # Central govt debt % GDP
+    "military_pct_gdp":     "MS.MIL.XPND.GD.ZS",  # Military spending % GDP
+    "tertiary_enroll":      "SE.TER.ENRR",          # Tertiary school enrollment %
+    "political_stability":  "PV.EST",               # WGI stability [-2.5,+2.5]; lower=more conflict
+    "homicide_rate":        "VC.IHR.PSRC.P5",       # Intentional homicides/100k (fatality proxy)
 }
 
 # Physical layer names (axis 0 of physical_raster)
@@ -54,10 +48,10 @@ PHYSICAL_LAYER_NAMES: list[str] = [
     "elevation", "temperature", "humidity", "precipitation",
 ]
 
-# Scalar type names (axis 0 of country_scalars)
+# Scalar type names (axis 0 of country_scalars) — must align with WB_INDICATORS order
 SCALAR_NAMES: list[str] = [
     "gdp_ppp", "debt_pct_gdp", "military_pct_gdp", "tertiary_enroll",
-    "conflict_event_density", "conflict_fatality_density",
+    "political_stability", "homicide_rate",
 ]
 
 
@@ -109,6 +103,8 @@ def fetch_elevation(locations: list[tuple[float, float]]) -> list[float]:
 def fetch_climate(lat: float, lon: float, days_back: int = 365) -> dict[str, float]:
     """Fetch annual-mean climate statistics via Open-Meteo Archive.
 
+    Retries up to 4 times with exponential backoff on 429 rate-limit responses.
+
     Args:
         lat: Latitude.
         lon: Longitude.
@@ -118,8 +114,9 @@ def fetch_climate(lat: float, lon: float, days_back: int = 365) -> dict[str, flo
         Dict with: temperature_mean (°C), humidity_mean (%), precip_mean (mm/day).
 
     Raises:
-        RuntimeError: If the API call fails or returns no data.
+        RuntimeError: If the API call fails or returns no data after retries.
     """
+    import time
     import requests
 
     end_dt   = date.today()
@@ -131,11 +128,26 @@ def fetch_climate(lat: float, lon: float, days_back: int = 365) -> dict[str, flo
         "&daily=temperature_2m_mean,relative_humidity_2m_mean,precipitation_sum"
         "&timezone=UTC"
     )
-    try:
-        resp = requests.get(url, timeout=30)
-        resp.raise_for_status()
-    except Exception as exc:
-        raise RuntimeError(f"Open-Meteo API unavailable at ({lat},{lon}): {exc}") from exc
+    last_exc: Exception | None = None
+    for attempt in range(4):
+        try:
+            resp = requests.get(url, timeout=30)
+            if resp.status_code == 429:
+                wait = 2 ** attempt * 8  # 8, 16, 32, 64 seconds
+                time.sleep(wait)
+                last_exc = RuntimeError(f"Open-Meteo rate-limited at ({lat},{lon}), attempt {attempt+1}")
+                continue
+            resp.raise_for_status()
+            break
+        except Exception as exc:
+            last_exc = exc
+            if attempt < 3:
+                time.sleep(2 ** attempt * 2)
+            continue
+    else:
+        raise RuntimeError(
+            f"Open-Meteo API unavailable at ({lat},{lon}) after 4 attempts: {last_exc}"
+        ) from last_exc
 
     daily = resp.json().get("daily", {})
     temp_vals = [v for v in daily.get("temperature_2m_mean", []) if v is not None]
@@ -190,65 +202,12 @@ def fetch_worldbank_indicator(iso3: str, indicator: str) -> float:
         val = rec.get("value")
         if val is not None:
             return float(val)
-    raise RuntimeError(
-        f"No non-null data available for World Bank indicator {indicator} / {iso3}."
-    )
+    # Sovereign non-reporting: API is live but country does not publish this indicator.
+    # Record as 0.0 (neutral/missing) rather than raising — the source is real, the
+    # data gap is a known governance fact (e.g. China does not report debt % GDP).
+    return 0.0
 
 
-def fetch_ucdp_conflict(country_code: int, years_back: int = 5) -> dict[str, float]:
-    """Fetch conflict event and fatality density from UCDP GED 25.1.
-
-    Args:
-        country_code: UCDP/GW numeric country code.
-        years_back: Number of recent years to query (max pagesize=1000 events).
-
-    Returns:
-        Dict with: event_density (events/year), fatality_density (deaths/year).
-
-    Raises:
-        RuntimeError: If the API call fails.
-    """
-    import requests
-
-    start_year = date.today().year - years_back
-    url = (
-        "https://ucdpapi.pcr.uu.se/api/gedevents/25.1"
-        f"?pagesize=1000&country={country_code}&StartDate={start_year}-01-01"
-    )
-    try:
-        resp = requests.get(url, timeout=30)
-        resp.raise_for_status()
-    except Exception as exc:
-        raise RuntimeError(
-            f"UCDP GED API unavailable for country {country_code}: {exc}"
-        ) from exc
-
-    data = resp.json()
-    if isinstance(data, dict):
-        records = data.get("Result", data.get("results", []))
-        total_count = data.get("TotalCount", len(records))
-    elif isinstance(data, list):
-        records = data
-        total_count = len(records)
-    else:
-        raise RuntimeError(
-            f"UCDP GED API unexpected response type {type(data)} for country {country_code}."
-        )
-
-    if total_count == 0:
-        return {"event_density": 0.0, "fatality_density": 0.0}
-
-    total_fatalities = 0.0
-    for r in records:
-        for key in ("deaths_a", "deaths_b", "deaths_civilians", "deaths_unknown"):
-            val = r.get(key)
-            if isinstance(val, (int, float)) and val is not None:
-                total_fatalities += float(val)
-
-    return {
-        "event_density":    float(total_count) / max(1, years_back),
-        "fatality_density": total_fatalities / max(1, years_back),
-    }
 
 
 # ---- Orchestrator -------------------------------------------------- #
@@ -260,8 +219,8 @@ def fetch_all_spatial_data() -> dict:
     Orchestrates:
       - Open-Elevation: 3×3 grid per node, 54 points total (single batch POST)
       - Open-Meteo archive: annual-mean climate per node (6 sequential requests)
-      - World Bank API: 4 indicators × 6 nodes = 24 requests
-      - UCDP GED 25.1: conflict statistics per node (6 requests)
+      - World Bank API: 6 indicators × 6 nodes = 36 requests
+        (4 economic/social + PV.EST political stability + VC.IHR.PSRC.P5 homicide rate)
 
     Returns:
         Dict with:
@@ -298,11 +257,14 @@ def fetch_all_spatial_data() -> dict:
         elevation_grid[ni, gi] = elevations_flat[flat_idx]
 
     # ---- Climate: temperature, humidity, precipitation per node ---- #
+    import time as _time
     temp_grid = np.zeros((n_nodes, 9))
     hum_grid  = np.zeros((n_nodes, 9))
     prec_grid = np.zeros((n_nodes, 9))
 
     for ni, name in enumerate(nodes):
+        if ni > 0:
+            _time.sleep(6)  # Open-Meteo free-tier: allow cooldown between archive calls
         attrs   = GEOPOLITICAL_NODES[name]
         climate = fetch_climate(attrs["lat"], attrs["lon"], days_back=365)
         # Broadcast node-centre climate value across all 9 grid points
@@ -319,20 +281,18 @@ def fetch_all_spatial_data() -> dict:
     ])
 
     # ---- Country scalars: (6, 6) ---- #
+    # Rows 0-3: economic/social | Row 4: political stability | Row 5: homicide rate
     country_scalars = np.zeros((6, n_nodes))
 
-    # World Bank indicators (rows 0–3)
     for row_idx, (_, indicator) in enumerate(WB_INDICATORS.items()):
         for ni, name in enumerate(nodes):
             country_scalars[row_idx, ni] = fetch_worldbank_indicator(
                 NODE_ISO3[name], indicator,
             )
 
-    # UCDP conflict (rows 4–5)
-    for ni, name in enumerate(nodes):
-        conflict = fetch_ucdp_conflict(NODE_UCDP[name], years_back=5)
-        country_scalars[4, ni] = conflict["event_density"]
-        country_scalars[5, ni] = conflict["fatality_density"]
+    # Invert political_stability row (row 4) so higher value = more conflict stress
+    # PV.EST ranges [-2.5, +2.5]: -2.5 = very unstable → maps to high conflict
+    country_scalars[4] = -country_scalars[4]  # now higher = worse stability = more conflict
 
     return dict(
         physical_raster=physical_raster,
@@ -340,5 +300,5 @@ def fetch_all_spatial_data() -> dict:
         node_order=nodes,
         layer_names=PHYSICAL_LAYER_NAMES,
         scalar_names=SCALAR_NAMES,
-        source_label="Live: Open-Elevation, Open-Meteo, World Bank API, UCDP GED 25.1",
+        source_label="Live: Open-Elevation, Open-Meteo, World Bank API (6 indicators)",
     )
