@@ -307,7 +307,7 @@ def render_landing() -> None:
 - Anything not derivable from the four data domains listed above
 
 **Limitations:**
-- When live data is unavailable, synthetic data is used — clearly labeled with ⚠️ warnings
+- All pipeline stages require live network access — the pipeline blocks with an error if any source is unavailable (no silent synthetic fallbacks)
 - The geopolitical graph covers 6 actors only — systemic omissions exist
 - TFT forecasting runs for 3 epochs on CPU — not production-grade
 - All interpretations are generated algorithmically and require human expert review

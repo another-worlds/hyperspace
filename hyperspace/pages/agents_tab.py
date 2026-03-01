@@ -39,7 +39,11 @@ def render() -> None:
                 # Get graph analysis for data-driven init
                 graph_result = st.session_state.get("graph_result")
                 graph_analysis = graph_result.get("analysis") if graph_result else None
-                _, agreement, _ = get_political_data()
+                try:
+                    _, agreement, _ = get_political_data()
+                except RuntimeError as exc:
+                    st.error(str(exc))
+                    return
 
                 agents = initialize_agents_from_data(graph_analysis, agreement)
                 agents, log_entries, features, feature_meta = run_simulation(
