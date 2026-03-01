@@ -95,9 +95,12 @@ def _build_feature_chain(
     elif feature_idx < 48:
         chain["region"] = "structural-centrality"
         chain["region_description"] = "Geopolitical network centrality (NetworkX)"
-    else:
+    elif feature_idx < 64:
         chain["region"] = "dynamic-agent"
         chain["region_description"] = "Agent simulation resource/alliance dynamics"
+    else:
+        chain["region"] = "geospatial-kernel"
+        chain["region_description"] = "Multimodal spatial raster kernels (elevation, climate, World Bank)"
 
     # Metadata from final snapshot
     if snapshots:
@@ -368,6 +371,11 @@ def _policy_region_description(region: str) -> str:
         "dynamic-agent": (
             "The distribution of resources and stability of alliances after simulated "
             "bounded-rational interactions among state actors reveals equilibrium tendencies."
+        ),
+        "geospatial-kernel": (
+            "Physical geography (elevation, climate) and macroeconomic indicators (GDP, "
+            "military spending, political stability) co-vary across the six geopolitical "
+            "nodes, revealing structural constraints on state capacity and conflict risk."
         ),
     }
     return descriptions.get(region, "Signals from multiple data domains contribute to this pattern.")

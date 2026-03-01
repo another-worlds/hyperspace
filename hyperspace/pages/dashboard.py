@@ -340,7 +340,7 @@ def render_landing() -> None:
 
     with st.expander("v3.0 Pipeline Architecture"):
         st.code("""
-Data Fetch (yfinance + GDELT + UN Votes + Open-Elevation + Open-Meteo + World Bank + UCDP)
+Data Fetch (yfinance + GDELT/RSS + Harvard Dataverse UN Votes + Open-Elevation + Open-Meteo + World Bank)
           |
     [Finance Block]  --> TFT train    --> UKT row 1 [0:16]  --> SVD --> Interpret
           |
@@ -380,7 +380,12 @@ def run_pipeline() -> None:
         from hyperspace.data.political import get_political_data
 
         tickers = st.session_state.get("tickers", DEFAULT_TICKERS) or DEFAULT_TICKERS
-        ohlcv_df, fin_src = get_ohlcv(tickers)
+        try:
+            ohlcv_df, fin_src = get_ohlcv(tickers)
+        except RuntimeError as exc:
+            status.update(label="Pipeline blocked: finance data unavailable", state="error")
+            st.error(str(exc))
+            return
         finance_start = None
         finance_end = None
         if "Date" in ohlcv_df.columns and len(ohlcv_df) > 0:
@@ -395,7 +400,12 @@ def run_pipeline() -> None:
             return
         min_year = finance_start.year if finance_start else 2000
         max_year = finance_end.year if finance_end else None
-        un_df, agreement, pol_src = get_political_data(min_year=min_year, max_year=max_year)
+        try:
+            un_df, agreement, pol_src = get_political_data(min_year=min_year, max_year=max_year)
+        except RuntimeError as exc:
+            status.update(label="Pipeline blocked: political data unavailable", state="error")
+            st.error(str(exc))
+            return
 
         data_sources["Finance"] = fin_src
         data_sources["Clusters"] = docs_src
