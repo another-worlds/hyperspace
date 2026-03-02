@@ -1,4 +1,4 @@
-"""Multimodal spatial raster data from 10 keyless live APIs. No synthetic fallback.
+"""Multimodal spatial raster data from 12 keyless live APIs. No synthetic fallback.
 
 Sources:
   1. Open-Elevation API      — terrain elevation (batch POST, no key)
