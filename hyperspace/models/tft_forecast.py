@@ -45,7 +45,7 @@ def _finance_feature_meta_from_attention(attention: np.ndarray, encoder_importan
         }
 
     dec_flat = decoder_importance.flatten()
-    for i in range(min(8, len(dec_flat))):
+    for i in range(min(3, len(dec_flat))):  # slots 24-26 only; 27-31 reserved for macro
         idx = 24 + i
         meta[idx] = {
             "label": f"tft_decoder_importance_{i+1}",
@@ -151,13 +151,16 @@ def fit_tft(
         enc_flat = encoder_importance.flatten()
         features_for_ukt[16:16 + min(8, len(enc_flat))] = enc_flat[:8]
         dec_flat = decoder_importance.flatten()
-        features_for_ukt[24:24 + min(8, len(dec_flat))] = dec_flat[:8]
+        features_for_ukt[24:24 + min(3, len(dec_flat))] = dec_flat[:3]  # 24-26; 27-31 reserved for macro
 
         feature_meta = _finance_feature_meta_from_attention(
             attention, encoder_importance, decoder_importance,
         )
 
-        # Annotate static real contributions where slots are available (UKT [32:])
+        # Finance-macro features: packed into slots 27–31 (finance-owned range 0–31),
+        # which is the tail of the decoder-importance sub-block and does NOT overlap
+        # with the graph block's structural-centrality region (indices 32–47).
+        # Both feature values and metadata are written for every populated slot.
         macro_slot_labels = {
             "gdp_growth":     ("IMF DataMapper",   "real_gdp_growth_pct"),
             "inflation":      ("IMF DataMapper",   "cpi_inflation_pct"),
@@ -165,10 +168,17 @@ def fit_tft(
             "cpi_inflation":  ("World Bank",       "cpi_inflation_pct"),
             "market_cap_gdp": ("World Bank",       "market_cap_gdp_pct"),
         }
-        for i, col in enumerate(available_static_reals):
+        for i, col in enumerate(available_static_reals[:5]):  # max 5 slots (27-31)
+            slot = 27 + i
             if col in macro_slot_labels:
                 src, metric = macro_slot_labels[col]
-                feature_meta[32 + i] = {
+                col_series = df[col].dropna()
+                if col_series.empty:
+                    continue
+                col_min, col_max = float(col_series.min()), float(col_series.max())
+                norm_val = float((col_series.iloc[-1] - col_min) / (col_max - col_min + 1e-8))
+                features_for_ukt[slot] = norm_val
+                feature_meta[slot] = {
                     "label":  f"macro_{col}",
                     "block":  "finance_macro",
                     "metric": metric,
