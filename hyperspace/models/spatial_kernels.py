@@ -1,4 +1,7 @@
-"""Spatial raster kernelization: SVD on the (10, 6) full feature matrix.
+"""Spatial raster kernelization: SVD on the (R, 6) full feature matrix.
+
+R = 4 physical layers + N_scalar rows (6 WB + 4 extended env = 10 scalars total).
+Full matrix shape with all sources active: (14, 6).
 
 Produces UKT feature block at indices [64:80] (geospatial-kernel region):
     [64:70]  S / S.sum()    — 6 normalised cross-layer kernel importances
@@ -6,7 +9,11 @@ Produces UKT feature block at indices [64:80] (geospatial-kernel region):
     [76:80]  4 summary scalars — mean_elev_norm, mean_temp_norm,
                                  mean_conflict_norm, mean_econ_norm
 
-Also returns per-node (10,) spatial vectors for agent initialisation enrichment.
+Row layout in full_matrix (agent_sim.py safe indices are 0-9; 10+ are new env):
+    0: elevation   1: temperature   2: humidity   3: precipitation
+    4: gdp_ppp     5: debt_pct_gdp  6: military_pct_gdp  7: tertiary_enroll
+    8: political_stability (inverted)   9: homicide_rate
+   10: earthquake_risk  11: eonet_events  12: air_quality_pm25  13: sea_level_proxy
 """
 from __future__ import annotations
 
@@ -20,21 +27,22 @@ NODE_ORDER: list[str] = ["USA", "Russia", "China", "Britain", "India", "Brazil"]
 
 def build_full_feature_matrix(
     physical_raster: np.ndarray,   # (4, 6, 9)
-    country_scalars: np.ndarray,   # (6, 6)
-) -> np.ndarray:                   # (10, 6) — normalized rows
-    """Build and row-normalize the (10, 6) spatial feature matrix.
+    country_scalars: np.ndarray,   # (N_scalar, 6) — 6 WB + 4 env = 10 rows
+) -> np.ndarray:                   # (4 + N_scalar, 6) — normalized rows
+    """Build and row-normalize the spatial feature matrix.
 
     Combines:
       - Physical raster means: physical_raster.mean(axis=2) → (4, 6)
-      - Country scalars: (6, 6)
-    Stacks to (10, 6) then normalises each row to [0, 1].
+      - Country scalars: (N_scalar, 6) — originally 6 WB rows; extended to
+        10 rows when USGS/EONET/AQ/NOAA sources are available.
+    Stacks and normalises each row to [0, 1].
 
     Args:
         physical_raster: Array of shape (4, 6, 9).
-        country_scalars: Array of shape (6, 6).
+        country_scalars: Array of shape (N_scalar, 6).
 
     Returns:
-        Row-normalised feature matrix of shape (10, 6).
+        Row-normalised feature matrix of shape (4 + N_scalar, 6).
     """
     phys_mean = physical_raster.mean(axis=2)             # (4, 6)
     full      = np.vstack([phys_mean, country_scalars])  # (10, 6)
@@ -95,10 +103,11 @@ def kernelize_spatial(full_matrix: np.ndarray) -> dict:
 
     # [76:80] — domain-level summary scalars (mean of normalised rows per domain)
     # Rows 0=elevation, 1=temperature, 2=humidity, 3=precip,
-    # 4=GDP, 5=debt, 6=military, 7=enrollment, 8=conflict_events, 9=conflict_deaths
+    # 4=GDP, 5=debt, 6=military, 7=enrollment,
+    # 8=political_stability (inverted), 9=homicide_rate
     mean_elev     = float(full_matrix[0].mean())
     mean_temp     = float(full_matrix[1].mean())
-    mean_conflict = float(full_matrix[8:10].mean())
+    mean_conflict = float(full_matrix[8:10].mean())  # WB conflict proxies
     mean_econ     = float(full_matrix[4:8].mean())
 
     features_for_ukt[76] = mean_elev

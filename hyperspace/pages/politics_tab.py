@@ -30,7 +30,11 @@ def render() -> None:
     if graph_btn or graph_result:
         if graph_btn:
             with st.spinner("Fetching political data and analyzing graph..."):
-                un_df, agreement, pol_src = get_political_data()
+                try:
+                    un_df, agreement, pol_src = get_political_data()
+                except RuntimeError as exc:
+                    st.error(str(exc))
+                    return
                 G, pos = build_geopolitical_graph(agreement_matrix=agreement)
                 analysis = analyze_graph(G)
                 try:

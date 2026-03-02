@@ -36,7 +36,11 @@ def render() -> None:
 
     if compute_tft or finance_result:
         # Price history
-        ohlcv_df, ohlcv_src = get_ohlcv(tickers)
+        try:
+            ohlcv_df, ohlcv_src = get_ohlcv(tickers)
+        except RuntimeError as exc:
+            st.error(str(exc))
+            return
         st.markdown(f"### Price History {source_badge(ohlcv_src)}", unsafe_allow_html=True)
 
         for ticker in tickers:

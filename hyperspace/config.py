@@ -317,6 +317,7 @@ POLICY_KERNEL_NAMES: dict[str, str] = {
     "semantic-embedding":    "Information Landscape Signal",
     "structural-centrality": "Alliance Network Structure",
     "dynamic-agent":         "Geopolitical Power Distribution",
+    "geospatial-kernel":     "Physical & Economic Terrain Signal",
 }
 
 POLICY_CONFIDENCE_BANDS: list[tuple[float, str, str]] = [

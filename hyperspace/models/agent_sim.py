@@ -72,7 +72,8 @@ def initialize_agents_from_data(
         # Base resources from eigenvector centrality if available
         base_resources = attrs["influence"] * 100 + 20
         if graph_analysis and "eigenvector" in graph_analysis:
-            eig = graph_analysis["eigenvector"].get(name, 0.5)
+            # abs() because competition edges (negative weights) can flip sign
+            eig = abs(graph_analysis["eigenvector"].get(name, 0.5))
             base_resources = eig * 150 + 20
 
         capability_mult = 1.0
@@ -82,10 +83,10 @@ def initialize_agents_from_data(
             # Scalar indices in the full (10,) vector:
             # 0=elevation, 1=temp, 2=humidity, 3=precip (physical, rows 0-3)
             # 4=gdp_ppp, 5=debt_pct_gdp, 6=military_pct_gdp, 7=tertiary_enroll
-            # 8=conflict_event_density, 9=conflict_fatality_density
+            # 8=political_stability (inverted→conflict stress), 9=homicide_rate
             gdp_norm       = float(vec[4]) if len(vec) > 4 else 0.5
             enroll_norm    = float(vec[7]) if len(vec) > 7 else 0.5
-            conflict_norm  = float(vec[8]) if len(vec) > 8 else 0.0
+            conflict_norm  = float(vec[8]) if len(vec) > 8 else 0.0  # higher = more conflict
             elev_norm      = float(vec[0]) if len(vec) > 0 else 0.5
             temp_norm      = float(vec[1]) if len(vec) > 1 else 0.5
 
