@@ -217,6 +217,7 @@ def fetch_usgs_earthquakes_per_node() -> dict[str, float] | None:
         node_quakes: dict[str, float] = {}
         end_dt   = date.today().isoformat()
         start_dt = (date.today() - timedelta(days=30)).isoformat()
+        successes = 0
 
         for node, attrs in GEOPOLITICAL_NODES.items():
             lat, lon = attrs["lat"], attrs["lon"]
@@ -233,10 +234,11 @@ def fetch_usgs_earthquakes_per_node() -> dict[str, float] | None:
                 resp.raise_for_status()
                 count = resp.json().get("count", 0)
                 node_quakes[node] = float(count)
+                successes += 1
             except Exception:
                 node_quakes[node] = 0.0
 
-        return node_quakes if node_quakes else None
+        return node_quakes if successes > 0 else None
     except Exception:
         return None
 
@@ -302,6 +304,7 @@ def fetch_openmeteo_air_quality() -> dict[str, float] | None:
         import requests
 
         node_aqi: dict[str, float] = {}
+        successes = 0
         for node, attrs in GEOPOLITICAL_NODES.items():
             lat, lon = attrs["lat"], attrs["lon"]
             url = (
@@ -318,12 +321,13 @@ def fetch_openmeteo_air_quality() -> dict[str, float] | None:
                 ]
                 if vals:
                     node_aqi[node] = float(np.mean(vals))
+                    successes += 1
                 else:
                     node_aqi[node] = 0.0
             except Exception:
                 node_aqi[node] = 0.0
 
-        return node_aqi if node_aqi else None
+        return node_aqi if successes > 0 else None
     except Exception:
         return None
 
@@ -346,6 +350,7 @@ def fetch_noaa_sea_level_proxy() -> dict[str, float] | None:
         node_sea: dict[str, float] = {n: 0.0 for n in GEOPOLITICAL_NODES}
         end_dt   = date.today().strftime("%Y%m%d")
         start_dt = (date.today() - timedelta(days=7)).strftime("%Y%m%d")
+        successes = 0
 
         for node, station_id in NODE_NOAA_STATION.items():
             url = (
@@ -366,10 +371,11 @@ def fetch_noaa_sea_level_proxy() -> dict[str, float] | None:
                         pass
                 if vals:
                     node_sea[node] = float(np.mean(vals))
+                    successes += 1
             except Exception:
                 pass  # Coastal station unavailable — keep 0.0
 
-        return node_sea
+        return node_sea if successes > 0 else None
     except Exception:
         return None
 
