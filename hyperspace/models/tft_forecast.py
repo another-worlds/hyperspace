@@ -82,6 +82,11 @@ def fit_tft(
         max_time = df.time_idx.max()
         train_cutoff = max_time - prediction_len
 
+        # Determine which static macro columns are present in the dataframe
+        macro_cols = ["gdp_growth", "inflation", "fx_rate",
+                      "cpi_inflation", "market_cap_gdp"]
+        available_static_reals = [c for c in macro_cols if c in df.columns]
+
         training = TimeSeriesDataSet(
             df[df.time_idx <= train_cutoff],
             time_idx="time_idx",
@@ -93,6 +98,7 @@ def fit_tft(
             time_varying_unknown_reals=["target"],
             time_varying_known_categoricals=["regime"],
             static_categoricals=["group"],
+            static_reals=available_static_reals,   # real macro features per ticker
             add_relative_time_idx=True,
             add_target_scales=True,
             add_encoder_length=True,
@@ -150,6 +156,24 @@ def fit_tft(
         feature_meta = _finance_feature_meta_from_attention(
             attention, encoder_importance, decoder_importance,
         )
+
+        # Annotate static real contributions where slots are available (UKT [32:])
+        macro_slot_labels = {
+            "gdp_growth":     ("IMF DataMapper",   "real_gdp_growth_pct"),
+            "inflation":      ("IMF DataMapper",   "cpi_inflation_pct"),
+            "fx_rate":        ("Open.er-api/ECB",  "fx_rate_vs_usd"),
+            "cpi_inflation":  ("World Bank",       "cpi_inflation_pct"),
+            "market_cap_gdp": ("World Bank",       "market_cap_gdp_pct"),
+        }
+        for i, col in enumerate(available_static_reals):
+            if col in macro_slot_labels:
+                src, metric = macro_slot_labels[col]
+                feature_meta[32 + i] = {
+                    "label":  f"macro_{col}",
+                    "block":  "finance_macro",
+                    "metric": metric,
+                    "source": src,
+                }
 
         return dict(
             quantiles=quantiles,
