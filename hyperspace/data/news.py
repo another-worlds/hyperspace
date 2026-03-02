@@ -1,4 +1,4 @@
-"""Country-focused news ingestion from 10 keyless sources.
+"""Country-focused news ingestion from 11 keyless sources.
 
 Sources:
   1. GDELT DOC 2.0 API           — primary geopolitical news events
