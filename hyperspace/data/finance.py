@@ -629,37 +629,39 @@ def prepare_tft_dataset_from_real(
             country = TICKER_COUNTRY_MAP.get(ticker, "USA")
             ccy     = COUNTRY_CURRENCY_MAP.get(country, "USD")
 
-            # ── defaults (used if macro API returned no data for this country) ──
-            gdp_growth     = 2.0
-            inflation      = 3.0
-            fx_rate        = 1.0
-            cpi_inflation  = 3.0
-            market_cap_gdp = 50.0
+            # ── macro values: NaN when API returned no data (no synthetic fallback) ──
+            gdp_growth     = float("nan")
+            inflation      = float("nan")
+            fx_rate        = float("nan")
+            cpi_inflation  = float("nan")
+            market_cap_gdp = float("nan")
 
             if macro_features:
                 imf = macro_features.get("imf_macro", {})
                 if country in imf:
-                    gdp_growth = float(imf[country].get("NGDP_RPCH", gdp_growth))
-                    inflation  = float(imf[country].get("PCPIPCH",   inflation))
+                    raw_gdp_growth = imf[country].get("NGDP_RPCH")
+                    if raw_gdp_growth is not None:
+                        gdp_growth = float(np.clip(float(raw_gdp_growth), -20.0, 20.0))
+                    raw_inflation = imf[country].get("PCPIPCH")
+                    if raw_inflation is not None:
+                        inflation = float(np.clip(float(raw_inflation), 0.0, 100.0))
 
                 # FX rate: prefer Open ER (USD base), fall back to ECB (EUR base)
                 oper = macro_features.get("open_er_fx", {})
                 ecb  = macro_features.get("ecb_fx", {})
                 if ccy in oper:
-                    fx_rate = float(oper[ccy])
+                    fx_rate = float(max(0.001, float(oper[ccy])))
                 elif ccy in ecb:
-                    fx_rate = float(ecb[ccy])
+                    fx_rate = float(max(0.001, float(ecb[ccy])))
 
                 wb = macro_features.get("wb_financial", {})
                 if country in wb:
-                    cpi_inflation  = float(wb[country].get("cpi_inflation_pct",   cpi_inflation))
-                    market_cap_gdp = float(wb[country].get("market_cap_gdp_pct",  market_cap_gdp))
-
-            gdp_growth     = float(np.clip(gdp_growth,     -20.0, 20.0))
-            inflation      = float(np.clip(inflation,        0.0, 100.0))
-            fx_rate        = float(max(0.001, fx_rate))
-            cpi_inflation  = float(np.clip(cpi_inflation,   0.0, 100.0))
-            market_cap_gdp = float(max(0.0,  market_cap_gdp))
+                    raw_cpi_inflation = wb[country].get("cpi_inflation_pct")
+                    if raw_cpi_inflation is not None:
+                        cpi_inflation = float(np.clip(float(raw_cpi_inflation), 0.0, 100.0))
+                    raw_market_cap_gdp = wb[country].get("market_cap_gdp_pct")
+                    if raw_market_cap_gdp is not None:
+                        market_cap_gdp = float(max(0.0, float(raw_market_cap_gdp)))
 
             for t in range(len(tdf)):
                 row = tdf.iloc[t]
@@ -678,7 +680,20 @@ def prepare_tft_dataset_from_real(
                 ))
 
         if len(rows) > encoder_len + prediction_len:
-            return pd.DataFrame(rows)
+            result = pd.DataFrame(rows)
+            # Drop macro columns that contain any NaN — indicates the API returned
+            # no real data for at least one ticker, so including them in
+            # static_reals would introduce synthetic placeholders.
+            _macro_cols = [
+                "gdp_growth", "inflation", "fx_rate",
+                "cpi_inflation", "market_cap_gdp",
+            ]
+            present = [c for c in _macro_cols if c in result.columns]
+            has_nan = result[present].isna().any()
+            cols_to_drop = has_nan[has_nan].index.tolist()
+            if cols_to_drop:
+                result = result.drop(columns=cols_to_drop)
+            return result
         return None
     except Exception:
         return None
