@@ -252,25 +252,19 @@ def fetch_gdelt_political_events() -> pd.DataFrame | None:
 
 @st.cache_data(ttl=86400, show_spinner=False)
 def fetch_owid_democracy_index() -> pd.DataFrame | None:
-    """Fetch V-Dem Liberal Democracy Index via Our World in Data GitHub CSV (keyless).
+    """Fetch EIU Democracy Index via Our World in Data chart CSV endpoint (keyless).
 
-    OWID publishes curated datasets on GitHub under open licenses.
-    URL: raw.githubusercontent.com/owid/owid-datasets/master/...
-    No API key required.
+    OWID serves chart data as downloadable CSV files — no API key required.
+    URL: https://ourworldindata.org/grapher/democracy-index-eiu.csv
+    Columns: Entity, Code, Year, Democracy Index
     """
     try:
         import requests
 
+        # OWID chart CSV endpoint (served directly from their grapher)
         candidates = [
-            (
-                "https://raw.githubusercontent.com/owid/owid-datasets/master/"
-                "datasets/Democracy%20Index%20-%20The%20Economist/Democracy%20Index%20-%20The%20Economist.csv"
-            ),
-            (
-                "https://raw.githubusercontent.com/owid/owid-datasets/master/"
-                "datasets/Political%20Regime%20-%20OWID%20based%20on%20Boix%20et%20al.%20and%20Lührmann%20et%20al./"
-                "Political%20Regime%20-%20OWID%20based%20on%20Boix%20et%20al.%20and%20Lührmann%20et%20al..csv"
-            ),
+            "https://ourworldindata.org/grapher/democracy-index-eiu.csv",
+            "https://ourworldindata.org/grapher/electdem-vdem-owid.csv",
         ]
 
         iso_name_map = {
@@ -284,7 +278,8 @@ def fetch_owid_democracy_index() -> pd.DataFrame | None:
 
         for url in candidates:
             try:
-                resp = requests.get(url, timeout=20)
+                resp = requests.get(url, timeout=20,
+                                    headers={"User-Agent": "Mozilla/5.0"})
                 if resp.status_code != 200:
                     continue
                 df = pd.read_csv(io.StringIO(resp.text))

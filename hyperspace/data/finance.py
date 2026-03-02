@@ -165,50 +165,33 @@ def fetch_stooq_ohlcv(ticker: str) -> pd.DataFrame | None:
 
 @st.cache_data(ttl=3600, show_spinner=False)
 def fetch_ecb_fx_rates() -> dict[str, float] | None:
-    """Fetch EUR-based exchange rates from ECB SDW REST API (keyless).
+    """Fetch EUR-based exchange rates from ECB daily XML feed (keyless).
 
-    ECB SDW: https://sdw-wsrest.ecb.europa.eu/service/data/
-    Returns {currency_code: units_per_EUR}.
+    ECB Reference Rates: https://www.ecb.europa.eu/stats/eurofxref/eurofxref-daily.xml
+    Simpler than the SDW REST endpoint; returns {currency_code: units_per_EUR}.
     """
     try:
         import requests
+        import xml.etree.ElementTree as ET
 
-        currencies = ["USD", "GBP", "CNY", "INR", "BRL", "RUB", "JPY"]
-        url = (
-            "https://sdw-wsrest.ecb.europa.eu/service/data/"
-            f"EXR/D.{'+'.join(currencies)}.EUR.SP00.A"
-            "?format=jsondata&lastNObservations=1"
+        resp = requests.get(
+            "https://www.ecb.europa.eu/stats/eurofxref/eurofxref-daily.xml",
+            timeout=15,
         )
-        resp = requests.get(url, timeout=20, headers={"Accept": "application/json"})
         resp.raise_for_status()
-        payload = resp.json()
 
-        datasets = payload.get("dataSets", [])
-        series_dims = payload.get("structure", {}).get("dimensions", {}).get("series", [])
-
-        ccy_dim_idx: int | None = None
-        ccy_values: list[str] = []
-        for i, dim in enumerate(series_dims):
-            if dim.get("id") == "CURRENCY":
-                ccy_dim_idx = i
-                ccy_values = [v.get("id", "") for v in dim.get("values", [])]
-                break
-
-        if ccy_dim_idx is None or not datasets:
-            return None
-
+        ns = "http://www.ecb.int/vocabulary/2002-08-01/eurofxref"
+        root = ET.fromstring(resp.text)
+        relevant = {"USD", "GBP", "CNY", "INR", "BRL", "RUB", "JPY"}
         rates: dict[str, float] = {}
-        for key, sdata in datasets[0].get("series", {}).items():
-            parts = key.split(":")
-            if ccy_dim_idx < len(parts):
-                idx = int(parts[ccy_dim_idx])
-                ccy = ccy_values[idx] if idx < len(ccy_values) else None
-                if ccy:
-                    obs = sdata.get("observations", {})
-                    if obs:
-                        last = list(obs.values())[-1]
-                        if last and last[0] is not None:
-                            rates[ccy] = float(last[0])
+        for cube in root.iter(f"{{{ns}}}Cube"):
+            ccy  = cube.get("currency")
+            rate = cube.get("rate")
+            if ccy in relevant and rate:
+                try:
+                    rates[ccy] = float(rate)
+                except ValueError:
+                    pass
 
         return rates if rates else None
     except Exception:
@@ -265,35 +248,60 @@ def fetch_imf_macro(country_codes: tuple[str, ...]) -> dict[str, dict[str, float
 
 @st.cache_data(ttl=3600, show_spinner=False)
 def fetch_treasury_yield_curve() -> dict[str, float] | None:
-    """Fetch US Treasury average interest rates from FiscalData API (keyless).
+    """Fetch US Treasury yield curve via Treasury.gov OData XML feed (keyless).
 
-    FiscalData: https://api.fiscaldata.treasury.gov/services/api/v1/
-    Returns {security_description: avg_interest_rate_pct}.
+    US Treasury: https://home.treasury.gov/resource-center/data-chart-center/interest-rates/
+    Parses the Atom/OData XML for the most-recent daily yield curve data.
+    Returns {maturity_label: yield_pct}.
     """
     try:
         import requests
+        import xml.etree.ElementTree as ET
+        from datetime import date, timedelta
 
-        url = (
-            "https://api.fiscaldata.treasury.gov/services/api/v1/"
-            "accounting/od/avg_interest_rates"
-            "?fields=record_date,security_desc,avg_interest_rate_amt"
-            "&filter=record_date:gte:2024-01-01"
-            "&sort=-record_date&page[size]=100"
-        )
-        resp = requests.get(url, timeout=15)
-        resp.raise_for_status()
-        records = resp.json().get("data", [])
+        atom_ns = "http://www.w3.org/2005/Atom"
+        d_ns    = "http://schemas.microsoft.com/ado/2007/08/dataservices"
+        m_ns    = "http://schemas.microsoft.com/ado/2007/08/dataservices/metadata"
 
-        seen: set[str] = set()
+        # Try current month, then previous month (in case current month has <1 day of data)
+        today = date.today()
+        months_to_try = [
+            today.strftime("%Y%m"),
+            (today.replace(day=1) - timedelta(days=1)).strftime("%Y%m"),
+        ]
+        entries: list = []
+        for ym in months_to_try:
+            url = (
+                "https://home.treasury.gov/resource-center/data-chart-center/"
+                "interest-rates/pages/xml?data=daily_treasury_yield_curve"
+                f"&field_tdr_date_value_month={ym}"
+            )
+            resp = requests.get(url, timeout=15, headers={"User-Agent": "Mozilla/5.0"})
+            resp.raise_for_status()
+            root    = ET.fromstring(resp.text)
+            entries = root.findall(f"{{{atom_ns}}}entry")
+            if entries:
+                break
+
+        if not entries:
+            return None
+
+        props = entries[0].find(f".//{{{m_ns}}}properties")
+        if props is None:
+            return None
+
+        maturity_map = {
+            "BC_1MONTH": "1M",  "BC_3MONTH":  "3M",  "BC_6MONTH": "6M",
+            "BC_1YEAR":  "1Y",  "BC_2YEAR":   "2Y",  "BC_5YEAR":  "5Y",
+            "BC_10YEAR": "10Y", "BC_20YEAR": "20Y",  "BC_30YEAR": "30Y",
+        }
         yields: dict[str, float] = {}
-        for rec in records:
-            desc = rec.get("security_desc", "")
-            rate = rec.get("avg_interest_rate_amt")
-            if desc and rate and desc not in seen:
+        for field, label in maturity_map.items():
+            elem = props.find(f"{{{d_ns}}}{field}")
+            if elem is not None and elem.text:
                 try:
-                    yields[desc] = float(rate)
-                    seen.add(desc)
-                except (ValueError, TypeError):
+                    yields[label] = float(elem.text)
+                except ValueError:
                     pass
 
         return yields if yields else None
@@ -431,16 +439,16 @@ def fetch_wb_financial_indicators(iso3_codes: tuple[str, ...]) -> dict[str, dict
 def fetch_bis_policy_rates() -> dict[str, float] | None:
     """Fetch central bank policy rates from BIS Statistics Portal (keyless).
 
-    BIS SDMX REST: https://stats.bis.org/api/v1/data/WS_CBPOL_D/
+    BIS SDMX REST: https://stats.bis.org/api/v1/data/WS_CBPOL/
     Returns {country_code: policy_rate_pct}.
     """
     try:
         import requests
 
         url = (
-            "https://stats.bis.org/api/v1/data/WS_CBPOL_D/"
-            "D.US+GB+CN+IN+BR+RU"
-            "?startPeriod=2024-01-01&lastNObservations=1&format=csv"
+            "https://stats.bis.org/api/v1/data/WS_CBPOL/"
+            "M.US+GB+CN+IN+BR+RU"
+            "?startPeriod=2024-01&lastNObservations=1&format=csv"
         )
         resp = requests.get(url, timeout=20)
         if resp.status_code != 200:
