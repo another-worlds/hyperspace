@@ -461,11 +461,17 @@ def fetch_all_spatial_data() -> dict:
     # ── Sources 3–8: World Bank API — 6 indicators × 6 nodes ── #
     wb_scalars = np.zeros((6, n_nodes))
 
+    wb_failures: list[str] = []
     for row_idx, (_, indicator) in enumerate(WB_INDICATORS.items()):
         for ni, name in enumerate(nodes):
-            wb_scalars[row_idx, ni] = fetch_worldbank_indicator(
-                NODE_ISO3[name], indicator,
-            )
+            try:
+                wb_scalars[row_idx, ni] = fetch_worldbank_indicator(
+                    NODE_ISO3[name], indicator,
+                )
+            except RuntimeError as _exc:
+                # Single node/indicator timeout → 0.0; do not abort entire raster
+                wb_failures.append(f"{name}/{indicator}")
+                wb_scalars[row_idx, ni] = 0.0
 
     # Invert political_stability (row 4): PV.EST higher = more stable →
     # after inversion higher value = more conflict stress
