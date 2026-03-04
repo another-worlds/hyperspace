@@ -1,0 +1,145 @@
+# Hyperspace — Predictive Polymath System v3.0
+
+A multimodal geopolitical intelligence platform that fuses real-time financial,
+news, political, and spatial data into a unified 80-dimensional
+**Universal Knowledge Tensor (UKT)**, then applies interpretable ML models across
+six analytical blocks.
+
+---
+
+## Architecture
+
+```
+Live APIs (32+ sources)
+       │
+       ├── Finance (10 APIs)  →  TFT forecasting      → UKT slots  0-31
+       ├── News    (11 srcs)  →  BERTopic clustering   → UKT slots 16-23
+       ├── Political (10 src) →  Graph engine (NetworkX)→ UKT slots 32-47
+       ├── Spatial (12 srcs)  →  SVD spatial kernels   → UKT slots 64-79
+       └── Agent simulation   →  Resource/alliance sim  → UKT slots 48-63
+                                          │
+                              Universal Knowledge Tensor (80-dim)
+                                          │
+                              Semantic Interpreter + Governance layer
+```
+
+### UKT Feature Layout
+
+| Slots | Block | Source |
+|-------|-------|--------|
+| 0–15  | TFT attention weights | yfinance + macro APIs |
+| 16–23 | BERTopic topic shares | RSS / HN / UN News |
+| 24–26 | TFT decoder importance | pytorch-forecasting |
+| 27–31 | Macro static reals (GDP growth, inflation, FX, CPI, mkt-cap/GDP) | IMF / ECB / WB / BLS |
+| 32–47 | Graph centrality (degree, betweenness, eigenvector, PageRank) | Harvard Dataverse + WB WGI |
+| 48–63 | Agent sim (resource shares, alliance eigenvalues) | Internal simulation |
+| 64–79 | Spatial SVD kernel loadings | Open-Elevation / Open-Meteo / USGS / NOAA |
+
+---
+
+## Data Sources (all keyless)
+
+### Finance — 10 APIs
+| # | Source | Data |
+|---|--------|------|
+| 1 | yfinance | OHLCV (country ETFs) |
+| 2 | Stooq.com | OHLCV fallback |
+| 3 | ECB eurofxref-daily XML | EUR cross-rates |
+| 4 | IMF DataMapper | GDP growth per country |
+| 5 | US Treasury OData XML | Yield curve (9 maturities) |
+| 6 | CoinGecko /global | Crypto market cap |
+| 7 | Open.er-api | USD FX rates |
+| 8 | World Bank financial | CPI, market-cap/GDP, FDI, M2 |
+| 9 | BIS WS_CBPOL (monthly) | Central bank policy rates |
+| 10 | BLS CPI v1 public API | US consumer price index |
+
+### News — 11 sources
+RSS feeds (BBC, Reuters, Al Jazeera, Guardian, France24), HN Algolia,
+UN News RSS (3 feeds), GDELT DOC 2.0, Wikipedia events API,
+Reddit /r/worldnews, GDELT GKG 2.0
+
+### Political — 10 sources
+Harvard Dataverse UN voting records, World Bank WGI (5 indicators:
+voice/accountability, govt effectiveness, rule of law, corruption control,
+regulatory quality), IMF WEO (debt-to-GDP, unemployment), GDELT political
+event volumes, OWID Democracy Index (EIU)
+
+### Spatial — 12 sources
+Open-Elevation, Open-Meteo Archive (climate), World Bank (GDP PPP, debt,
+military spend, tertiary enrollment, political stability, homicide rate),
+USGS Earthquake Hazards, NASA EONET, Open-Meteo Air Quality (PM2.5),
+NOAA Tides & Currents (sea-level proxy)
+
+---
+
+## Models
+
+| Model | File | Role |
+|-------|------|------|
+| TemporalFusionTransformer | `models/tft_forecast.py` | OHLCV + macro → quantile forecast |
+| BERTopic (multilingual) | `models/topic_model.py` | News corpus → topic distribution |
+| NetworkX graph | `models/graph_engine.py` | UN votes → centrality features |
+| SVD spatial kernels | `models/spatial_kernels.py` | Raster (14×6) → kernel loadings |
+| Multi-agent sim | `models/agent_sim.py` | Resource + alliance dynamics |
+| Sparse autoencoder | `models/sparse_ae.py` | UKT → concept bottleneck |
+
+---
+
+## Tabs (Streamlit UI)
+
+| Tab | Name | Content |
+|-----|------|---------|
+| 0 | Finance-Neural | TFT forecast, OHLCV charts, macro heatmaps |
+| 1 | Info Clusters | BERTopic topic map, document embeddings |
+| 2 | Politics-Military | Graph visualization, alliance network |
+| 3 | Agentic Sim | Resource competition, bloc formation |
+| 4 | Semantic Interpreter | UKT heatmap, concept activations |
+| 5 | Full Pipeline | End-to-end orchestration log |
+| 6 | Counterfactual | Governance scorecard, provenance trace |
+
+---
+
+## Quick Start
+
+```bash
+pip install -r requirements.txt
+streamlit run app.py
+```
+
+Runs fully CPU-only. No API keys required. All 32+ data sources are public/open.
+
+---
+
+## Project Layout
+
+```
+app.py                        # Streamlit entry point
+hyperspace/
+  config.py                   # UKT layout, node graph, CSS, constants
+  state.py                    # Session state management
+  data/
+    finance.py                # 10 keyless finance APIs + TFT dataset builder
+    news.py                   # 11 news sources + text aggregator
+    political.py              # 10 political sources + agreement matrix
+    spatial.py                # 12 spatial sources + raster builder
+  models/
+    tft_forecast.py           # TFT fit + UKT feature extraction
+    topic_model.py            # BERTopic fit + topic feature extraction
+    graph_engine.py           # Geopolitical graph + centrality analysis
+    spatial_kernels.py        # SVD kernelization of spatial raster
+    agent_sim.py              # Multi-agent resource/alliance simulation
+    sparse_ae.py              # Sparse autoencoder (concept bottleneck)
+    knowledge_matrix.py       # UKT assembly + provenance tracking
+  pages/                      # One module per Streamlit tab
+requirements.txt
+```
+
+---
+
+## Governance Features
+
+- **Provenance tracing** — every UKT feature carries source metadata (API, block, metric)
+- **Jurisdiction badges** — data sources labelled by regulatory jurisdiction
+- **Governance scorecard** — feature traceability ≥90%, kernel stability ≥0.75
+- **Policy language mode** — toggle to plain-English briefing language for non-technical delegates
+- **Run IDs** — each pipeline execution tagged with a unique identifier and timestamp
