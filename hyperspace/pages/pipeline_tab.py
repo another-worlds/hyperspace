@@ -99,7 +99,7 @@ def render() -> None:
     # Kernel evolution chart
     st.markdown("### Kernel Evolution Across Pipeline Steps")
     fig_evo = kernel_viz.plot_kernel_evolution(snapshots)
-    st.plotly_chart(fig_evo, use_container_width=True)
+    st.plotly_chart(fig_evo, use_container_width=True, key="pipeline_kernel_evolution")
 
     # Key outputs
     st.markdown("### Key Outputs Across All Blocks")
@@ -113,7 +113,7 @@ def render() -> None:
                 x_ax, finance_result["q10"], finance_result["q50"],
                 finance_result["q90"], title="Finance: Multi-Horizon Forecast",
             )
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, use_container_width=True, key="pipeline_finance_forecast_q50")
         elif isinstance(finance_result, dict) and "quantiles" in finance_result:
             q = finance_result["quantiles"]
             if len(q.shape) == 3:
@@ -126,7 +126,7 @@ def render() -> None:
                         x_ax, q_mean[:, 0], q_mean[:, q_mean.shape[1] // 2],
                         q_mean[:, -1], title="Finance: TFT Forecast",
                     )
-                    st.plotly_chart(fig, use_container_width=True)
+                    st.plotly_chart(fig, use_container_width=True, key="pipeline_finance_forecast_tft")
         else:
             st.info("Finance forecast unavailable — run the full pipeline first.")
 
@@ -135,7 +135,7 @@ def render() -> None:
         if isinstance(graph_result, dict) and "G" in graph_result:
             fig_g = plot_geopolitical_graph(graph_result["G"], graph_result["pos"])
             fig_g.update_layout(height=300, margin=dict(l=10, r=10, t=40, b=10))
-            st.plotly_chart(fig_g, use_container_width=True)
+            st.plotly_chart(fig_g, use_container_width=True, key="pipeline_graph")
 
     r2c1, r2c2 = st.columns(2)
 
@@ -154,7 +154,7 @@ def render() -> None:
                 height=300, paper_bgcolor="#0d1117", plot_bgcolor="#0d1117",
                 margin=dict(l=20, r=20, t=40, b=20),
             )
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, use_container_width=True, key="pipeline_agent_resources")
 
     with r2c2:
         # Final kernel matrix (compact)
@@ -162,7 +162,7 @@ def render() -> None:
             final_snap, [s["block_name"] for s in snapshots],
         )
         fig_km.update_layout(height=300)
-        st.plotly_chart(fig_km, use_container_width=True)
+        st.plotly_chart(fig_km, use_container_width=True, key="pipeline_kernel_matrix")
 
     # C1: Annotation summary
     annotations = st.session_state.get("stakeholder_annotations", [])

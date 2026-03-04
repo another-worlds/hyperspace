@@ -345,7 +345,7 @@ def render() -> None:
     st.markdown("### Reality Regression Comparison")
     fig_diff = _plot_rr_diff(rr_orig, rr_cf,
                               title=f"Reality Regression Diff ('{removed}' removed)")
-    st.plotly_chart(fig_diff, use_container_width=True)
+    st.plotly_chart(fig_diff, use_container_width=True, key="cf_rr_diff")
     st.caption(
         "**Top panel:** Original reality regression across all 80 feature dimensions. "
         "**Middle panel:** Counterfactual (after block removal). "
@@ -360,7 +360,7 @@ def render() -> None:
         cf_result["importance"],
         orig_kernels, cf_kernels,
     )
-    st.plotly_chart(fig_ki, use_container_width=True)
+    st.plotly_chart(fig_ki, use_container_width=True, key="cf_kernel_importance")
 
     # Region-level impact analysis
     st.markdown("### Region-Level Impact Analysis")

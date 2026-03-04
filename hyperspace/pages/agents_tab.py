@@ -75,7 +75,7 @@ def render() -> None:
                 **PLOTLY_LAYOUT, title="Resource Evolution Over Time",
                 height=400, xaxis_title="Step", yaxis_title="Resources",
             )
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, use_container_width=True, key="agents_resource_trajectories")
 
             # Final resource distribution
             st.markdown("### Final Resource Distribution")
@@ -86,7 +86,7 @@ def render() -> None:
                 x=names, y=resources, marker_color=colors,
             ))
             fig.update_layout(**PLOTLY_LAYOUT, title="Final Resources", height=350)
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, use_container_width=True, key="agents_final_resources")
 
             # Alliance matrix heatmap
             st.markdown("### Final Alliance Matrix")
@@ -103,7 +103,7 @@ def render() -> None:
                 title="Alliance Strengths After Simulation",
             )
             fig.update_layout(**PLOTLY_LAYOUT, height=400)
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, use_container_width=True, key="agents_alliance_matrix")
 
             # Metrics
             c1, c2, c3 = st.columns(3)

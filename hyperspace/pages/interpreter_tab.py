@@ -61,16 +61,16 @@ def render() -> None:
         st.markdown("### Universal Kernel Matrix")
         block_names = [s["block_name"] for s in snapshots]
         fig = kernel_viz.plot_kernel_matrix(final_snap, block_names)
-        st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, use_container_width=True, key="interp_kernel_matrix")
 
         # Kernel importance
         col1, col2 = st.columns(2)
         with col1:
             fig_imp = kernel_viz.plot_kernel_importance(final_snap)
-            st.plotly_chart(fig_imp, use_container_width=True)
+            st.plotly_chart(fig_imp, use_container_width=True, key="interp_kernel_importance")
         with col2:
             fig_rr = kernel_viz.plot_reality_regression(final_snap)
-            st.plotly_chart(fig_rr, use_container_width=True)
+            st.plotly_chart(fig_rr, use_container_width=True, key="interp_reality_regression")
 
         # B1: Policy language mode branch
         if policy_mode:
@@ -115,7 +115,8 @@ def render() -> None:
                             **PLOTLY_LAYOUT, height=200, showlegend=False,
                             xaxis_title="Region", yaxis_title="Abs. Loading Sum",
                         )
-                        st.plotly_chart(fig_rs, use_container_width=True)
+                        st.plotly_chart(fig_rs, use_container_width=True,
+                                        key=f"interp_region_energy_{kl['kernel_id']}")
 
                     # A1: Contest This button
                     st.markdown("---")
@@ -194,7 +195,7 @@ def render() -> None:
                     **PLOTLY_LAYOUT, height=250,
                     xaxis_title="Epoch", yaxis_title="Loss",
                 )
-                st.plotly_chart(fig, use_container_width=True)
+                st.plotly_chart(fig, use_container_width=True, key="interp_sae_loss_curve")
 
             # Concept activation heatmap
             act = sae_result.get("concept_activations")
@@ -208,14 +209,14 @@ def render() -> None:
                     title="Concept Activations (Blocks x Concepts)",
                 )
                 fig.update_layout(**PLOTLY_LAYOUT, height=300)
-                st.plotly_chart(fig, use_container_width=True)
+                st.plotly_chart(fig, use_container_width=True, key="interp_concept_activations")
 
         # Concept-kernel mapping
         concept_kernel_map = st.session_state.get("concept_kernel_map", [])
         if concept_kernel_map:
             st.markdown("### Concept-Kernel Correspondence")
             fig_ck = kernel_viz.plot_concept_kernel_map(concept_kernel_map)
-            st.plotly_chart(fig_ck, use_container_width=True)
+            st.plotly_chart(fig_ck, use_container_width=True, key="interp_concept_kernel_map")
             st.dataframe(pd.DataFrame(concept_kernel_map), use_container_width=True)
 
         # Stakeholder annotation summary

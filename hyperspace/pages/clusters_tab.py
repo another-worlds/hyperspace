@@ -71,7 +71,7 @@ def render() -> None:
                     title="Document Count per Topic",
                 )
                 fig.update_layout(**PLOTLY_LAYOUT, height=350)
-                st.plotly_chart(fig, use_container_width=True)
+                st.plotly_chart(fig, use_container_width=True, key="clusters_topic_distribution")
 
                 # Show sample docs per topic
                 with st.expander("Sample Documents by Topic"):

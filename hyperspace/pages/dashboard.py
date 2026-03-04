@@ -334,7 +334,7 @@ def render_landing() -> None:
         title="UKT: Awaiting pipeline launch...",
     )
     fig.update_layout(height=150, paper_bgcolor="#0d1117", plot_bgcolor="#0d1117")
-    st.plotly_chart(fig, use_container_width=True)
+    st.plotly_chart(fig, use_container_width=True, key="dashboard_ukt_placeholder")
 
     st.markdown("---")
 
@@ -749,21 +749,21 @@ def render_results() -> None:
     st.markdown("### Universal Kernel Matrix")
     block_names = [s["block_name"] for s in snapshots]
     fig_km = kernel_viz.plot_kernel_matrix(final_snap, block_names)
-    st.plotly_chart(fig_km, use_container_width=True)
+    st.plotly_chart(fig_km, use_container_width=True, key="dashboard_kernel_matrix")
 
     # Kernel importance + reality regression
     col1, col2 = st.columns(2)
     with col1:
         fig_imp = kernel_viz.plot_kernel_importance(final_snap)
-        st.plotly_chart(fig_imp, use_container_width=True)
+        st.plotly_chart(fig_imp, use_container_width=True, key="dashboard_kernel_importance")
     with col2:
         fig_rr = kernel_viz.plot_reality_regression(final_snap)
-        st.plotly_chart(fig_rr, use_container_width=True)
+        st.plotly_chart(fig_rr, use_container_width=True, key="dashboard_reality_regression")
 
     # Kernel evolution
     st.markdown("### Kernel Evolution Across Pipeline Steps")
     fig_evo = kernel_viz.plot_kernel_evolution(snapshots)
-    st.plotly_chart(fig_evo, use_container_width=True)
+    st.plotly_chart(fig_evo, use_container_width=True, key="dashboard_kernel_evolution")
 
     # Semantic interpretation log
     st.markdown("### Semantic Interpretability Report")
@@ -783,7 +783,7 @@ def render_results() -> None:
     if concept_kernel_map:
         st.markdown("### Concept-Kernel Correspondence (Sparse Autoencoder)")
         fig_ck = kernel_viz.plot_concept_kernel_map(concept_kernel_map)
-        st.plotly_chart(fig_ck, use_container_width=True)
+        st.plotly_chart(fig_ck, use_container_width=True, key="dashboard_concept_kernel_map")
         st.dataframe(pd.DataFrame(concept_kernel_map), use_container_width=True)
 
     # Export — D1: stamped with run ID
