@@ -163,11 +163,11 @@ FEATURE_NAMES: list[str] = [
     "encoder_var_imp_1",        # 24 — TFT encoder variable importance
     "encoder_var_imp_2",        # 25
     "encoder_var_imp_3",        # 26
-    "encoder_var_imp_4",        # 27
-    "decoder_var_imp_1",        # 28 — TFT decoder variable importance
-    "decoder_var_imp_2",        # 29
-    "decoder_var_imp_3",        # 30
-    "decoder_var_imp_4",        # 31
+    "macro_gdp_growth",         # 27 — finance macro: normalized GDP growth rate
+    "macro_inflation",          # 28 — finance macro: normalized inflation rate
+    "macro_fx_rate",            # 29 — finance macro: normalized FX rate vs USD
+    "macro_cpi_inflation",      # 30 — finance macro: normalized CPI inflation
+    "macro_market_cap_gdp",     # 31 — finance macro: normalized market cap / GDP
 
     # 32-47: structural-centrality region (populated by Graph engine)
     "centrality_node_0",        # 32 — flattened node centrality (degree, betw, eig, pr)

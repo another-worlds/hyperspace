@@ -374,23 +374,17 @@ def get_political_data(
             "(insufficient data in response)."
         )
 
-    # Collect supplementary sources for the label
+    # Collect supplementary sources for the label via the cached aggregator
+    enriched = fetch_enriched_political_data()
     supp_sources: list[str] = []
 
-    wgi = fetch_wb_wgi_indicators()
-    if wgi is not None:
+    if "wgi" in enriched:
         supp_sources.append(f"WB WGI ({len(WB_WGI_INDICATORS)} indicators)")
-
-    imf_weo = fetch_imf_weo_political()
-    if imf_weo is not None:
+    if "imf_weo" in enriched:
         supp_sources.append("IMF WEO DataMapper")
-
-    gdelt_ev = fetch_gdelt_political_events()
-    if gdelt_ev is not None:
+    if "gdelt_events" in enriched:
         supp_sources.append("GDELT Event Volumes")
-
-    owid = fetch_owid_democracy_index()
-    if owid is not None:
+    if "owid_democracy" in enriched:
         supp_sources.append("OWID Democracy Index")
 
     base_label = (
