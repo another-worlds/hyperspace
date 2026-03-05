@@ -1,14 +1,16 @@
-"""Semantic Interpreter tab: real concept discovery via sparse AE + UKT analysis."""
+"""Semantic Interpreter tab: concept discovery, semantic canvas, and LLM narratives."""
 from __future__ import annotations
 
 import numpy as np
 import pandas as pd
 import plotly.express as px
+import plotly.graph_objects as go
 import streamlit as st
 
 from hyperspace.config import PLOTLY_LAYOUT, UKT_FEATURE_DIM
 from hyperspace.models.knowledge_matrix import UniversalKnowledgeTensor
 from hyperspace.models.sparse_ae import train_sparse_ae, map_concepts_to_kernels
+from hyperspace.models.semantic_canvas import CANVAS_DIMENSIONS, CANVAS_DIM
 from hyperspace.viz import kernel_viz
 from hyperspace.viz.charts import source_badge
 
@@ -91,6 +93,10 @@ def render() -> None:
                 ):
                     st.markdown(kl["narrative"])
 
+                    # Show Tiny-LLM semantic narrative if available
+                    if kl.get("semantic_narrative"):
+                        st.info(f"**Semantic interpretation:** {kl['semantic_narrative']}")
+
                     # Show top features as a mini table
                     if kl.get("top_features"):
                         feat_df = pd.DataFrame(kl["top_features"])
@@ -135,6 +141,109 @@ def render() -> None:
                             key_suffix=f"interpreter_{kl['kernel_id']}",
                         )
 
+        # ---- Semantic Canvas Visualization ---- #
+        canvas = st.session_state.get("semantic_canvas")
+        if canvas is not None:
+            st.markdown("---")
+            st.markdown("### Semantic Canvas — Cross-Layer Interpretive Space")
+            st.caption(
+                "Each pipeline layer projects its discovered concepts onto named semantic "
+                "dimensions. The canvas accumulates these projections to build a coherent "
+                "picture of what the system has learned."
+            )
+
+            canvas_state = canvas.get_accumulated_state()
+            coords = canvas_state["coordinates"]
+
+            # Radar chart of semantic canvas dimensions
+            dim_labels = [d["label"] for d in CANVAS_DIMENSIONS]
+            fig_radar = go.Figure()
+            fig_radar.add_trace(go.Scatterpolar(
+                r=coords.tolist() + [coords[0]],
+                theta=dim_labels + [dim_labels[0]],
+                fill="toself",
+                name="Accumulated Canvas",
+                line=dict(color="#64ffda"),
+                fillcolor="rgba(100, 255, 218, 0.15)",
+            ))
+            # Overlay per-layer traces
+            colors = ["#3498db", "#e67e22", "#e74c3c", "#2ecc71", "#9b59b6"]
+            for i, entry in enumerate(canvas_state["entries"]):
+                c = entry.coordinates
+                fig_radar.add_trace(go.Scatterpolar(
+                    r=c.tolist() + [c[0]],
+                    theta=dim_labels + [dim_labels[0]],
+                    name=entry.block_name,
+                    line=dict(color=colors[i % len(colors)], dash="dot"),
+                    opacity=0.6,
+                ))
+            fig_radar.update_layout(
+                **PLOTLY_LAYOUT,
+                polar=dict(
+                    bgcolor="#0d1117",
+                    radialaxis=dict(range=[0, 1], showticklabels=True,
+                                    gridcolor="#1a2332"),
+                    angularaxis=dict(gridcolor="#1a2332"),
+                ),
+                title="Semantic Canvas Coordinates",
+                height=450,
+                showlegend=True,
+            )
+            st.plotly_chart(fig_radar, use_container_width=True,
+                            key="interp_semantic_radar")
+
+            # Canvas trajectory heatmap
+            trajectory = canvas_state.get("trajectory", [])
+            if len(trajectory) > 1:
+                traj_matrix = np.array([t["state"] for t in trajectory])
+                block_labels = [t["block"] for t in trajectory]
+                fig_traj = px.imshow(
+                    traj_matrix,
+                    x=dim_labels,
+                    y=block_labels,
+                    color_continuous_scale="Viridis",
+                    title="Semantic Canvas Evolution (cumulative per step)",
+                )
+                fig_traj.update_layout(**PLOTLY_LAYOUT, height=280)
+                st.plotly_chart(fig_traj, use_container_width=True,
+                                key="interp_canvas_trajectory")
+
+            # Dominant narrative dimensions
+            dominant = canvas_state.get("dominant_narrative", [])
+            if dominant:
+                st.markdown("**Dominant semantic themes:**")
+                for d in dominant:
+                    st.markdown(
+                        f"- **{d['label']}** ({d['value']:.2f}): {d['desc']}"
+                    )
+
+            # Per-layer narratives
+            st.markdown("#### Layer-by-Layer Semantic Narratives")
+            for entry in canvas_state["entries"]:
+                snap_match = [s for s in snapshots if s["block_name"] == entry.block_name]
+                layer_narr = snap_match[0].get("layer_narrative") if snap_match else None
+                with st.expander(
+                    f"Step {entry.step}: {entry.block_name} — "
+                    f"{', '.join(entry.dominant_dimensions[:2]) or 'weak signals'}",
+                    expanded=entry.step == len(canvas_state["entries"]),
+                ):
+                    st.markdown(f"**Canvas projection:** {entry.interpretation}")
+                    if layer_narr:
+                        st.info(f"**Narrative:** {layer_narr}")
+                    st.caption(f"Active concepts from stage SAE: {entry.active_concepts}")
+
+            # Full canvas narrative (Tiny-LLM)
+            canvas_narrative = st.session_state.get("canvas_narrative")
+            if canvas_narrative:
+                st.markdown("#### Overall Reality Narrative")
+                st.success(canvas_narrative)
+
+            # Reality regression narrative
+            reality_narrative = st.session_state.get("reality_narrative")
+            if reality_narrative:
+                st.markdown("#### Reality Regression — Semantic Summary")
+                st.info(reality_narrative)
+
         # SAE concept discovery
         if sae_result:
             st.markdown("---")
@@ -159,6 +268,9 @@ def render() -> None:
                 for cl in active_concepts:
                     with st.expander(cl.get("label", cl["concept_id"])):
                         st.markdown(cl.get("narrative", ""))
+                        # Show Tiny-LLM semantic narrative if available
+                        if cl.get("semantic_narrative"):
+                            st.info(f"**Semantic:** {cl['semantic_narrative']}")
                         if cl.get("top_features"):
                             feat_df = pd.DataFrame(cl["top_features"])
                             st.dataframe(
