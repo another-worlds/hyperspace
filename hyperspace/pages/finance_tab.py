@@ -47,7 +47,7 @@ def render() -> None:
             tdf = ohlcv_df[ohlcv_df.Ticker == ticker] if "Ticker" in ohlcv_df.columns else ohlcv_df
             if len(tdf) > 0:
                 fig = candlestick_chart(ohlcv_df, ticker)
-                st.plotly_chart(fig, use_container_width=True)
+                st.plotly_chart(fig, use_container_width=True, key=f"finance_candlestick_{ticker}")
 
         # TFT forecast
         st.markdown("### Multi-Horizon Probabilistic Forecast")
@@ -77,14 +77,14 @@ def render() -> None:
                             q_mean[:, -1],
                             title="TFT Multi-Quantile Forecast",
                         )
-                        st.plotly_chart(fig, use_container_width=True)
+                        st.plotly_chart(fig, use_container_width=True, key="finance_forecast_3d")
                 elif len(q.shape) == 2:
                     x_axis = list(range(q.shape[0]))
                     fig = forecast_chart(
                         x_axis, q[:, 0], q[:, q.shape[1] // 2], q[:, -1],
                         title="TFT Multi-Quantile Forecast",
                     )
-                    st.plotly_chart(fig, use_container_width=True)
+                    st.plotly_chart(fig, use_container_width=True, key="finance_forecast_2d")
 
             # Show source badge
             src = finance_result.get("data_source", "unknown")
@@ -102,7 +102,7 @@ def render() -> None:
                         title="Attention over Encoder Time Steps",
                     )
                     fig.update_layout(**PLOTLY_LAYOUT, height=250)
-                    st.plotly_chart(fig, use_container_width=True)
+                    st.plotly_chart(fig, use_container_width=True, key="finance_attention")
 
                     if "encoder_importance" in finance_result:
                         enc = finance_result["encoder_importance"]
@@ -130,4 +130,4 @@ def render() -> None:
                     title="Cross-Ticker Correlation Matrix",
                 )
                 fig.update_layout(**PLOTLY_LAYOUT, height=350)
-                st.plotly_chart(fig, use_container_width=True)
+                st.plotly_chart(fig, use_container_width=True, key="finance_correlation_heatmap")

@@ -70,7 +70,7 @@ def render() -> None:
                     f"**Map data**: {source_badge(map_src)}", unsafe_allow_html=True
                 )
             fig_map = plot_geopolitical_map(G, country_stats=country_stats)
-            st.plotly_chart(fig_map, use_container_width=True)
+            st.plotly_chart(fig_map, use_container_width=True, key="politics_geo_map")
 
             # Country stats table
             if country_stats:
@@ -90,7 +90,7 @@ def render() -> None:
             # Abstract graph
             st.markdown("### Relation Graph")
             fig = plot_geopolitical_graph(G, pos)
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, use_container_width=True, key="politics_relation_graph")
 
             # Centrality metrics
             st.markdown("### Centrality Analysis")
@@ -118,7 +118,7 @@ def render() -> None:
                 title="Centrality Measures by Node",
             )
             fig.update_layout(**PLOTLY_LAYOUT, height=400)
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, use_container_width=True, key="politics_centrality_bar")
 
             # Graph metrics
             c1, c2, c3 = st.columns(3)
@@ -142,7 +142,7 @@ def render() -> None:
                     title="Pairwise Agreement (Geopolitical Nodes)",
                 )
                 fig.update_layout(**PLOTLY_LAYOUT, height=400)
-                st.plotly_chart(fig, use_container_width=True)
+                st.plotly_chart(fig, use_container_width=True, key="politics_voting_agreement")
 
             # UKT contribution
             if "features_for_ukt" in graph_result:
