@@ -76,6 +76,11 @@ def render() -> None:
                 height=400, xaxis_title="Step", yaxis_title="Resources",
             )
             st.plotly_chart(fig, use_container_width=True, key="agents_resource_trajectories")
+            st.caption(
+                "v3.0 — Resource trajectories capture bounded-rational agent "
+                "dynamics. Per-agent resource shares populate UKT indices 51–55 "
+                "(dynamic-agent region), enabling traceability of power concentration."
+            )
 
             # Final resource distribution
             st.markdown("### Final Resource Distribution")
@@ -87,6 +92,11 @@ def render() -> None:
             ))
             fig.update_layout(**PLOTLY_LAYOUT, title="Final Resources", height=350)
             st.plotly_chart(fig, use_container_width=True, key="agents_final_resources")
+            st.caption(
+                "v3.0 — Final resource distribution shows equilibrium power "
+                "balance after N simulation steps. Concentration is quantified "
+                "in the UKT and triggers governance flag GOV-001 if one modality dominates."
+            )
 
             # Alliance matrix heatmap
             st.markdown("### Final Alliance Matrix")
@@ -104,6 +114,12 @@ def render() -> None:
             )
             fig.update_layout(**PLOTLY_LAYOUT, height=400)
             st.plotly_chart(fig, use_container_width=True, key="agents_alliance_matrix")
+            st.caption(
+                "v3.0 — Alliance matrix eigenvalues populate UKT indices 56–63. "
+                "A single dominant eigenvalue signals a unipolar bloc; multiple "
+                "comparable eigenvalues indicate a multipolar structure — both "
+                "are interpretable via the Semantic Canvas."
+            )
 
             # Metrics
             c1, c2, c3 = st.columns(3)

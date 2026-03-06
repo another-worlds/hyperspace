@@ -71,6 +71,11 @@ def render() -> None:
                 )
             fig_map = plot_geopolitical_map(G, country_stats=country_stats)
             st.plotly_chart(fig_map, use_container_width=True, key="politics_geo_map")
+            st.caption(
+                "v3.0 — Geographic projection of the geopolitical graph. Node "
+                "positions and edge weights feed into UKT structural-centrality "
+                "features (indices 32–47), enabling spatial provenance tracing."
+            )
 
             # Country stats table
             if country_stats:
@@ -91,6 +96,11 @@ def render() -> None:
             st.markdown("### Relation Graph")
             fig = plot_geopolitical_graph(G, pos)
             st.plotly_chart(fig, use_container_width=True, key="politics_relation_graph")
+            st.caption(
+                "v3.0 — Abstract relation graph with edge weights derived from "
+                "voting agreement data. Centrality measures from this graph "
+                "populate the structural-centrality UKT region."
+            )
 
             # Centrality metrics
             st.markdown("### Centrality Analysis")
@@ -119,6 +129,11 @@ def render() -> None:
             )
             fig.update_layout(**PLOTLY_LAYOUT, height=400)
             st.plotly_chart(fig, use_container_width=True, key="politics_centrality_bar")
+            st.caption(
+                "v3.0 — Centrality measures (degree, betweenness, eigenvector, "
+                "PageRank) are flattened into UKT indices 32–47. High betweenness "
+                "flags bridge nodes; skew triggers governance flag GOV-003."
+            )
 
             # Graph metrics
             c1, c2, c3 = st.columns(3)
@@ -143,6 +158,11 @@ def render() -> None:
                 )
                 fig.update_layout(**PLOTLY_LAYOUT, height=400)
                 st.plotly_chart(fig, use_container_width=True, key="politics_voting_agreement")
+                st.caption(
+                    "v3.0 — Pairwise voting agreement informs edge weights in the "
+                    "geopolitical graph. This matrix is fully traceable to the "
+                    "Harvard Dataverse UN votes source (or config-edge fallback)."
+                )
 
             # UKT contribution
             if "features_for_ukt" in graph_result:

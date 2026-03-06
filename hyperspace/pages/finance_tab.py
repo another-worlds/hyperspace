@@ -48,6 +48,11 @@ def render() -> None:
             if len(tdf) > 0:
                 fig = candlestick_chart(ohlcv_df, ticker)
                 st.plotly_chart(fig, use_container_width=True, key=f"finance_candlestick_{ticker}")
+        st.caption(
+            "v3.0 — Raw price history feeds the TFT encoder. Attention weights "
+            "over these time steps populate UKT indices 0–15 (temporal-pattern region), "
+            "enabling kernel-level traceability back to specific market regimes."
+        )
 
         # TFT forecast
         st.markdown("### Multi-Horizon Probabilistic Forecast")
@@ -78,6 +83,10 @@ def render() -> None:
                             title="TFT Multi-Quantile Forecast",
                         )
                         st.plotly_chart(fig, use_container_width=True, key="finance_forecast_3d")
+                        st.caption(
+                            "v3.0 — Quantile forecast uncertainty bounds support the "
+                            "contestability guarantee: wide bands signal low confidence."
+                        )
                 elif len(q.shape) == 2:
                     x_axis = list(range(q.shape[0]))
                     fig = forecast_chart(
@@ -85,6 +94,10 @@ def render() -> None:
                         title="TFT Multi-Quantile Forecast",
                     )
                     st.plotly_chart(fig, use_container_width=True, key="finance_forecast_2d")
+                    st.caption(
+                        "v3.0 — Quantile forecast uncertainty bounds support the "
+                        "contestability guarantee: wide bands signal low confidence."
+                    )
 
             # Show source badge
             src = finance_result.get("data_source", "unknown")
@@ -103,6 +116,11 @@ def render() -> None:
                     )
                     fig.update_layout(**PLOTLY_LAYOUT, height=250)
                     st.plotly_chart(fig, use_container_width=True, key="finance_attention")
+                    st.caption(
+                        "v3.0 — Attention heatmap shows which encoder time steps "
+                        "the TFT attends to, directly populating UKT temporal-pattern "
+                        "features and enabling provenance tracing."
+                    )
 
                     if "encoder_importance" in finance_result:
                         enc = finance_result["encoder_importance"]
@@ -131,3 +149,8 @@ def render() -> None:
                 )
                 fig.update_layout(**PLOTLY_LAYOUT, height=350)
                 st.plotly_chart(fig, use_container_width=True, key="finance_correlation_heatmap")
+                st.caption(
+                    "v3.0 — Cross-ticker correlations reveal co-movement patterns "
+                    "that inform the TFT's multi-entity encoder and contribute to "
+                    "UKT kernel structure."
+                )

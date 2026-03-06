@@ -72,6 +72,12 @@ def render() -> None:
                 )
                 fig.update_layout(**PLOTLY_LAYOUT, height=350)
                 st.plotly_chart(fig, use_container_width=True, key="clusters_topic_distribution")
+                st.caption(
+                    "v3.0 — Topic distribution populates UKT indices 16–23 "
+                    "(semantic-embedding region). A dominant single topic signals "
+                    "focused discourse; flat distributions indicate fragmented "
+                    "information — both are traceable governance signals."
+                )
 
                 # Show sample docs per topic
                 with st.expander("Sample Documents by Topic"):

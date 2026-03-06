@@ -64,15 +64,23 @@ def render() -> None:
         block_names = [s["block_name"] for s in snapshots]
         fig = kernel_viz.plot_kernel_matrix(final_snap, block_names)
         st.plotly_chart(fig, use_container_width=True, key="interp_kernel_matrix")
+        st.caption(
+            "v3.0 — Each cell shows how strongly a pipeline block activates a "
+            "UKT kernel. Cross-block activation patterns reveal which data "
+            "modalities share latent structure — the core of interpretable "
+            "cross-domain synthesis."
+        )
 
         # Kernel importance
         col1, col2 = st.columns(2)
         with col1:
             fig_imp = kernel_viz.plot_kernel_importance(final_snap)
             st.plotly_chart(fig_imp, use_container_width=True, key="interp_kernel_importance")
+            st.caption("v3.0 — Kernel importance: fraction of total variance each SVD kernel explains.")
         with col2:
             fig_rr = kernel_viz.plot_reality_regression(final_snap)
             st.plotly_chart(fig_rr, use_container_width=True, key="interp_reality_regression")
+            st.caption("v3.0 — Reality regression: per-feature importance in the cross-domain synthesis.")
 
         # B1: Policy language mode branch
         if policy_mode:
@@ -191,6 +199,11 @@ def render() -> None:
             )
             st.plotly_chart(fig_radar, use_container_width=True,
                             key="interp_semantic_radar")
+            st.caption(
+                "v3.0 — The radar chart shows how each pipeline layer projects "
+                "onto 12 named semantic dimensions. The accumulated trace (solid) "
+                "is the system's interpretive summary across all data domains."
+            )
 
             # Canvas trajectory heatmap
             trajectory = canvas_state.get("trajectory", [])
@@ -207,6 +220,11 @@ def render() -> None:
                 fig_traj.update_layout(**PLOTLY_LAYOUT, height=280)
                 st.plotly_chart(fig_traj, use_container_width=True,
                                 key="interp_canvas_trajectory")
+                st.caption(
+                    "v3.0 — Canvas evolution shows the cumulative semantic state "
+                    "after each pipeline step. Brightening cells indicate dimensions "
+                    "where signal accumulates across data modalities."
+                )
 
             # Dominant narrative dimensions
             dominant = canvas_state.get("dominant_narrative", [])
@@ -308,6 +326,7 @@ def render() -> None:
                     xaxis_title="Epoch", yaxis_title="Loss",
                 )
                 st.plotly_chart(fig, use_container_width=True, key="interp_sae_loss_curve")
+                st.caption("v3.0 — SAE loss curve: convergence of sparse concept discovery.")
 
             # Concept activation heatmap
             act = sae_result.get("concept_activations")
@@ -322,6 +341,11 @@ def render() -> None:
                 )
                 fig.update_layout(**PLOTLY_LAYOUT, height=300)
                 st.plotly_chart(fig, use_container_width=True, key="interp_concept_activations")
+                st.caption(
+                    "v3.0 — Per-block concept activations show which abstract "
+                    "patterns are active in each data domain — enabling "
+                    "contestation at the concept level."
+                )
 
         # Concept-kernel mapping
         concept_kernel_map = st.session_state.get("concept_kernel_map", [])
@@ -329,6 +353,11 @@ def render() -> None:
             st.markdown("### Concept-Kernel Correspondence")
             fig_ck = kernel_viz.plot_concept_kernel_map(concept_kernel_map)
             st.plotly_chart(fig_ck, use_container_width=True, key="interp_concept_kernel_map")
+            st.caption(
+                "v3.0 — Concept-kernel correspondence maps SAE-discovered "
+                "concepts to SVD kernels, closing the interpretability loop: "
+                "raw data → features → kernels → concepts → narratives."
+            )
             st.dataframe(pd.DataFrame(concept_kernel_map), use_container_width=True)
 
         # Stakeholder annotation summary

@@ -156,6 +156,7 @@ else:
     # Pipeline has been launched
     from hyperspace.pages import (
         dashboard,
+        mission_control_tab,
         finance_tab,
         clusters_tab,
         politics_tab,
@@ -174,30 +175,33 @@ else:
 
     st.markdown("---")
 
-    # Tabs for individual block exploration
+    # Tabs — spec-aligned: 0-6 per CLAUDE.md + Counterfactual (contestability)
     tabs = st.tabs([
-        "Finance-Neural",
-        "Info Clusters",
-        "Politics-Military",
-        "Agentic Sim",
+        "Mission Control",
+        "Finance-Neural Block",
+        "Informational Cluster Mapping",
+        "Politics-Military Block",
+        "Agentic Simulation",
         "Semantic Interpreter",
-        "Full Pipeline",
+        "Hyperspace Pipeline",
         "⚖ Counterfactual",
     ])
 
     with tabs[0]:
-        finance_tab.render()
+        mission_control_tab.render()
     with tabs[1]:
-        clusters_tab.render()
+        finance_tab.render()
     with tabs[2]:
-        politics_tab.render()
+        clusters_tab.render()
     with tabs[3]:
-        agents_tab.render()
+        politics_tab.render()
     with tabs[4]:
-        interpreter_tab.render()
+        agents_tab.render()
     with tabs[5]:
-        pipeline_tab.render()
+        interpreter_tab.render()
     with tabs[6]:
+        pipeline_tab.render()
+    with tabs[7]:
         counterfactual_tab.render()
 
     # Reset button

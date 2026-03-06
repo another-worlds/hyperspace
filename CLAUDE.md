@@ -23,7 +23,7 @@
 
 ### UI Principles
 - Dark modern theme via CSS injection (cards, gradients, badges)
-- `st.tabs` for 7 core tabs
+- `st.tabs` for 8 core tabs
 - Sidebar controls + global "Run Full Pipeline" button
 - Metric cards, expanders, progress bars, success/error toasts
 - Interactive Plotly everywhere with captions explaining v3.0 connection
@@ -39,13 +39,14 @@
 ### Architecture Tabs
 | Tab | Name | Core Feature |
 |-----|------|-------------|
-| 0 | Mission Control | System overview, metrics, status |
+| 0 | Mission Control | System overview, metrics, governance scorecard, status |
 | 1 | Finance-Neural Block | TFT forecasting, correlation heatmaps |
 | 2 | Informational Cluster Mapping | BERTopic multilingual clustering |
-| 3 | Politics-Military Block | Graph engine, kernelization |
+| 3 | Politics-Military Block | Graph engine, centrality, kernelization |
 | 4 | Agentic Simulation | Multi-agent resource/alliance sim |
-| 5 | Semantic Interpreter | Concept bottleneck, kernel viz |
+| 5 | Semantic Interpreter | Concept bottleneck, kernel viz, semantic canvas |
 | 6 | Hyperspace Pipeline | End-to-end orchestration |
+| 7 | Counterfactual | Block removal + diff analysis (contestability) |
 
 ### Development Commands
 ```bash
