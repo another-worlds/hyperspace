@@ -1,6 +1,8 @@
 """Sparse Autoencoder for unsupervised concept discovery on the UKT."""
 from __future__ import annotations
 
+from typing import Any
+
 import numpy as np
 import torch
 import torch.nn as nn
@@ -137,6 +139,38 @@ def train_sparse_ae(
         )
     except Exception:
         return None
+
+
+def enrich_concepts_with_narratives(
+    sae_result: dict,
+    canvas: Any = None,
+) -> dict:
+    """Add Tiny-LLM semantic narratives to active SAE concepts.
+
+    Modifies sae_result in-place, adding 'semantic_narrative' to each
+    active concept label. Requires the semantic canvas for context.
+
+    Args:
+        sae_result: Output from train_sparse_ae().
+        canvas: SemanticCanvas instance for context.
+
+    Returns:
+        The same sae_result dict, with semantic_narrative fields added.
+    """
+    if sae_result is None or canvas is None:
+        return sae_result
+
+    try:
+        from hyperspace.models.semantic_narrator import narrate_concept
+        for cl in sae_result.get("concept_labels", []):
+            if cl.get("active"):
+                narrative = narrate_concept(cl, canvas)
+                if narrative:
+                    cl["semantic_narrative"] = narrative
+    except Exception:
+        pass  # Graceful degradation — keep existing narratives
+
+    return sae_result
 
 
 def map_concepts_to_kernels(

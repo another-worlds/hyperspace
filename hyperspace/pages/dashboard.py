@@ -563,6 +563,32 @@ def run_pipeline() -> None:
         st.session_state.ukt_snapshots = snapshots
         st.session_state.data_sources = data_sources
 
+        # ---- Semantic Canvas: store + generate final narratives ---- #
+        st.session_state.semantic_canvas = ukt.canvas
+
+        st.write("Generating semantic narratives via Tiny-LLM...")
+        try:
+            from hyperspace.models.semantic_narrator import (
+                narrate_canvas, narrate_reality_regression,
+            )
+            from hyperspace.models.sparse_ae import enrich_concepts_with_narratives
+
+            # Full canvas narrative
+            canvas_narrative = narrate_canvas(ukt.canvas)
+            st.session_state.canvas_narrative = canvas_narrative
+
+            # Reality regression narrative (from final snapshot)
+            if snapshots:
+                rr_narrative = narrate_reality_regression(snapshots[-1], ukt.canvas)
+                st.session_state.reality_narrative = rr_narrative
+
+            # Enrich SAE concepts with semantic narratives
+            if sae_result is not None:
+                enrich_concepts_with_narratives(sae_result, ukt.canvas)
+
+        except Exception:
+            pass  # Narrator unavailable — graceful degradation
+
         final_matrix = ukt.get_final_matrix()
         if final_matrix is not None:
             st.session_state.ukt_multirun_stability = estimate_reality_regression_stability(
@@ -765,17 +791,32 @@ def render_results() -> None:
     fig_evo = kernel_viz.plot_kernel_evolution(snapshots)
     st.plotly_chart(fig_evo, use_container_width=True, key="dashboard_kernel_evolution")
 
+    # Semantic Canvas summary
+    canvas_narrative = st.session_state.get("canvas_narrative")
+    reality_narrative = st.session_state.get("reality_narrative")
+    if canvas_narrative or reality_narrative:
+        st.markdown("### Semantic Interpretability — LLM Narratives")
+        if canvas_narrative:
+            st.success(f"**Cross-Domain Narrative:** {canvas_narrative}")
+        if reality_narrative:
+            st.info(f"**Reality Assessment:** {reality_narrative}")
+
     # Semantic interpretation log
     st.markdown("### Semantic Interpretability Report")
     for snap in snapshots:
         with st.expander(f"Step {snap['step']}: {snap['block_name']}", expanded=False):
             st.markdown(snap["report"])
+            # Show layer narrative if available
+            if snap.get("layer_narrative"):
+                st.info(f"**Layer narrative:** {snap['layer_narrative']}")
             for kl in snap["kernel_labels"]:
                 st.markdown(
                     f'<span class="concept-badge">{kl["label"]}</span>',
                     unsafe_allow_html=True,
                 )
-                if kl.get("narrative"):
+                if kl.get("semantic_narrative"):
+                    st.caption(f"Semantic: {kl['semantic_narrative']}")
+                elif kl.get("narrative"):
                     st.caption(kl["narrative"])
 
     # Concept-kernel map (from SAE)
@@ -811,6 +852,24 @@ def render_results() -> None:
         report_lines.append("## Governance Flags")
         for flag in gov_flags:
             report_lines.append(f"- [{flag.get('code')}] {flag.get('label')}: {flag.get('detail', '')}")
+
+    # Semantic narratives section
+    canvas_narrative = st.session_state.get("canvas_narrative")
+    reality_narrative = st.session_state.get("reality_narrative")
+    if canvas_narrative or reality_narrative:
+        report_lines.append("")
+        report_lines.append("## Semantic Narratives (Tiny-LLM)")
+        if canvas_narrative:
+            report_lines.append(f"**Cross-Domain Narrative:** {canvas_narrative}")
+        if reality_narrative:
+            report_lines.append(f"**Reality Assessment:** {reality_narrative}")
+        report_lines.append("")
+        for snap in snapshots:
+            if snap.get("layer_narrative"):
+                report_lines.append(
+                    f"**Step {snap['step']} ({snap['block_name']}):** "
+                    f"{snap['layer_narrative']}"
+                )
 
     report_lines.append("")
     report_lines.append("## Pipeline Reports")

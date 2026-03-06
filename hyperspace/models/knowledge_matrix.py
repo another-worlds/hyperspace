@@ -7,6 +7,8 @@ The UKT grows after each pipeline block. At every step it:
   4. Decomposes via SVD to get current kernel structure
   5. Computes "universal reality regression" (weighted kernel basis)
   6. Generates data-grounded, human-readable semantic labels for active kernels
+  7. Runs per-stage SAE and projects onto the Semantic Canvas
+  8. Generates Tiny-LLM narratives for each kernel and layer
 """
 from __future__ import annotations
 
@@ -16,6 +18,11 @@ from hyperspace.config import (
     FEATURE_NAMES,
     REGION_DESCRIPTIONS,
     UKT_FEATURE_DIM,
+)
+from hyperspace.models.semantic_canvas import (
+    SemanticCanvas,
+    train_stage_sae,
+    REGION_TO_CANVAS,
 )
 
 
@@ -241,8 +248,23 @@ def _label_kernel(
     )
 
 
+# Map block names to their UKT region keys for canvas projection
+BLOCK_REGION_MAP: dict[str, tuple[str, int, int]] = {
+    "Finance":  ("temporal-pattern",      0,  16),
+    "Clusters": ("semantic-embedding",    16, 32),
+    "Graph":    ("structural-centrality", 32, 48),
+    "Agents":   ("dynamic-agent",         48, 64),
+    "Spatial":  ("geospatial-kernel",     64, 80),
+}
+
+
 class UniversalKnowledgeTensor:
-    """Incrementally built cross-block knowledge tensor with SVD decomposition."""
+    """Incrementally built cross-block knowledge tensor with SVD decomposition.
+
+    Integrates the Semantic Canvas subsystem: at each add_block call, a per-stage
+    SAE observes the block's feature region and projects discovered concepts onto
+    the shared semantic canvas.
+    """
 
     def __init__(self, feature_dim: int = UKT_FEATURE_DIM):
         self.feature_dim = feature_dim
@@ -250,6 +272,7 @@ class UniversalKnowledgeTensor:
         self.rows: list[np.ndarray] = []
         self.snapshots: list[dict] = []
         self.global_feature_meta: dict[int, dict] = {}
+        self.canvas = SemanticCanvas()
 
     def add_block(
         self,
@@ -300,6 +323,57 @@ class UniversalKnowledgeTensor:
         recon = U[:, :n_kernels] @ np.diag(S[:n_kernels]) @ Vt[:n_kernels, :]
         recon_error = float(np.linalg.norm(matrix - recon))
 
+        # --------------------------------------------------------------- #
+        # Semantic Canvas subsystem: per-stage SAE + canvas projection     #
+        # --------------------------------------------------------------- #
+        stage_sae_result = None
+        canvas_entry = None
+        region_info = BLOCK_REGION_MAP.get(name)
+        if region_info is not None:
+            region_name, lo, hi = region_info
+            region_features = normalized[lo:hi]
+
+            # Train per-stage SAE on this block's feature region
+            stage_sae_result = train_stage_sae(region_features, concept_dim=8, epochs=60)
+
+            # Project onto the semantic canvas
+            canvas_entry = self.canvas.project_block(
+                block_name=name,
+                step=len(self.rows),
+                region_name=region_name,
+                features=region_features,
+                sae_result=stage_sae_result,
+            )
+
+        # --------------------------------------------------------------- #
+        # Generate Tiny-LLM narratives (graceful degradation on failure)   #
+        # --------------------------------------------------------------- #
+        layer_narrative = None
+        kernel_semantic_narratives = {}
+        reality_narrative = None
+
+        try:
+            from hyperspace.models.semantic_narrator import (
+                narrate_layer, narrate_kernel, narrate_reality_regression,
+            )
+
+            # Layer narrative
+            if canvas_entry is not None:
+                layer_narrative = narrate_layer(canvas_entry, self.canvas)
+
+            # Kernel narratives (only for the most important kernels to save time)
+            for kl in kernel_labels:
+                if kl["importance"] > 0.15:
+                    k_narr = narrate_kernel(kl, self.canvas)
+                    if k_narr:
+                        kl["semantic_narrative"] = k_narr
+
+        except Exception:
+            pass  # Narrator unavailable — keep algorithmic narratives
+
+        # --------------------------------------------------------------- #
+        # Build human-readable report                                      #
+        # --------------------------------------------------------------- #
         report_lines = [
             f"=== Step {len(self.rows)}: Added '{name}' block ===",
             f"Active kernels: {n_kernels}",
@@ -307,9 +381,20 @@ class UniversalKnowledgeTensor:
             f"Reality regression norm: {np.linalg.norm(reality_regression):.4f}",
             "",
         ]
+
+        # Canvas entry summary
+        if canvas_entry is not None:
+            report_lines.append(f"--- Semantic Canvas ---")
+            report_lines.append(canvas_entry.interpretation)
+            if layer_narrative:
+                report_lines.append(f"Narrative: {layer_narrative}")
+            report_lines.append("")
+
         for kl in kernel_labels:
             report_lines.append(f"--- {kl['label']} ---")
             report_lines.append(kl["narrative"])
+            if kl.get("semantic_narrative"):
+                report_lines.append(f"Semantic: {kl['semantic_narrative']}")
             report_lines.append("")
 
         if len(self.rows) > 1:
@@ -347,6 +432,10 @@ class UniversalKnowledgeTensor:
             report="\n".join(report_lines),
             feature_meta=self.global_feature_meta.copy(),
             timeframe_context=timeframe_context or {},
+            # Semantic subsystem fields
+            stage_sae_result=stage_sae_result,
+            canvas_entry=canvas_entry,
+            layer_narrative=layer_narrative,
         )
         self.snapshots.append(snapshot)
         return snapshot
