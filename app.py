@@ -19,7 +19,7 @@ warnings.filterwarnings("ignore")
 
 import streamlit as st
 
-from hyperspace.config import DARK_CSS, DEFAULT_TICKERS, GLOSSARY
+from hyperspace.config import AVAILABLE_TICKERS, DARK_CSS, DEFAULT_TICKERS, GLOSSARY
 from hyperspace.state import init_session_state
 from hyperspace.pages import governance as governance_module
 
@@ -47,7 +47,7 @@ with st.sidebar:
     st.markdown("---")
 
     # B1: Policy Language Mode toggle
-    policy_mode = st.toggle(
+    st.toggle(
         "🗂️ Governance Language Mode",
         value=st.session_state.get("policy_language_mode", False),
         key="policy_language_mode",
@@ -61,9 +61,9 @@ with st.sidebar:
     st.markdown("---")
 
     # Ticker selection (shared across tabs)
-    tickers = st.multiselect(
+    st.multiselect(
         "Finance Tickers (Country ETFs)",
-        ["SPY", "EWZ", "INDA", "FXI", "EWU", "ERUS", "RSX"],
+        AVAILABLE_TICKERS,
         default=DEFAULT_TICKERS,
         key="tickers",
     )
@@ -187,22 +187,22 @@ else:
         "⚖ Counterfactual",
     ])
 
-    with tabs[0]:
-        mission_control_tab.render()
-    with tabs[1]:
-        finance_tab.render()
-    with tabs[2]:
-        clusters_tab.render()
-    with tabs[3]:
-        politics_tab.render()
-    with tabs[4]:
-        agents_tab.render()
-    with tabs[5]:
-        interpreter_tab.render()
-    with tabs[6]:
-        pipeline_tab.render()
-    with tabs[7]:
-        counterfactual_tab.render()
+    tab_modules = [
+        (tabs[0], "Mission Control", mission_control_tab),
+        (tabs[1], "Finance-Neural Block", finance_tab),
+        (tabs[2], "Informational Cluster Mapping", clusters_tab),
+        (tabs[3], "Politics-Military Block", politics_tab),
+        (tabs[4], "Agentic Simulation", agents_tab),
+        (tabs[5], "Semantic Interpreter", interpreter_tab),
+        (tabs[6], "Hyperspace Pipeline", pipeline_tab),
+        (tabs[7], "Counterfactual", counterfactual_tab),
+    ]
+    for tab, name, module in tab_modules:
+        with tab:
+            try:
+                module.render()
+            except Exception as exc:
+                st.error(f"{name} tab encountered an error: {exc}")
 
     # Reset button
     st.markdown("---")

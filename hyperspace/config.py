@@ -116,6 +116,9 @@ GEOPOLITICAL_EDGES: list[tuple] = [
 # UKT feature dimension (shared across all blocks)
 UKT_FEATURE_DIM: int = 80
 
+# All available tickers for finance block — country-representative ETFs
+AVAILABLE_TICKERS: list[str] = ["SPY", "EWZ", "INDA", "FXI", "EWU", "ERUS", "RSX"]
+
 # Default tickers for finance block — country-representative ETFs / major stocks
 DEFAULT_TICKERS: list[str] = ["SPY", "EWZ", "INDA"]
 

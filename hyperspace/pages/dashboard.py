@@ -14,6 +14,7 @@ from hyperspace.config import (
     GOVERNANCE_FLAG_CODES, SCORECARD_THRESHOLDS,
 )
 from hyperspace.models.knowledge_matrix import (
+    FEATURE_REGION_LABELS,
     UniversalKnowledgeTensor,
     estimate_reality_regression_stability,
 )
@@ -44,11 +45,8 @@ def _compute_governance_flags(
         final_snap = ukt_snapshots[-1]
         rr = final_snap["reality_regression"]
         region_sums = {
-            "temporal-pattern":      float(np.abs(rr[0:16]).sum()),
-            "semantic-embedding":    float(np.abs(rr[16:32]).sum()),
-            "structural-centrality": float(np.abs(rr[32:48]).sum()),
-            "dynamic-agent":         float(np.abs(rr[48:64]).sum()),
-            "geospatial-kernel":     float(np.abs(rr[64:80]).sum()),
+            label: float(np.abs(rr[lo:hi]).sum())
+            for (lo, hi), label in FEATURE_REGION_LABELS.items()
         }
         total_rr = sum(region_sums.values()) + 1e-8
         max_region_share = max(region_sums.values()) / total_rr
