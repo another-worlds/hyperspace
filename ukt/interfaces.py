@@ -41,7 +41,8 @@ except ImportError:
     _HAS_TORCH = False
 
 from ukt.registry import FeatureRegionRegistry
-from ukt.extractors import HookExtractor, ManualExtractor, _pad_or_truncate
+from ukt.extractors import HookExtractor, ManualExtractor
+from ukt.utils import _pad_or_truncate
 
 
 # ------------------------------------------------------------------ #
@@ -536,38 +537,80 @@ class DeepLinearInterface(ModelInterface):
 
         return specs
 
+    def _setup_extractor(self) -> None:
+        """Override base: activation aggregation is handled directly in _extract_impl."""
+        # Set a sentinel so the base class extract() does not call this again.
+        # Actual per-layer hook management happens inside _extract_impl.
+        self._extractor = object()
+
+    def detach(self) -> None:
+        """Reset extractor so it can be re-initialized on the next extract() call."""
+        self._extractor = None
+
     def _extract_impl(self, input_data: Any) -> np.ndarray:
-        """Extract activations via hooks + weight spectra via SVD."""
+        """Extract mean activations across ALL linear layers + weight spectra.
+
+        All linear layer activations are aggregated (mean) into the single
+        ``layer_activations`` region, avoiding the overwrite problem that
+        arises when multiple hooks share the same region key in HookExtractor.
+        """
         if not _HAS_TORCH:
             raise RuntimeError("PyTorch required")
 
-        # --- Activations via hooks ---
-        with torch.no_grad():
-            self._model.eval()
-            self._model(input_data)
-        hook_features = self._collect_after_forward()
-
-        # --- Weight spectrum via SVD on weight matrices ---
-        spectrum = self._extract_weight_spectrum()
         reg = self.registry
+        act_region = reg.regions["layer_activations"]
+        features = np.zeros(reg.total_dim, dtype=np.float64)
+
+        # Collect activations from ALL linear layers into a list, then mean-pool
+        all_activations: list[np.ndarray] = []
+        temp_hooks: list = []
+
+        def _create_activation_hook():
+            def hook_fn(module, input, output):
+                t = output.detach().cpu().float()
+                while t.dim() > 1:
+                    t = t.mean(dim=0)
+                all_activations.append(t.numpy())
+            return hook_fn
+
+        try:
+            with torch.no_grad():
+                self._model.eval()
+                for _, mod in self._model.named_modules():
+                    if isinstance(mod, nn.Linear):
+                        temp_hooks.append(mod.register_forward_hook(_create_activation_hook()))
+                self._model(input_data)
+        finally:
+            for h in temp_hooks:
+                h.remove()
+
+        if all_activations:
+            mean_act = np.mean(
+                [_pad_or_truncate(a, act_region.dim) for a in all_activations], axis=0,
+            )
+            features[act_region.start:act_region.end] = mean_act
+
+        # Weight spectrum via SVD on weight matrices
+        spectrum = self._extract_weight_spectrum()
         spec_region = reg.regions["weight_spectrum"]
         padded = _pad_or_truncate(spectrum, spec_region.dim)
-        hook_features[spec_region.start:spec_region.end] = padded
+        features[spec_region.start:spec_region.end] = padded
 
-        return hook_features
+        return features
 
     def _extract_weight_spectrum(self) -> np.ndarray:
         """Compute top singular values from all weight matrices."""
         if not _HAS_TORCH:
             return np.zeros(self._spec_dim)
 
+        linear_count = self._count_linear()
         singular_values: list[float] = []
         for _, mod in self._model.named_modules():
             if isinstance(mod, nn.Linear):
                 w = mod.weight.detach().cpu().float()
                 svs = torch.linalg.svdvals(w)
                 # Take top-k singular values (proportional allocation)
-                k = max(1, self._spec_dim // max(1, self._count_linear()))
+                k = max(1, self._spec_dim // max(1, linear_count))
                 singular_values.extend(svs[:k].numpy().tolist())
 
         arr = np.array(singular_values, dtype=np.float64)

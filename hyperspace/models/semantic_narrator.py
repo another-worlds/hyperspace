@@ -12,9 +12,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-import numpy as np
-
-from semantic_interpreter.narrator import LLMNarrator, TemplateNarrator
+from semantic_interpreter.narrator import LLMNarrator
 
 if TYPE_CHECKING:
     from hyperspace.models.semantic_canvas import SemanticCanvas, CanvasEntry
@@ -34,7 +32,7 @@ def _get_narrator() -> LLMNarrator:
         cache_fn = None
         try:
             import streamlit as st
-            cache_fn = st.cache_resource(show_spinner="Loading Tiny-LLM narrator model...")
+            cache_fn = st.cache_resource
         except Exception:
             pass
         _narrator = LLMNarrator(

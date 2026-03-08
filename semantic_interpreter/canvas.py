@@ -101,7 +101,6 @@ class SemanticCanvas:
         if sae_result is not None:
             mean_act = sae_result["mean_activation"]
             concept_energy = float(mean_act.sum()) + 1e-8
-            concept_weights = mean_act / concept_energy
             feature_energy = float(np.abs(features).sum()) + 1e-8
             for canvas_idx, weight in canvas_targets:
                 if canvas_idx < self.n_dims:

@@ -199,7 +199,7 @@ class LLMNarrator(NarratorBackend):
                 return None, None
 
         if self._cache_fn:
-            result = self._cache_fn(_do_load)
+            result = self._cache_fn(_do_load)()
         else:
             result = _do_load()
 
