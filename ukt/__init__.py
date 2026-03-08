@@ -44,6 +44,15 @@ from ukt.tensor import UniversalKnowledgeTensor
 from ukt.extractors import HookExtractor
 from ukt.kernels import decompose_svd, label_kernel, generate_kernel_narrative
 from ukt.stability import estimate_regression_stability
+from ukt.interfaces import (
+    ModelInterface,
+    LayerSpec,
+    LLMInterface,
+    CNNInterface,
+    DeepLinearInterface,
+    unified_registry,
+    extract_all,
+)
 
 __all__ = [
     "UniversalKnowledgeTensor",
@@ -53,4 +62,12 @@ __all__ = [
     "label_kernel",
     "generate_kernel_narrative",
     "estimate_regression_stability",
+    # Model interfaces
+    "ModelInterface",
+    "LayerSpec",
+    "LLMInterface",
+    "CNNInterface",
+    "DeepLinearInterface",
+    "unified_registry",
+    "extract_all",
 ]
