@@ -19,7 +19,7 @@ warnings.filterwarnings("ignore")
 
 import streamlit as st
 
-from hyperspace.config import DARK_CSS, DEFAULT_TICKERS, GLOSSARY
+from hyperspace.config import AVAILABLE_TICKERS, DARK_CSS, DEFAULT_TICKERS, GLOSSARY
 from hyperspace.state import init_session_state
 from hyperspace.pages import governance as governance_module
 
@@ -47,7 +47,7 @@ with st.sidebar:
     st.markdown("---")
 
     # B1: Policy Language Mode toggle
-    policy_mode = st.toggle(
+    st.toggle(
         "🗂️ Governance Language Mode",
         value=st.session_state.get("policy_language_mode", False),
         key="policy_language_mode",
@@ -61,9 +61,9 @@ with st.sidebar:
     st.markdown("---")
 
     # Ticker selection (shared across tabs)
-    tickers = st.multiselect(
+    st.multiselect(
         "Finance Tickers (Country ETFs)",
-        ["SPY", "EWZ", "INDA", "FXI", "EWU", "ERUS", "RSX"],
+        AVAILABLE_TICKERS,
         default=DEFAULT_TICKERS,
         key="tickers",
     )
@@ -156,6 +156,7 @@ else:
     # Pipeline has been launched
     from hyperspace.pages import (
         dashboard,
+        mission_control_tab,
         finance_tab,
         clusters_tab,
         politics_tab,
@@ -174,31 +175,34 @@ else:
 
     st.markdown("---")
 
-    # Tabs for individual block exploration
+    # Tabs — spec-aligned: 0-6 per CLAUDE.md + Counterfactual (contestability)
     tabs = st.tabs([
-        "Finance-Neural",
-        "Info Clusters",
-        "Politics-Military",
-        "Agentic Sim",
+        "Mission Control",
+        "Finance-Neural Block",
+        "Informational Cluster Mapping",
+        "Politics-Military Block",
+        "Agentic Simulation",
         "Semantic Interpreter",
-        "Full Pipeline",
+        "Hyperspace Pipeline",
         "⚖ Counterfactual",
     ])
 
-    with tabs[0]:
-        finance_tab.render()
-    with tabs[1]:
-        clusters_tab.render()
-    with tabs[2]:
-        politics_tab.render()
-    with tabs[3]:
-        agents_tab.render()
-    with tabs[4]:
-        interpreter_tab.render()
-    with tabs[5]:
-        pipeline_tab.render()
-    with tabs[6]:
-        counterfactual_tab.render()
+    tab_modules = [
+        (tabs[0], "Mission Control", mission_control_tab),
+        (tabs[1], "Finance-Neural Block", finance_tab),
+        (tabs[2], "Informational Cluster Mapping", clusters_tab),
+        (tabs[3], "Politics-Military Block", politics_tab),
+        (tabs[4], "Agentic Simulation", agents_tab),
+        (tabs[5], "Semantic Interpreter", interpreter_tab),
+        (tabs[6], "Hyperspace Pipeline", pipeline_tab),
+        (tabs[7], "Counterfactual", counterfactual_tab),
+    ]
+    for tab, name, module in tab_modules:
+        with tab:
+            try:
+                module.render()
+            except Exception as exc:
+                st.error(f"{name} tab encountered an error: {exc}")
 
     # Reset button
     st.markdown("---")

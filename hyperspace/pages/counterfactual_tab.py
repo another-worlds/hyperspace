@@ -361,6 +361,11 @@ def render() -> None:
         orig_kernels, cf_kernels,
     )
     st.plotly_chart(fig_ki, use_container_width=True, key="cf_kernel_importance")
+    st.caption(
+        "v3.0 — Kernel importance shift when a block is removed. Large changes "
+        "indicate the removed block was critical to that kernel's structure — "
+        "operationalising contestability."
+    )
 
     # Region-level impact analysis
     st.markdown("### Region-Level Impact Analysis")

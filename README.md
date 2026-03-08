@@ -89,13 +89,58 @@ NOAA Tides & Currents (sea-level proxy)
 
 | Tab | Name | Content |
 |-----|------|---------|
-| 0 | Finance-Neural | TFT forecast, OHLCV charts, macro heatmaps |
-| 1 | Info Clusters | BERTopic topic map, document embeddings |
-| 2 | Politics-Military | Graph visualization, alliance network |
-| 3 | Agentic Sim | Resource competition, bloc formation |
-| 4 | Semantic Interpreter | UKT heatmap, concept activations |
-| 5 | Full Pipeline | End-to-end orchestration log |
-| 6 | Counterfactual | Governance scorecard, provenance trace |
+| 0 | Mission Control | System overview, metrics, governance scorecard, status |
+| 1 | Finance-Neural | TFT forecast, OHLCV charts, macro heatmaps |
+| 2 | Info Clusters | BERTopic topic map, document embeddings |
+| 3 | Politics-Military | Graph visualization, alliance network |
+| 4 | Agentic Sim | Resource competition, bloc formation |
+| 5 | Semantic Interpreter | Concept discovery, semantic canvas, LLM narratives |
+| 6 | Full Pipeline | End-to-end orchestration log |
+| 7 | Counterfactual | Block removal + diff analysis (contestability) |
+
+---
+
+## Semantic Interpreter
+
+The Semantic Interpreter (Tab 5) transforms opaque model internals into
+human-readable explanations through three layers:
+
+1. **Per-Stage Sparse Autoencoders** — Each pipeline block (Finance, Clusters,
+   Graph, Spatial, Agents) gets a lightweight SAE that discovers 8 sparse
+   concepts from its 16-dimensional feature region.
+
+2. **Semantic Canvas** — A 12-dimensional coordinate system with named axes
+   (Market Momentum, Volatility Regime, Alliance Polarity, Network Cohesion,
+   etc.). Each block projects its discovered concepts onto the canvas, building
+   a cumulative interpretive picture across all data domains.
+
+3. **Tiny-LLM Narrator** — A ~10M-parameter language model
+   ([arnir0/Tiny-LLM](https://huggingface.co/arnir0/Tiny-LLM)) generates
+   plain-English narratives from structured canvas data. Runs CPU-only with
+   graceful fallback to algorithmic summaries if unavailable.
+
+### Visualizations
+
+- **Semantic Canvas Radar Chart** — Polar plot of accumulated canvas coordinates
+  with per-layer overlays
+- **Canvas Evolution Heatmap** — Cumulative semantic state after each pipeline step
+- **Kernel Matrix & Importance** — Cross-block activation patterns and SVD
+  kernel variance explained
+- **Concept Activation Heatmap** — Per-block SAE concept activations
+- **Concept-Kernel Correspondence** — Maps SAE concepts to SVD kernels, closing
+  the interpretability loop: raw data → features → kernels → concepts → narratives
+
+### Governance Integration
+
+- **Contestability** — Every kernel and concept includes a "Contest This" button
+  backed by multi-run stability scores
+- **Stakeholder Annotations** — Multi-stakeholder annotation widgets on kernels
+  and concepts
+- **Policy Language Mode** — Toggle to plain-English briefing language for
+  non-technical delegates
+
+See [`docs/semantic-interpretability.md`](docs/semantic-interpretability.md) for
+full API documentation and integration guide.
 
 ---
 

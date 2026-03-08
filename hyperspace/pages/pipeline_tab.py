@@ -100,6 +100,11 @@ def render() -> None:
     st.markdown("### Kernel Evolution Across Pipeline Steps")
     fig_evo = kernel_viz.plot_kernel_evolution(snapshots)
     st.plotly_chart(fig_evo, use_container_width=True, key="pipeline_kernel_evolution")
+    st.caption(
+        "v3.0 — Kernel evolution tracks how importance shifts as each pipeline "
+        "block is added. This visualises the UKT's incremental SVD: each step "
+        "recomputes the decomposition with the new data modality included."
+    )
 
     # Key outputs
     st.markdown("### Key Outputs Across All Blocks")
@@ -114,6 +119,7 @@ def render() -> None:
                 finance_result["q90"], title="Finance: Multi-Horizon Forecast",
             )
             st.plotly_chart(fig, use_container_width=True, key="pipeline_finance_forecast_q50")
+            st.caption("v3.0 — Finance forecast with quantile uncertainty bounds.")
         elif isinstance(finance_result, dict) and "quantiles" in finance_result:
             q = finance_result["quantiles"]
             if len(q.shape) == 3:
@@ -127,6 +133,7 @@ def render() -> None:
                         q_mean[:, -1], title="Finance: TFT Forecast",
                     )
                     st.plotly_chart(fig, use_container_width=True, key="pipeline_finance_forecast_tft")
+                    st.caption("v3.0 — TFT forecast with quantile uncertainty bounds.")
         else:
             st.info("Finance forecast unavailable — run the full pipeline first.")
 
@@ -136,6 +143,7 @@ def render() -> None:
             fig_g = plot_geopolitical_graph(graph_result["G"], graph_result["pos"])
             fig_g.update_layout(height=300, margin=dict(l=10, r=10, t=40, b=10))
             st.plotly_chart(fig_g, use_container_width=True, key="pipeline_graph")
+            st.caption("v3.0 — Geopolitical relation graph (structural-centrality source).")
 
     r2c1, r2c2 = st.columns(2)
 
@@ -155,6 +163,7 @@ def render() -> None:
                 margin=dict(l=20, r=20, t=40, b=20),
             )
             st.plotly_chart(fig, use_container_width=True, key="pipeline_agent_resources")
+            st.caption("v3.0 — Agent simulation equilibrium (dynamic-agent source).")
 
     with r2c2:
         # Final kernel matrix (compact)
@@ -163,6 +172,7 @@ def render() -> None:
         )
         fig_km.update_layout(height=300)
         st.plotly_chart(fig_km, use_container_width=True, key="pipeline_kernel_matrix")
+        st.caption("v3.0 — Final kernel matrix: cross-block activation structure.")
 
     # C1: Annotation summary
     annotations = st.session_state.get("stakeholder_annotations", [])
