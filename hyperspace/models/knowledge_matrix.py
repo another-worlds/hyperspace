@@ -21,19 +21,15 @@ from ukt.registry import FeatureRegionRegistry
 from ukt.kernels import (
     decompose_svd,
     describe_top_features,
-    label_kernel as _standalone_label_kernel,
     generate_kernel_narrative as _standalone_generate_kernel_narrative,
-    compute_region_scores,
-    KernelDecomposition,
 )
 from ukt.stability import estimate_regression_stability
-from ukt.tensor import _pad_or_truncate
+from ukt.utils import _pad_or_truncate
 
 # Hyperspace-specific semantic canvas
 from hyperspace.models.semantic_canvas import (
     SemanticCanvas,
     train_stage_sae,
-    REGION_TO_CANVAS,
 )
 
 

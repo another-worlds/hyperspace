@@ -19,7 +19,7 @@ from ukt import (
     extract_all,
     ModelInterface,
 )
-from ukt.interfaces import _pad_or_truncate
+from ukt.utils import _pad_or_truncate
 
 
 # ------------------------------------------------------------------ #
