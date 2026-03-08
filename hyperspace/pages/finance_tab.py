@@ -9,6 +9,7 @@ import streamlit as st
 from hyperspace.config import DEFAULT_TICKERS, PLOTLY_LAYOUT
 from hyperspace.data.finance import get_ohlcv
 from hyperspace.models.tft_forecast import fit_tft
+from hyperspace.pages._report_section import render_interpretability_report
 from hyperspace.viz.charts import candlestick_chart, forecast_chart, source_badge
 
 
@@ -154,3 +155,70 @@ def render() -> None:
                     "that inform the TFT's multi-entity encoder and contribute to "
                     "UKT kernel structure."
                 )
+
+            # ----------------------------------------------------------- #
+            # Fitting Metrics                                              #
+            # ----------------------------------------------------------- #
+            st.markdown("---")
+            st.markdown("### Fitting Metrics")
+            fm1, fm2, fm3, fm4 = st.columns(4)
+            fm1.metric("Model Parameters", f"{finance_result.get('model_params', 0):,}")
+            fm2.metric("Training Epochs", "3")
+            fm3.metric("Hidden Size", str(hidden_size))
+            fm4.metric("Encoder Length", str(encoder_length))
+
+            if "attention" in finance_result:
+                att = finance_result["attention"]
+                att_entropy = float(-np.sum(
+                    att.flatten() * np.log(att.flatten() + 1e-8)
+                ))
+                st.metric("Attention Entropy", f"{att_entropy:.3f}",
+                          help="Higher entropy = more distributed attention across time steps")
+
+            # ----------------------------------------------------------- #
+            # Test Metrics                                                 #
+            # ----------------------------------------------------------- #
+            st.markdown("### Test Metrics")
+            if "quantiles" in finance_result:
+                q = finance_result["quantiles"]
+                if len(q.shape) == 3:
+                    q_mean = q.mean(axis=0)
+                elif len(q.shape) == 2:
+                    q_mean = q
+                else:
+                    q_mean = None
+
+                if q_mean is not None and q_mean.shape[1] >= 2:
+                    q_low = q_mean[:, 0]
+                    q_mid = q_mean[:, q_mean.shape[1] // 2]
+                    q_high = q_mean[:, -1]
+
+                    spread = float(np.mean(q_high - q_low))
+                    mid_range = float(q_mid.max() - q_mid.min())
+                    coverage = float(np.mean(q_high - q_low) / (np.mean(np.abs(q_mid)) + 1e-8))
+
+                    tm1, tm2, tm3 = st.columns(3)
+                    tm1.metric("Mean Quantile Spread (q90 − q10)", f"{spread:.4f}",
+                               help="Average width of prediction interval")
+                    tm2.metric("Median Forecast Range", f"{mid_range:.4f}",
+                               help="Range of the median (q50) forecast")
+                    tm3.metric("Relative Uncertainty", f"{coverage:.2%}",
+                               help="Spread / |median| — lower = more confident")
+            else:
+                st.info("Run TFT forecast to compute test metrics.")
+
+            if "encoder_importance" in finance_result:
+                enc = finance_result["encoder_importance"].flatten()
+                top_var = enc[:min(10, len(enc))]
+                gini = float(
+                    np.sum(np.abs(np.subtract.outer(top_var, top_var)))
+                    / (2 * len(top_var) * (np.sum(top_var) + 1e-8))
+                )
+                st.metric("Encoder Variable Concentration (Gini)", f"{gini:.3f}",
+                          help="0 = uniform importance, 1 = single variable dominates")
+
+            # ----------------------------------------------------------- #
+            # Interpretability Report                                      #
+            # ----------------------------------------------------------- #
+            st.markdown("---")
+            render_interpretability_report("Finance")
