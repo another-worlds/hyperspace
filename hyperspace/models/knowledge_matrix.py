@@ -1,14 +1,10 @@
-"""Universal Knowledge Tensor (UKT): incremental SVD, reality regression, semantic interpretability.
+"""Universal Knowledge Tensor (UKT): Hyperspace-specific wrapper around the
+standalone ukt framework.
 
-The UKT grows after each pipeline block. At every step it:
-  1. Accepts a feature vector from the block
-  2. Normalizes it to [0, 1] per-region for cross-block comparability
-  3. Appends it as a new row (blocks-so-far x feature_dim)
-  4. Decomposes via SVD to get current kernel structure
-  5. Computes "universal reality regression" (weighted kernel basis)
-  6. Generates data-grounded, human-readable semantic labels for active kernels
-  7. Runs per-stage SAE and projects onto the Semantic Canvas
-  8. Generates Tiny-LLM narratives for each kernel and layer
+This module preserves the existing Hyperspace API while delegating core logic
+to the standalone ``ukt`` package. The standalone package is network-agnostic;
+this wrapper adds Hyperspace-specific feature regions, block-region mappings,
+and Semantic Canvas integration.
 """
 from __future__ import annotations
 
@@ -19,6 +15,21 @@ from hyperspace.config import (
     REGION_DESCRIPTIONS,
     UKT_FEATURE_DIM,
 )
+
+# Re-export from standalone ukt framework
+from ukt.registry import FeatureRegionRegistry
+from ukt.kernels import (
+    decompose_svd,
+    describe_top_features,
+    label_kernel as _standalone_label_kernel,
+    generate_kernel_narrative as _standalone_generate_kernel_narrative,
+    compute_region_scores,
+    KernelDecomposition,
+)
+from ukt.stability import estimate_regression_stability
+from ukt.tensor import _pad_or_truncate
+
+# Hyperspace-specific semantic canvas
 from hyperspace.models.semantic_canvas import (
     SemanticCanvas,
     train_stage_sae,
@@ -26,22 +37,47 @@ from hyperspace.models.semantic_canvas import (
 )
 
 
-def _pad_or_truncate(arr: np.ndarray, target_len: int) -> np.ndarray:
-    """Pad or truncate a 1D array to target length."""
-    arr = arr.flatten()
-    if len(arr) >= target_len:
-        return arr[:target_len]
-    return np.pad(arr, (0, target_len - len(arr)))
+# --------------------------------------------------------------------------- #
+# Hyperspace feature region registry (pre-configured for the 5-block pipeline)#
+# --------------------------------------------------------------------------- #
+
+def _build_hyperspace_registry() -> FeatureRegionRegistry:
+    """Build the default Hyperspace feature region registry (80-dim, 5 regions)."""
+    registry = FeatureRegionRegistry()
+    registry.register(
+        "temporal-pattern", 0, 16,
+        description=REGION_DESCRIPTIONS.get("temporal-pattern", ""),
+        feature_names=FEATURE_NAMES[0:16],
+    )
+    registry.register(
+        "semantic-embedding", 16, 32,
+        description=REGION_DESCRIPTIONS.get("semantic-embedding", ""),
+        feature_names=FEATURE_NAMES[16:32],
+    )
+    registry.register(
+        "structural-centrality", 32, 48,
+        description=REGION_DESCRIPTIONS.get("structural-centrality", ""),
+        feature_names=FEATURE_NAMES[32:48],
+    )
+    registry.register(
+        "dynamic-agent", 48, 64,
+        description=REGION_DESCRIPTIONS.get("dynamic-agent", ""),
+        feature_names=FEATURE_NAMES[48:64],
+    )
+    registry.register(
+        "geospatial-kernel", 64, 80,
+        description=REGION_DESCRIPTIONS.get("geospatial-kernel", ""),
+        feature_names=FEATURE_NAMES[64:80],
+    )
+    return registry
 
 
-# Feature provenance labels: indices 0-15 = temporal, 16-31 = embedding,
-# 32-47 = structural, 48-63 = agent/dynamic, 64-79 = geospatial
+HYPERSPACE_REGISTRY = _build_hyperspace_registry()
+
+# Feature provenance labels (backward-compatible dict form)
 FEATURE_REGION_LABELS: dict[tuple[int, int], str] = {
-    (0, 16):  "temporal-pattern",
-    (16, 32): "semantic-embedding",
-    (32, 48): "structural-centrality",
-    (48, 64): "dynamic-agent",
-    (64, 80): "geospatial-kernel",
+    (r.start, r.end): r.name
+    for r in HYPERSPACE_REGISTRY.ordered_regions
 }
 
 
@@ -56,63 +92,27 @@ def _normalize_features(arr: np.ndarray) -> np.ndarray:
     return out
 
 
-
-
 def estimate_reality_regression_stability(
     matrix: np.ndarray,
     n_runs: int = 8,
     noise_std: float = 0.01,
     seed: int = 42,
 ) -> dict:
-    """Estimate cross-run stability of reality regression under small perturbations.
+    """Delegate to standalone ukt framework."""
+    return estimate_regression_stability(matrix, n_runs, noise_std, seed)
 
-    This approximates whether UKT regression is data-modality agnostic by checking
-    if the leading reality-regression direction is stable across repeated noisy runs.
-    """
-    if matrix.ndim != 2 or matrix.shape[0] < 2:
-        return {"n_runs": 0, "mean_cosine": 0.0, "min_cosine": 0.0, "std_cosine": 0.0}
-
-    rng = np.random.default_rng(seed)
-    regressions = []
-    for _ in range(n_runs):
-        noisy = matrix + rng.normal(0.0, noise_std, size=matrix.shape)
-        U, S, Vt = np.linalg.svd(noisy, full_matrices=False)
-        importance = S / (S.sum() + 1e-8)
-        rr = importance @ Vt[:len(S), :]
-        rr = rr / (np.linalg.norm(rr) + 1e-8)
-        regressions.append(rr)
-
-    cosines = []
-    for i in range(len(regressions)):
-        for j in range(i + 1, len(regressions)):
-            cosines.append(float(np.dot(regressions[i], regressions[j])))
-
-    if not cosines:
-        return {"n_runs": n_runs, "mean_cosine": 0.0, "min_cosine": 0.0, "std_cosine": 0.0}
-
-    arr = np.array(cosines, dtype=float)
-    return {
-        "n_runs": n_runs,
-        "mean_cosine": float(arr.mean()),
-        "min_cosine": float(arr.min()),
-        "std_cosine": float(arr.std()),
-    }
 
 def _feature_name(idx: int, feature_meta: dict[int, dict] | None = None) -> str:
     """Return the name for a feature index, preferring metadata-derived labels."""
     if feature_meta and idx in feature_meta and feature_meta[idx].get("label"):
         return str(feature_meta[idx]["label"])
-    if idx < len(FEATURE_NAMES):
-        return FEATURE_NAMES[idx]
-    return f"feature_{idx}"
+    return HYPERSPACE_REGISTRY.feature_name(idx)
 
 
 def _region_for_index(idx: int) -> str:
     """Return the region label for a feature index."""
-    for (lo, hi), label in FEATURE_REGION_LABELS.items():
-        if lo <= idx < hi:
-            return label
-    return "unknown"
+    region = HYPERSPACE_REGISTRY.region_for_index(idx)
+    return region.name if region else "unknown"
 
 
 def _describe_top_features(
@@ -121,22 +121,7 @@ def _describe_top_features(
     top_n: int = 5,
 ) -> list[dict]:
     """Return descriptions for the top-N loaded features."""
-    indices = np.argsort(np.abs(vt_row))[-top_n:][::-1]
-    descriptions = []
-    for idx in indices:
-        meta = feature_meta.get(int(idx), {}) if feature_meta else {}
-        descriptions.append(dict(
-            index=int(idx),
-            name=_feature_name(int(idx), feature_meta),
-            region=_region_for_index(int(idx)),
-            loading=float(vt_row[int(idx)]),
-            abs_loading=float(abs(vt_row[int(idx)])),
-            entity=meta.get("entity"),
-            metric=meta.get("metric"),
-            source=meta.get("source"),
-            time_scope=meta.get("time_scope"),
-        ))
-    return descriptions
+    return describe_top_features(vt_row, HYPERSPACE_REGISTRY, feature_meta, top_n)
 
 
 def _generate_kernel_narrative(
@@ -150,58 +135,11 @@ def _generate_kernel_narrative(
     timeframe_context: dict | None,
 ) -> str:
     """Generate a data-grounded narrative for a kernel."""
-    block_contributions = []
-    for i, bn in enumerate(block_names):
-        contrib = abs(float(u_col[i]))
-        if contrib > 0.1:
-            block_contributions.append(f"{bn} ({contrib:.2f})")
-
-    region_desc = REGION_DESCRIPTIONS.get(dominant_region, dominant_region)
-    feature_strs = [f"{f['name']} ({f['loading']:+.3f})" for f in top_features[:3]]
-
-    evidence_lines = []
-    temporal_features = [f for f in top_features if f["region"] == "temporal-pattern"]
-    if temporal_features:
-        evidence_lines.append(
-            "Temporal step attribution: " + ", ".join(
-                f"{f['name']}={f['loading']:+.3f}" for f in temporal_features[:3]
-            )
-        )
-
-    semantic_features = [f for f in top_features if f["region"] == "semantic-embedding"]
-    structural_features = [f for f in top_features if f["region"] == "structural-centrality"]
-    if structural_features:
-        evidence_lines.append(
-            "Structural attribution: " + ", ".join(
-                f"{f['name']}={f['loading']:+.3f}" for f in structural_features[:3]
-            )
-        )
-
-    if temporal_features and semantic_features:
-        evidence_lines.append(
-            "Emergent temporal↔semantic coupling: "
-            f"{temporal_features[0]['name']} with {semantic_features[0]['name']} indicates "
-            "attention dynamics being transposed into semantic latent space."
-        )
-
-    timeframe_line = ""
-    if timeframe_context:
-        start = timeframe_context.get("start_date")
-        end = timeframe_context.get("end_date")
-        if start and end:
-            timeframe_line = f"Time alignment window: {start} to {end}."
-
-    lines = [
-        f"Kernel K{k_idx} explains {importance:.1%} of total variance.",
-        f"Primary driver: {dominant_block} block; dominant latent region: {dominant_region.replace('-', ' ')}.",
-        f"Top evidence features: {', '.join(feature_strs)}.",
-        f"Block contributions: {', '.join(block_contributions) if block_contributions else 'weak/mixed'}.",
-        f"Region context: {region_desc}",
-    ]
-    if timeframe_line:
-        lines.append(timeframe_line)
-    lines.extend(evidence_lines)
-    return "\n".join(lines)
+    return _standalone_generate_kernel_narrative(
+        k_idx, dominant_block, dominant_region, importance,
+        top_features, block_names, u_col, HYPERSPACE_REGISTRY,
+        timeframe_context,
+    )
 
 
 def _label_kernel(
@@ -259,11 +197,10 @@ BLOCK_REGION_MAP: dict[str, tuple[str, int, int]] = {
 
 
 class UniversalKnowledgeTensor:
-    """Incrementally built cross-block knowledge tensor with SVD decomposition.
+    """Hyperspace-specific UKT with Semantic Canvas integration.
 
-    Integrates the Semantic Canvas subsystem: at each add_block call, a per-stage
-    SAE observes the block's feature region and projects discovered concepts onto
-    the shared semantic canvas.
+    Wraps the standalone ukt framework with Hyperspace's 5-block pipeline,
+    semantic canvas subsystem, and Tiny-LLM narratives.
     """
 
     def __init__(self, feature_dim: int = UKT_FEATURE_DIM):
@@ -290,53 +227,30 @@ class UniversalKnowledgeTensor:
         self.rows.append(normalized)
 
         matrix = np.stack(self.rows)
-        try:
-            U, S, Vt = np.linalg.svd(matrix, full_matrices=False)
-        except np.linalg.LinAlgError:
-            # Fallback: create identity-like decomposition
-            n = matrix.shape[0]
-            U = np.eye(n)
-            S = np.ones(n) * 0.01
-            Vt = np.zeros((n, matrix.shape[1]))
-            for i in range(min(n, matrix.shape[1])):
-                Vt[i, i] = 1.0
-        n_kernels = len(S)
-
-        total = S.sum() + 1e-8
-        importance = S / total
-        kernel_activation = U * S[np.newaxis, :]
-        reality_regression = importance @ Vt[:n_kernels, :]
+        decomposition = decompose_svd(matrix)
+        n_kernels = decomposition.n_kernels
 
         kernel_labels = []
         for k in range(n_kernels):
             label = _label_kernel(
                 k,
-                Vt[k],
-                U[:, k],
+                decomposition.Vt[k],
+                decomposition.U[:, k],
                 self.block_names,
-                importance[k],
+                float(decomposition.importance[k]),
                 self.global_feature_meta,
                 timeframe_context,
             )
             kernel_labels.append(label)
 
-        recon = U[:, :n_kernels] @ np.diag(S[:n_kernels]) @ Vt[:n_kernels, :]
-        recon_error = float(np.linalg.norm(matrix - recon))
-
-        # --------------------------------------------------------------- #
-        # Semantic Canvas subsystem: per-stage SAE + canvas projection     #
-        # --------------------------------------------------------------- #
+        # Semantic Canvas subsystem: per-stage SAE + canvas projection
         stage_sae_result = None
         canvas_entry = None
         region_info = BLOCK_REGION_MAP.get(name)
         if region_info is not None:
             region_name, lo, hi = region_info
             region_features = normalized[lo:hi]
-
-            # Train per-stage SAE on this block's feature region
             stage_sae_result = train_stage_sae(region_features, concept_dim=8, epochs=60)
-
-            # Project onto the semantic canvas
             canvas_entry = self.canvas.project_block(
                 block_name=name,
                 step=len(self.rows),
@@ -345,46 +259,33 @@ class UniversalKnowledgeTensor:
                 sae_result=stage_sae_result,
             )
 
-        # --------------------------------------------------------------- #
-        # Generate Tiny-LLM narratives (graceful degradation on failure)   #
-        # --------------------------------------------------------------- #
+        # Generate Tiny-LLM narratives (graceful degradation)
         layer_narrative = None
-        kernel_semantic_narratives = {}
-        reality_narrative = None
-
         try:
             from hyperspace.models.semantic_narrator import (
-                narrate_layer, narrate_kernel, narrate_reality_regression,
+                narrate_layer, narrate_kernel,
             )
-
-            # Layer narrative
             if canvas_entry is not None:
                 layer_narrative = narrate_layer(canvas_entry, self.canvas)
-
-            # Kernel narratives (only for the most important kernels to save time)
             for kl in kernel_labels:
                 if kl["importance"] > 0.15:
                     k_narr = narrate_kernel(kl, self.canvas)
                     if k_narr:
                         kl["semantic_narrative"] = k_narr
-
         except Exception:
-            pass  # Narrator unavailable — keep algorithmic narratives
+            pass
 
-        # --------------------------------------------------------------- #
-        # Build human-readable report                                      #
-        # --------------------------------------------------------------- #
+        # Build report
         report_lines = [
             f"=== Step {len(self.rows)}: Added '{name}' block ===",
             f"Active kernels: {n_kernels}",
-            f"Reconstruction error: {recon_error:.6f}",
-            f"Reality regression norm: {np.linalg.norm(reality_regression):.4f}",
+            f"Reconstruction error: {decomposition.reconstruction_error:.6f}",
+            f"Reality regression norm: {np.linalg.norm(decomposition.reality_regression):.4f}",
             "",
         ]
 
-        # Canvas entry summary
         if canvas_entry is not None:
-            report_lines.append(f"--- Semantic Canvas ---")
+            report_lines.append("--- Semantic Canvas ---")
             report_lines.append(canvas_entry.interpretation)
             if layer_narrative:
                 report_lines.append(f"Narrative: {layer_narrative}")
@@ -402,37 +303,36 @@ class UniversalKnowledgeTensor:
             for k in range(n_kernels):
                 contribs = []
                 for i, bn in enumerate(self.block_names):
-                    val = float(kernel_activation[i, k])
+                    val = float(decomposition.kernel_activation[i, k])
                     if abs(val) > 0.01:
                         contribs.append(f"{bn}={val:+.3f}")
                 report_lines.append(f"K{k} activation across blocks: {', '.join(contribs)}")
             report_lines.append("")
 
-        rr_top = np.argsort(np.abs(reality_regression))[-5:][::-1]
+        rr_top = np.argsort(np.abs(decomposition.reality_regression))[-5:][::-1]
         report_lines.append("--- Reality Regression (top features) ---")
         for idx in rr_top:
             report_lines.append(
                 f"  {_feature_name(int(idx), self.global_feature_meta)} [{_region_for_index(int(idx))}]: "
-                f"{reality_regression[int(idx)]:+.4f}"
+                f"{decomposition.reality_regression[int(idx)]:+.4f}"
             )
 
         snapshot = dict(
             step=len(self.rows),
             block_name=name,
             matrix=matrix.copy(),
-            U=U.copy(),
-            S=S.copy(),
-            Vt=Vt.copy(),
+            U=decomposition.U.copy(),
+            S=decomposition.S.copy(),
+            Vt=decomposition.Vt.copy(),
             n_kernels=n_kernels,
-            importance=importance.copy(),
-            kernel_activation=kernel_activation.copy(),
-            reality_regression=reality_regression.copy(),
+            importance=decomposition.importance.copy(),
+            kernel_activation=decomposition.kernel_activation.copy(),
+            reality_regression=decomposition.reality_regression.copy(),
             kernel_labels=kernel_labels,
-            reconstruction_error=recon_error,
+            reconstruction_error=decomposition.reconstruction_error,
             report="\n".join(report_lines),
             feature_meta=self.global_feature_meta.copy(),
             timeframe_context=timeframe_context or {},
-            # Semantic subsystem fields
             stage_sae_result=stage_sae_result,
             canvas_entry=canvas_entry,
             layer_narrative=layer_narrative,
