@@ -171,6 +171,7 @@ class PipelineRunner:
                 timeframe_context,
             )
             data_sources["Spatial"] = spatial_data.get("source_label", "spatial_raster")
+            spatial_result["data_source"] = data_sources["Spatial"]
 
             snap = ukt.add_block(
                 "Spatial",
