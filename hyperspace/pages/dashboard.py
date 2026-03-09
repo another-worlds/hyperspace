@@ -535,10 +535,12 @@ def run_pipeline() -> None:
             timeframe_context=st.session_state.timeframe_context,
         )
         snapshots.append(snap)
+        data_sources["Agents"] = "agent_simulation (derived from Graph + Spatial)"
         st.session_state.sim_result = dict(
             agents=agents, log=log_entries,
             features_for_ukt=agent_features,
             feature_meta=agent_feature_meta,
+            data_source=data_sources["Agents"],
         )
         st.write(f"Agents: {(snap.get('report') or '').split(chr(10))[0]}")
 

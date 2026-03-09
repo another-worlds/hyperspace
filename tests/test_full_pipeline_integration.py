@@ -18,6 +18,11 @@ from hyperspace.config import (
     UKT_FEATURE_DIM,
     SCORECARD_THRESHOLDS,
 )
+from hyperspace.core.types import (
+    validate_block_result,
+    validate_snapshot,
+)
+from hyperspace.core.pipeline import PipelineRunner
 from hyperspace.models.knowledge_matrix import (
     UniversalKnowledgeTensor,
     FEATURE_REGION_LABELS,
@@ -872,3 +877,377 @@ class TestGovernanceValidation:
         assert traced >= threshold * 0.5, (
             f"Feature traceability ({traced}) is less than 50% of threshold ({threshold})"
         )
+
+
+# ========================================================================== #
+# 11. Type System Validation                                                   #
+# ========================================================================== #
+
+
+class TestTypeValidation:
+    """Test the unified type system and validation helpers."""
+
+    def test_validate_valid_block_result(self, rng):
+        result = {
+            "features_for_ukt": np.zeros(UKT_FEATURE_DIM),
+            "feature_meta": {0: {"label": "test"}},
+            "data_source": "test_source",
+        }
+        warnings = validate_block_result(result, "TestBlock")
+        assert warnings == []
+
+    def test_validate_none_result(self):
+        warnings = validate_block_result(None, "TestBlock")
+        assert len(warnings) == 1
+        assert "None" in warnings[0]
+
+    def test_validate_missing_features(self):
+        result = {"feature_meta": {}, "data_source": "test"}
+        warnings = validate_block_result(result, "TestBlock")
+        assert any("features_for_ukt" in w for w in warnings)
+
+    def test_validate_wrong_shape(self, rng):
+        result = {
+            "features_for_ukt": np.zeros(50),  # wrong shape
+            "feature_meta": {},
+            "data_source": "test",
+        }
+        warnings = validate_block_result(result, "TestBlock")
+        assert any("shape" in w for w in warnings)
+
+    def test_validate_missing_data_source(self, rng):
+        result = {
+            "features_for_ukt": np.zeros(UKT_FEATURE_DIM),
+            "feature_meta": {},
+        }
+        warnings = validate_block_result(result, "TestBlock")
+        assert any("data_source" in w for w in warnings)
+
+    def test_validate_snapshot(self, synthetic_finance_features, timeframe_context):
+        ukt = UniversalKnowledgeTensor(feature_dim=UKT_FEATURE_DIM)
+        features, meta = synthetic_finance_features
+        snap = ukt.add_block("Finance", features, feature_meta=meta,
+                             timeframe_context=timeframe_context)
+        warnings = validate_snapshot(snap)
+        assert warnings == []
+
+    def test_validate_incomplete_snapshot(self):
+        warnings = validate_snapshot({"step": 1, "block_name": "Test"})
+        assert len(warnings) == 1
+        assert "missing keys" in warnings[0].lower()
+
+    def test_graph_analysis_conforms_to_block_result(self):
+        G, _ = build_geopolitical_graph()
+        analysis = analyze_graph(G)
+        warnings = validate_block_result(
+            {"features_for_ukt": analysis["features_for_ukt"],
+             "feature_meta": analysis["feature_meta"],
+             "data_source": "networkx"},
+            "Graph",
+        )
+        assert warnings == []
+
+    def test_spatial_conforms_to_block_result(self, synthetic_spatial_data, timeframe_context):
+        result = get_spatial_features(
+            synthetic_spatial_data["physical_raster"],
+            synthetic_spatial_data["country_scalars"],
+            synthetic_spatial_data["scalar_names"],
+            synthetic_spatial_data["node_order"],
+            timeframe_context,
+        )
+        warnings = validate_block_result(
+            {"features_for_ukt": result["features_for_ukt"],
+             "feature_meta": result["feature_meta"],
+             "data_source": "spatial_raster"},
+            "Spatial",
+        )
+        assert warnings == []
+
+    def test_agent_sim_conforms_to_block_result(self):
+        agents = initialize_agents_from_data()
+        _, _, features, meta = run_simulation(agents, steps=10)
+        warnings = validate_block_result(
+            {"features_for_ukt": features,
+             "feature_meta": meta,
+             "data_source": "agent_simulation"},
+            "Agents",
+        )
+        assert warnings == []
+
+
+# ========================================================================== #
+# 12. PipelineRunner Integration                                               #
+# ========================================================================== #
+
+
+class TestPipelineRunner:
+    """Test the Streamlit-free PipelineRunner orchestrator."""
+
+    def _make_synthetic_finance(self, rng) -> dict:
+        features = np.zeros(UKT_FEATURE_DIM)
+        features[:16] = rng.uniform(0, 1, 16)
+        features[27:32] = rng.uniform(0.2, 0.8, 5)
+        return {
+            "features_for_ukt": features,
+            "feature_meta": {i: {"label": f"fin_{i}", "block": "finance"}
+                             for i in range(32)},
+            "data_source": "synthetic_finance",
+        }
+
+    def _make_synthetic_clusters(self, rng) -> dict:
+        features = np.zeros(UKT_FEATURE_DIM)
+        features[16:24] = rng.dirichlet(np.ones(8))
+        return {
+            "features_for_ukt": features,
+            "feature_meta": {16 + i: {"label": f"topic_{i}", "block": "clusters"}
+                             for i in range(8)},
+            "data_source": "synthetic_clusters",
+        }
+
+    def test_pipeline_runner_completes(
+        self, rng, synthetic_spatial_data, synthetic_agreement_matrix, timeframe_context,
+    ):
+        runner = PipelineRunner()
+        result = runner.run(
+            finance_result=self._make_synthetic_finance(rng),
+            cluster_result=self._make_synthetic_clusters(rng),
+            agreement_matrix=synthetic_agreement_matrix,
+            spatial_data=synthetic_spatial_data,
+            timeframe_context=timeframe_context,
+            sim_steps=20,
+            sae_epochs=30,
+            stability_runs=4,
+        )
+        assert "snapshots" in result
+        assert len(result["snapshots"]) == 5
+        assert result["final_matrix"] is not None
+        assert result["sae_result"] is not None
+
+    def test_pipeline_runner_data_sources_complete(
+        self, rng, synthetic_spatial_data, synthetic_agreement_matrix, timeframe_context,
+    ):
+        runner = PipelineRunner()
+        result = runner.run(
+            finance_result=self._make_synthetic_finance(rng),
+            cluster_result=self._make_synthetic_clusters(rng),
+            agreement_matrix=synthetic_agreement_matrix,
+            spatial_data=synthetic_spatial_data,
+            timeframe_context=timeframe_context,
+            sim_steps=10,
+            sae_epochs=20,
+            stability_runs=2,
+        )
+        ds = result["data_sources"]
+        # All 5 blocks must be tracked
+        assert "Finance" in ds
+        assert "Clusters" in ds
+        assert "Graph" in ds
+        assert "Spatial" in ds
+        assert "Agents" in ds
+
+    def test_pipeline_runner_governance_flags(
+        self, rng, synthetic_spatial_data, synthetic_agreement_matrix, timeframe_context,
+    ):
+        runner = PipelineRunner()
+        result = runner.run(
+            finance_result=self._make_synthetic_finance(rng),
+            cluster_result=self._make_synthetic_clusters(rng),
+            agreement_matrix=synthetic_agreement_matrix,
+            spatial_data=synthetic_spatial_data,
+            timeframe_context=timeframe_context,
+            sim_steps=10,
+            sae_epochs=20,
+            stability_runs=2,
+        )
+        # Governance flags are a list of dicts with required keys
+        for flag in result["governance_flags"]:
+            assert "code" in flag
+            assert "label" in flag
+            assert "description" in flag
+            assert "severity" in flag
+
+    def test_pipeline_runner_scorecard(
+        self, rng, synthetic_spatial_data, synthetic_agreement_matrix, timeframe_context,
+    ):
+        runner = PipelineRunner()
+        result = runner.run(
+            finance_result=self._make_synthetic_finance(rng),
+            cluster_result=self._make_synthetic_clusters(rng),
+            agreement_matrix=synthetic_agreement_matrix,
+            spatial_data=synthetic_spatial_data,
+            timeframe_context=timeframe_context,
+            sim_steps=10,
+            sae_epochs=20,
+            stability_runs=2,
+        )
+        sc = result["interpretability_scorecard"]
+        required_dims = [
+            "feature_traceability", "kernel_stability",
+            "concept_activation_rate", "data_source_diversity",
+            "governance_flags",
+        ]
+        for dim in required_dims:
+            assert dim in sc
+            assert "value" in sc[dim]
+            assert "threshold" in sc[dim]
+            assert "passed" in sc[dim]
+
+    def test_pipeline_runner_run_id_generated(
+        self, rng, synthetic_spatial_data, synthetic_agreement_matrix, timeframe_context,
+    ):
+        runner = PipelineRunner()
+        result = runner.run(
+            finance_result=self._make_synthetic_finance(rng),
+            cluster_result=self._make_synthetic_clusters(rng),
+            agreement_matrix=synthetic_agreement_matrix,
+            spatial_data=synthetic_spatial_data,
+            timeframe_context=timeframe_context,
+            sim_steps=10,
+            sae_epochs=20,
+            stability_runs=2,
+        )
+        assert "run_id" in result
+        assert len(result["run_id"]) == 8
+        assert "run_timestamp" in result
+
+    def test_pipeline_runner_canvas_populated(
+        self, rng, synthetic_spatial_data, synthetic_agreement_matrix, timeframe_context,
+    ):
+        runner = PipelineRunner()
+        result = runner.run(
+            finance_result=self._make_synthetic_finance(rng),
+            cluster_result=self._make_synthetic_clusters(rng),
+            agreement_matrix=synthetic_agreement_matrix,
+            spatial_data=synthetic_spatial_data,
+            timeframe_context=timeframe_context,
+            sim_steps=10,
+            sae_epochs=20,
+            stability_runs=2,
+        )
+        canvas = result["semantic_canvas"]
+        assert canvas is not None
+        assert len(canvas.entries) == 5
+
+    def test_pipeline_runner_progress_callback(
+        self, rng, synthetic_spatial_data, synthetic_agreement_matrix, timeframe_context,
+    ):
+        steps_seen = []
+        def on_step(step: str, msg: str) -> None:
+            steps_seen.append(step)
+
+        runner = PipelineRunner(on_step=on_step)
+        runner.run(
+            finance_result=self._make_synthetic_finance(rng),
+            cluster_result=self._make_synthetic_clusters(rng),
+            agreement_matrix=synthetic_agreement_matrix,
+            spatial_data=synthetic_spatial_data,
+            timeframe_context=timeframe_context,
+            sim_steps=10,
+            sae_epochs=20,
+            stability_runs=2,
+        )
+        assert len(steps_seen) >= 4  # At least finance, cluster, graph, spatial, agents, SAE
+
+    def test_pipeline_runner_without_optional_blocks(self, rng, timeframe_context):
+        """Pipeline should still work with only graph + agents (no finance/clusters/spatial)."""
+        runner = PipelineRunner()
+        result = runner.run(
+            timeframe_context=timeframe_context,
+            sim_steps=10,
+            sae_epochs=20,
+            stability_runs=2,
+        )
+        # Only Graph + Agents blocks
+        assert len(result["snapshots"]) == 2
+        block_names = [s["block_name"] for s in result["snapshots"]]
+        assert "Graph" in block_names
+        assert "Agents" in block_names
+
+    def test_pipeline_runner_concept_kernel_map(
+        self, rng, synthetic_spatial_data, synthetic_agreement_matrix, timeframe_context,
+    ):
+        runner = PipelineRunner()
+        result = runner.run(
+            finance_result=self._make_synthetic_finance(rng),
+            cluster_result=self._make_synthetic_clusters(rng),
+            agreement_matrix=synthetic_agreement_matrix,
+            spatial_data=synthetic_spatial_data,
+            timeframe_context=timeframe_context,
+            sim_steps=10,
+            sae_epochs=30,
+            stability_runs=2,
+        )
+        assert len(result["concept_kernel_map"]) > 0
+        for entry in result["concept_kernel_map"]:
+            assert "concept" in entry
+            assert "best_kernel" in entry
+            assert "coherence" in entry
+
+    def test_pipeline_runner_stability(
+        self, rng, synthetic_spatial_data, synthetic_agreement_matrix, timeframe_context,
+    ):
+        runner = PipelineRunner()
+        result = runner.run(
+            finance_result=self._make_synthetic_finance(rng),
+            cluster_result=self._make_synthetic_clusters(rng),
+            agreement_matrix=synthetic_agreement_matrix,
+            spatial_data=synthetic_spatial_data,
+            timeframe_context=timeframe_context,
+            sim_steps=10,
+            sae_epochs=20,
+            stability_runs=4,
+        )
+        stability = result["stability"]
+        assert stability is not None
+        assert stability["n_runs"] == 4
+        assert "mean_cosine" in stability
+
+
+# ========================================================================== #
+# 13. Counterfactual Subsystem Integration                                     #
+# ========================================================================== #
+
+
+class TestCounterfactualIntegration:
+    """Test block removal and diff analysis."""
+
+    def test_counterfactual_block_removal(self, rng, timeframe_context):
+        ukt = UniversalKnowledgeTensor(feature_dim=UKT_FEATURE_DIM)
+        for block in ["Finance", "Clusters", "Graph"]:
+            features = rng.uniform(0, 1, UKT_FEATURE_DIM)
+            ukt.add_block(block, features, timeframe_context=timeframe_context)
+
+        snapshots = ukt.snapshots
+        final_matrix = snapshots[-1]["matrix"]
+        block_names = [s["block_name"] for s in snapshots]
+
+        # Remove "Clusters" and re-run SVD
+        kept = [i for i, n in enumerate(block_names) if n != "Clusters"]
+        sub = final_matrix[kept, :]
+        U, S, Vt = np.linalg.svd(sub, full_matrices=False)
+        importance = S / (S.sum() + 1e-8)
+        rr = importance @ Vt[:len(S), :]
+
+        assert sub.shape == (2, UKT_FEATURE_DIM)
+        assert len(S) == 2
+        assert abs(importance.sum() - 1.0) < 1e-6
+        assert rr.shape == (UKT_FEATURE_DIM,)
+
+    def test_counterfactual_diff_nonzero(self, rng, timeframe_context):
+        ukt = UniversalKnowledgeTensor(feature_dim=UKT_FEATURE_DIM)
+        for block in ["Finance", "Clusters", "Graph"]:
+            features = rng.uniform(0, 1, UKT_FEATURE_DIM)
+            ukt.add_block(block, features, timeframe_context=timeframe_context)
+
+        original_rr = ukt.snapshots[-1]["reality_regression"]
+
+        # Counterfactual: remove Finance
+        final_matrix = ukt.snapshots[-1]["matrix"]
+        sub = final_matrix[1:, :]  # remove Finance (index 0)
+        U, S, Vt = np.linalg.svd(sub, full_matrices=False)
+        importance = S / (S.sum() + 1e-8)
+        cf_rr = importance @ Vt[:len(S), :]
+
+        # The diff should be non-zero (removing a block changes conclusions)
+        diff = np.abs(original_rr - cf_rr)
+        assert diff.sum() > 0.01
