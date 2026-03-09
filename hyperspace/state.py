@@ -39,6 +39,10 @@ def init_session_state() -> None:
         ukt_multirun_stability=None,
         # Timeframe context (written by run_pipeline, cleared by reset)
         timeframe_context={},
+        # Semantic Canvas (written by run_pipeline, cleared by reset)
+        semantic_canvas=None,
+        canvas_narrative=None,
+        reality_narrative=None,
         # ------------------------------------------------------------------ #
         # Governance features
         # ------------------------------------------------------------------ #
@@ -118,6 +122,9 @@ def reset_pipeline() -> None:
     st.session_state.data_sources = {}
     st.session_state.ukt_multirun_stability = None
     st.session_state.timeframe_context = {}
+    st.session_state.semantic_canvas = None
+    st.session_state.canvas_narrative = None
+    st.session_state.reality_narrative = None
     # Reset governance state
     st.session_state.run_id = None
     st.session_state.run_timestamp = None
