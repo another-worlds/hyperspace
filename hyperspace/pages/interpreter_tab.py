@@ -374,7 +374,13 @@ def render() -> None:
 
             # Coupling matrix heatmap
             coupling = uvt_result["coupling_matrix"]
-            coupling_block_names = block_names[:coupling.shape[0]]
+            # Use block names stored in the UVT result to avoid stale-run mismatches
+            uvt_block_names = uvt_result.get("block_names") or block_names
+            coupling_block_names = uvt_block_names[:coupling.shape[0]]
+            if len(coupling_block_names) != coupling.shape[0]:
+                coupling_block_names = [
+                    f"Block_{i}" for i in range(coupling.shape[0])
+                ]
             fig_coup = px.imshow(
                 coupling,
                 x=coupling_block_names,

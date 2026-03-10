@@ -521,6 +521,13 @@ def run_pipeline() -> None:
                     f"USE: {use_result['semantic_dim']}-dim encoding"
                     if use_result else "UVT computed, USE unavailable"
                 )
+            else:
+                # UVT failed — clear any stale USE result to avoid mismatched UI
+                st.session_state.use_result = None
+        else:
+            # Not enough blocks — clear both to prevent stale visualizations
+            st.session_state.uvt_result = None
+            st.session_state.use_result = None
 
         st.write("Generating semantic narratives via Tiny-LLM...")
         try:
