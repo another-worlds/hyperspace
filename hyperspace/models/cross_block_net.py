@@ -16,6 +16,7 @@ Both networks are CPU-only, lightweight, and fully traceable.
 """
 from __future__ import annotations
 
+import warnings
 from typing import Any
 
 import numpy as np
@@ -43,6 +44,11 @@ class CrossBlockAttention(nn.Module):
 
     def __init__(self, feature_dim: int = 80, n_heads: int = 4, d_model: int = 32):
         super().__init__()
+        if d_model < n_heads or d_model % n_heads != 0:
+            raise ValueError(
+                f"d_model ({d_model}) must be >= n_heads ({n_heads}) "
+                f"and divisible by n_heads."
+            )
         self.n_heads = n_heads
         self.d_model = d_model
         self.d_head = d_model // n_heads
@@ -376,8 +382,14 @@ def compute_universal_variance_tensor(
             feature_variance_modes=feature_variance_modes,
             reconstruction_error=float(F.mse_loss(x_hat, X).item()),
             loss_history=loss_history,
+            block_names=block_names,
         )
-    except Exception:
+    except Exception as exc:
+        warnings.warn(
+            f"compute_universal_variance_tensor failed: {exc}",
+            RuntimeWarning,
+            stacklevel=2,
+        )
         return None
 
 
@@ -496,7 +508,12 @@ def compute_universal_semantic_encoding(
             loss_history=loss_history,
             semantic_dim=semantic_dim,
         )
-    except Exception:
+    except Exception as exc:
+        warnings.warn(
+            f"compute_universal_semantic_encoding failed: {exc}",
+            RuntimeWarning,
+            stacklevel=2,
+        )
         return None
 
 
