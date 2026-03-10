@@ -62,9 +62,8 @@ def render() -> None:
     else:
         m3.metric("Interpretable Concepts", "—")
 
-    scorecard_ref = st.session_state.get("interpretability_scorecard", {})
-    pass_count = sum(1 for v in scorecard_ref.values() if v.get("passed"))
-    total_sc = len(scorecard_ref)
+    pass_count = sum(1 for v in scorecard.values() if v.get("passed"))
+    total_sc = len(scorecard)
     m4.metric(
         "Accountability Score",
         f"{pass_count}/{total_sc} PASS" if total_sc else "—",

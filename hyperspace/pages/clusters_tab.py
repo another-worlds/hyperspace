@@ -105,8 +105,8 @@ def render() -> None:
                 if outlier_ratio > 0.30:
                     st.warning(
                         f"**Topic Coverage: LOW** — {outlier_ratio:.0%} of documents ({n_outliers}/{n_docs}) "
-                        "could not be assigned to any topic. The information landscape may be more "
-                        "fragmented than the {n_topics} discovered topics suggest."
+                        f"could not be assigned to any topic. The information landscape may be more "
+                        f"fragmented than the {n_topics} discovered topics suggest."
                     )
                 elif outlier_ratio > 0.10:
                     st.info(
