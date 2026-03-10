@@ -74,7 +74,14 @@ def fit_tft(
         import lightning.pytorch as pl
         from pytorch_forecasting import TemporalFusionTransformer, TimeSeriesDataSet
         from pytorch_forecasting.metrics import QuantileLoss
+    except ImportError as e:
+        st.error(
+            f"TFT fitting failed: missing dependency — {e}. "
+            "Install with: pip install pytorch-forecasting lightning"
+        )
+        return None
 
+    try:
         pl.seed_everything(42)
 
         df, data_source = get_tft_data(list(tickers), encoder_len, prediction_len)

@@ -332,6 +332,23 @@ class PipelineRunner:
                     ),
                 ))
 
+        # GOV-002: Temporal coverage gap
+        finance_src = data_sources.get("Finance", "")
+        cluster_src = data_sources.get("Clusters", "")
+        if "Live" in finance_src and "Fallback" in cluster_src:
+            code_info = GOVERNANCE_FLAG_CODES["GOV-002"]
+            flags.append(GovernanceFlag(
+                code="GOV-002",
+                label=code_info["label"],
+                description=code_info["description"],
+                severity=code_info["severity"],
+                detail=(
+                    "Finance data is live but news/cluster data is from static "
+                    "fallback snippets. Cross-modal conclusions span different "
+                    "observation windows."
+                ),
+            ))
+
         # GOV-003: Geopolitical centrality skew
         if graph_result and "analysis" in graph_result:
             eigenvector = graph_result["analysis"].get("eigenvector", {})
