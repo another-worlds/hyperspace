@@ -59,13 +59,11 @@ def render() -> None:
         "and key analytical finding. For detailed visualizations, visit each block's tab."
     )
 
-    final_snap = snapshots[-1]
     gov_flags = st.session_state.get("governance_flags", [])
     finance_result = st.session_state.get("finance_result", {})
     cluster_result = st.session_state.get("cluster_result", {})
     graph_result = st.session_state.get("graph_result", {})
     sim_result = st.session_state.get("sim_result", {})
-    sae_result = st.session_state.get("sae_result")
 
     # Build status rows
     step_rows = []
