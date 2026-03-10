@@ -489,6 +489,39 @@ def run_pipeline() -> None:
         # ---- Semantic Canvas: store + generate final narratives ---- #
         st.session_state.semantic_canvas = ukt.canvas
 
+        # ---- Cross-Block Interconnection: UVT + USE ----
+        final_matrix = ukt.get_final_matrix()
+        if final_matrix is not None and final_matrix.shape[0] >= 2:
+            st.write("Computing Universal Variance Tensor (cross-block attention)...")
+            from hyperspace.models.cross_block_net import (
+                compute_universal_variance_tensor,
+                compute_universal_semantic_encoding,
+            )
+            from hyperspace.models.knowledge_matrix import HYPERSPACE_REGISTRY
+
+            active_block_names = [s["block_name"] for s in snapshots]
+            uvt_result = compute_universal_variance_tensor(
+                final_matrix, n_heads=4, d_model=32, epochs=120,
+                registry=HYPERSPACE_REGISTRY,
+                block_names=active_block_names,
+            )
+            st.session_state.uvt_result = uvt_result
+
+            if uvt_result is not None:
+                st.write("Computing Universal Semantic Encoding...")
+                use_result = compute_universal_semantic_encoding(
+                    final_matrix, uvt_result,
+                    canvas=ukt.canvas, semantic_dim=24, epochs=150,
+                    registry=HYPERSPACE_REGISTRY,
+                    block_names=active_block_names,
+                )
+                st.session_state.use_result = use_result
+                st.write(
+                    f"UVT: {len(uvt_result['coupling_labels'])} coupling modes | "
+                    f"USE: {use_result['semantic_dim']}-dim encoding"
+                    if use_result else "UVT computed, USE unavailable"
+                )
+
         st.write("Generating semantic narratives via Tiny-LLM...")
         try:
             from hyperspace.models.semantic_narrator import (

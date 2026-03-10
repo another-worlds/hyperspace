@@ -103,6 +103,10 @@ class PipelineResult(TypedDict, total=False):
     canvas_narrative: str | None
     reality_narrative: str | None
 
+    # Cross-block interconnection
+    uvt_result: dict | None
+    use_result: dict | None
+
     # Governance
     stability: StabilityResult | None
     governance_flags: list[GovernanceFlag]
