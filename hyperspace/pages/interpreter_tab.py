@@ -1,31 +1,39 @@
-"""Semantic Interpreter tab: concept discovery, semantic canvas, and LLM narratives."""
+"""Semantic Interpreter tab: concept discovery, semantic canvas, and LLM narratives.
+
+Audience: legal, diplomatic, and civil society delegates.
+Top 3 visualizations (audience-aligned):
+  1. Semantic Canvas Radar Chart — cross-domain theme fingerprint
+  2. Concept Activation Heatmap — which concepts active per pipeline block
+  3. Reality Regression Bar Chart — feature importance by domain region
+
+Everything else moved to an Advanced Diagnostics expander.
+"""
 from __future__ import annotations
 
 import numpy as np
-import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 
-from hyperspace.config import PLOTLY_LAYOUT, UKT_FEATURE_DIM
-from hyperspace.models.knowledge_matrix import UniversalKnowledgeTensor
+from hyperspace.config import PLOTLY_LAYOUT
 from hyperspace.models.sparse_ae import train_sparse_ae, map_concepts_to_kernels
-from hyperspace.models.semantic_canvas import CANVAS_DIMENSIONS, CANVAS_DIM
+from hyperspace.models.semantic_canvas import CANVAS_DIMENSIONS
 from hyperspace.viz import kernel_viz
-from hyperspace.viz.charts import source_badge
 
 
 def render() -> None:
-    """Render the Semantic Interpreter & Knowledge Matrix tab."""
-    st.markdown("## Semantic Interpreter & Persistent Knowledge Matrix")
+    """Render the Semantic Interpreter & Persistent Knowledge Matrix tab."""
+    st.markdown("## Semantic Interpreter")
     st.markdown(
-        "Concept discovery via Sparse Autoencoder on the Universal Knowledge Tensor. "
-        "Every pipeline block's features are decomposed into interpretable concepts "
-        "and mapped to SVD-derived kernels."
+        "What has the system learned, and can those conclusions be trusted? "
+        "This tab answers three questions every governance review requires: "
+        "**What themes dominate?** (Radar) — **Which concepts are active?** (Heatmap) — "
+        "**What drives the conclusions?** (Feature Importance)"
     )
 
-    interpret_btn = st.button("Run Interpretability Scan", type="primary",
-                              key="interpret_run")
+    interpret_btn = st.button(
+        "Run Interpretability Scan", type="primary", key="interpret_run"
+    )
 
     snapshots = st.session_state.get("ukt_snapshots", [])
     sae_result = st.session_state.get("sae_result")
@@ -34,9 +42,7 @@ def render() -> None:
     if interpret_btn or sae_result:
         if interpret_btn:
             with st.spinner("Running concept extraction pipeline..."):
-                # Re-run SAE if we have snapshots
                 if snapshots:
-                    # Reconstruct UKT from snapshots
                     final_snap = snapshots[-1]
                     matrix = final_snap["matrix"]
                     sae_result = train_sparse_ae(
@@ -53,128 +59,41 @@ def render() -> None:
                     return
 
         if not snapshots:
-            st.info("No UKT data available. Run the full pipeline from the dashboard first.")
+            st.info(
+                "No UKT data available. Run the full pipeline from the dashboard first."
+            )
             return
 
         final_snap = snapshots[-1]
-        stability = st.session_state.get("ukt_multirun_stability")
-
-        # Kernel matrix from UKT
-        st.markdown("### Universal Kernel Matrix")
         block_names = [s["block_name"] for s in snapshots]
-        fig = kernel_viz.plot_kernel_matrix(final_snap, block_names)
-        st.plotly_chart(fig, use_container_width=True, key="interp_kernel_matrix")
-        st.caption(
-            "v3.0 — Each cell shows how strongly a pipeline block activates a "
-            "UKT kernel. Cross-block activation patterns reveal which data "
-            "modalities share latent structure — the core of interpretable "
-            "cross-domain synthesis."
-        )
 
-        # Kernel importance
-        col1, col2 = st.columns(2)
-        with col1:
-            fig_imp = kernel_viz.plot_kernel_importance(final_snap)
-            st.plotly_chart(fig_imp, use_container_width=True, key="interp_kernel_importance")
-            st.caption("v3.0 — Kernel importance: fraction of total variance each SVD kernel explains.")
-        with col2:
-            fig_rr = kernel_viz.plot_reality_regression(final_snap)
-            st.plotly_chart(fig_rr, use_container_width=True, key="interp_reality_regression")
-            st.caption("v3.0 — Reality regression: per-feature importance in the cross-domain synthesis.")
-
-        # B1: Policy language mode branch
-        if policy_mode:
-            from hyperspace.pages.governance import render_kernel_policy_mode
-            st.markdown("---")
-            render_kernel_policy_mode(final_snap["kernel_labels"])
-        else:
-            # Standard technical view with A1 + C1 enhancements
-            st.markdown("### Discovered Kernels — Semantic Interpretation")
-            from hyperspace.pages.governance import (
-                render_contest_popover,
-                render_annotation_widget,
-            )
-            for kl in final_snap["kernel_labels"]:
-                with st.expander(
-                    f"{kl['label']}",
-                    expanded=kl["importance"] > 0.2,
-                ):
-                    st.markdown(kl["narrative"])
-
-                    # Show Tiny-LLM semantic narrative if available
-                    if kl.get("semantic_narrative"):
-                        st.info(f"**Semantic interpretation:** {kl['semantic_narrative']}")
-
-                    # Show top features as a mini table
-                    if kl.get("top_features"):
-                        feat_df = pd.DataFrame(kl["top_features"])
-                        st.dataframe(
-                            feat_df[["name", "region", "loading"]].rename(
-                                columns={"name": "Feature", "region": "Region",
-                                         "loading": "Loading"}
-                            ),
-                            use_container_width=True, hide_index=True,
-                        )
-
-                    # Region breakdown
-                    if kl.get("region_scores"):
-                        scores = kl["region_scores"]
-                        fig_rs = px.bar(
-                            x=list(scores.keys()), y=list(scores.values()),
-                            color=list(scores.values()),
-                            color_continuous_scale="Viridis",
-                            title="Region Energy Distribution",
-                        )
-                        fig_rs.update_layout(
-                            **PLOTLY_LAYOUT, height=200, showlegend=False,
-                            xaxis_title="Region", yaxis_title="Abs. Loading Sum",
-                        )
-                        st.plotly_chart(fig_rs, use_container_width=True,
-                                        key=f"interp_region_energy_{kl['kernel_id']}")
-
-                    # A1: Contest This button
-                    st.markdown("---")
-                    col_contest, col_annotate = st.columns([1, 2])
-                    with col_contest:
-                        render_contest_popover(
-                            kl, stability=stability,
-                            key_suffix=f"interpreter_{kl['kernel_id']}",
-                        )
-
-                    # C1: Multi-stakeholder annotation widget
-                    with col_annotate:
-                        render_annotation_widget(
-                            kernel_id=kl["kernel_id"],
-                            label=kl.get("label", kl["kernel_id"]),
-                            key_suffix=f"interpreter_{kl['kernel_id']}",
-                        )
-
-        # ---- Semantic Canvas Visualization ---- #
+        # ================================================================ #
+        # 1. SEMANTIC CANVAS RADAR CHART                                   #
+        # The system's interpretive fingerprint across 12 named dimensions  #
+        # ================================================================ #
         canvas = st.session_state.get("semantic_canvas")
         if canvas is not None:
-            st.markdown("---")
-            st.markdown("### Semantic Canvas — Cross-Layer Interpretive Space")
+            st.markdown("### Cross-Domain Theme Fingerprint")
             st.caption(
-                "Each pipeline layer projects its discovered concepts onto named semantic "
-                "dimensions. The canvas accumulates these projections to build a coherent "
-                "picture of what the system has learned."
+                "Each axis is a named interpretive dimension. The solid teal shape "
+                "is the system's accumulated reading across all data domains. "
+                "Dashed traces show each pipeline block's individual contribution. "
+                "Large spikes indicate dimensions where multiple data sources agree."
             )
 
             canvas_state = canvas.get_accumulated_state()
             coords = canvas_state["coordinates"]
-
-            # Radar chart of semantic canvas dimensions
             dim_labels = [d["label"] for d in CANVAS_DIMENSIONS]
+
             fig_radar = go.Figure()
             fig_radar.add_trace(go.Scatterpolar(
                 r=coords.tolist() + [coords[0]],
                 theta=dim_labels + [dim_labels[0]],
                 fill="toself",
-                name="Accumulated Canvas",
-                line=dict(color="#64ffda"),
+                name="Accumulated (all domains)",
+                line=dict(color="#64ffda", width=3),
                 fillcolor="rgba(100, 255, 218, 0.15)",
             ))
-            # Overlay per-layer traces
             colors = ["#3498db", "#e67e22", "#e74c3c", "#2ecc71", "#9b59b6"]
             for i, entry in enumerate(canvas_state["entries"]):
                 c = entry.coordinates
@@ -182,7 +101,7 @@ def render() -> None:
                     r=c.tolist() + [c[0]],
                     theta=dim_labels + [dim_labels[0]],
                     name=entry.block_name,
-                    line=dict(color=colors[i % len(colors)], dash="dot"),
+                    line=dict(color=colors[i % len(colors)], dash="dot", width=1.5),
                     opacity=0.6,
                 ))
             fig_radar.update_layout(
@@ -193,392 +112,348 @@ def render() -> None:
                                     gridcolor="#1a2332"),
                     angularaxis=dict(gridcolor="#1a2332"),
                 ),
-                title="Semantic Canvas Coordinates",
-                height=450,
+                title="Semantic Canvas — Cross-Domain Theme Fingerprint",
+                height=480,
                 showlegend=True,
             )
             st.plotly_chart(fig_radar, use_container_width=True,
                             key="interp_semantic_radar")
-            st.caption(
-                "v3.0 — The radar chart shows how each pipeline layer projects "
-                "onto 12 named semantic dimensions. The accumulated trace (solid) "
-                "is the system's interpretive summary across all data domains."
-            )
 
-            # Canvas trajectory heatmap
-            trajectory = canvas_state.get("trajectory", [])
-            if len(trajectory) > 1:
-                traj_matrix = np.array([t["state"] for t in trajectory])
-                block_labels = [t["block"] for t in trajectory]
-                fig_traj = px.imshow(
-                    traj_matrix,
-                    x=dim_labels,
-                    y=block_labels,
-                    color_continuous_scale="Viridis",
-                    title="Semantic Canvas Evolution (cumulative per step)",
-                )
-                fig_traj.update_layout(**PLOTLY_LAYOUT, height=280)
-                st.plotly_chart(fig_traj, use_container_width=True,
-                                key="interp_canvas_trajectory")
-                st.caption(
-                    "v3.0 — Canvas evolution shows the cumulative semantic state "
-                    "after each pipeline step. Brightening cells indicate dimensions "
-                    "where signal accumulates across data modalities."
-                )
-
-            # Dominant narrative dimensions
+            # Dominant narrative (plain-language summary)
             dominant = canvas_state.get("dominant_narrative", [])
             if dominant:
-                st.markdown("**Dominant semantic themes:**")
-                for d in dominant:
+                st.markdown("**Dominant themes detected across all data domains:**")
+                for d in dominant[:3]:
                     st.markdown(
-                        f"- **{d['label']}** ({d['value']:.2f}): {d['desc']}"
+                        f"- **{d['label']}** — {d['desc']}"
                     )
 
-            # Per-layer narratives
-            st.markdown("#### Layer-by-Layer Semantic Narratives")
-            for entry in canvas_state["entries"]:
-                snap_match = [s for s in snapshots if s["block_name"] == entry.block_name]
-                layer_narr = snap_match[0].get("layer_narrative") if snap_match else None
-                with st.expander(
-                    f"Step {entry.step}: {entry.block_name} — "
-                    f"{', '.join(entry.dominant_dimensions[:2]) or 'weak signals'}",
-                    expanded=entry.step == len(canvas_state["entries"]),
-                ):
-                    st.markdown(f"**Canvas projection:** {entry.interpretation}")
-                    if layer_narr:
-                        st.info(f"**Narrative:** {layer_narr}")
-                    st.caption(f"Active concepts from stage SAE: {entry.active_concepts}")
-
-            # Full canvas narrative (Tiny-LLM)
+            # Cross-domain narrative from Tiny-LLM
             canvas_narrative = st.session_state.get("canvas_narrative")
-            if canvas_narrative:
-                st.markdown("#### Overall Reality Narrative")
-                st.success(canvas_narrative)
-
-            # Reality regression narrative
             reality_narrative = st.session_state.get("reality_narrative")
+            if canvas_narrative:
+                st.success(f"**System Summary:** {canvas_narrative}")
             if reality_narrative:
-                st.markdown("#### Reality Regression — Semantic Summary")
-                st.info(reality_narrative)
+                st.info(f"**Reality Assessment:** {reality_narrative}")
 
-        # SAE concept discovery
+        st.markdown("---")
+
+        # ================================================================ #
+        # 2. CONCEPT ACTIVATION HEATMAP                                    #
+        # Which named concepts are active in which pipeline blocks          #
+        # ================================================================ #
         if sae_result:
-            st.markdown("---")
-            st.markdown("### Sparse Autoencoder Concept Discovery")
+            act = sae_result.get("concept_activations")
+            if act is not None and act.shape[0] > 1:
+                st.markdown("### Concept Activation per Data Domain")
+                st.caption(
+                    "Each row is a pipeline block (Finance, Clusters, Graph, etc.). "
+                    "Each column is a named concept discovered by the Sparse Autoencoder. "
+                    "Bright cells = that concept is strongly active in that block. "
+                    "Concepts active across multiple blocks indicate cross-domain patterns."
+                )
 
-            c1, c2, c3 = st.columns(3)
-            c1.metric("Active Concepts",
-                       f"{sae_result['active_concepts']}/{sae_result['total_concepts']}")
-            c2.metric("Final Loss", f"{sae_result['final_loss']:.4f}")
-            c3.metric("Total Concepts", str(sae_result["total_concepts"]))
+                # Use concept labels where available
+                concept_labels = sae_result.get("concept_labels", [])
+                col_labels = []
+                for i in range(act.shape[1]):
+                    if i < len(concept_labels):
+                        col_labels.append(
+                            concept_labels[i].get("label", f"C{i:02d}")[:18]
+                        )
+                    else:
+                        col_labels.append(f"C{i:02d}")
 
-            # Concept labels — full semantic output
-            st.markdown("#### Discovered Concepts")
-            active_concepts = [cl for cl in sae_result.get("concept_labels", [])
-                               if cl["active"]]
-            dormant_concepts = [cl for cl in sae_result.get("concept_labels", [])
-                                if not cl["active"]]
+                fig_act = px.imshow(
+                    act,
+                    x=col_labels,
+                    y=block_names[:act.shape[0]],
+                    color_continuous_scale="Viridis",
+                    title="Concept Activations — Data Domain × Named Concept",
+                )
+                fig_act.update_layout(
+                    **PLOTLY_LAYOUT,
+                    height=max(280, 60 * act.shape[0]),
+                    xaxis_title="Named Concept",
+                    yaxis_title="Pipeline Block",
+                )
+                st.plotly_chart(fig_act, use_container_width=True,
+                                key="interp_concept_activations")
 
+            # Active concept summaries (plain-English)
+            active_concepts = [
+                cl for cl in sae_result.get("concept_labels", []) if cl["active"]
+            ]
             if active_concepts:
-                st.markdown("**Active concepts** (above-mean activation):")
+                st.markdown("**Active concepts — plain-language summaries:**")
                 from hyperspace.pages.governance import render_annotation_widget
                 for cl in active_concepts:
                     with st.expander(cl.get("label", cl["concept_id"])):
                         st.markdown(cl.get("narrative", ""))
-                        # Show Tiny-LLM semantic narrative if available
                         if cl.get("semantic_narrative"):
                             st.info(f"**Semantic:** {cl['semantic_narrative']}")
-                        if cl.get("top_features"):
-                            feat_df = pd.DataFrame(cl["top_features"])
-                            st.dataframe(
-                                feat_df[["name", "loading"]].rename(
-                                    columns={"name": "Feature",
-                                             "loading": "Loading"}
-                                ),
-                                use_container_width=True, hide_index=True,
-                            )
-                        # C1: Allow annotations on concepts too
                         render_annotation_widget(
                             kernel_id=f"concept_{cl['concept_id']}",
                             label=cl.get("label", cl["concept_id"]),
                             key_suffix=f"concept_{cl['concept_id']}",
                         )
 
-            if dormant_concepts:
+        st.markdown("---")
+
+        # ================================================================ #
+        # 3. REALITY REGRESSION BAR CHART                                  #
+        # Feature-level importance, color-coded by domain region            #
+        # ================================================================ #
+        st.markdown("### Feature Importance by Domain Region")
+        st.caption(
+            "Each bar represents one of the system's 80 input features. "
+            "Height = how much that feature drives the system's cross-domain conclusions. "
+            "Color indicates which data domain the feature comes from: "
+            "blue=market/temporal, orange=news/semantic, green=geopolitical/structural, "
+            "red=agent/dynamic, purple=spatial/geospatial."
+        )
+        fig_rr = kernel_viz.plot_reality_regression(final_snap)
+        st.plotly_chart(fig_rr, use_container_width=True, key="interp_reality_regression")
+
+        # Policy language mode: named kernel briefings
+        if policy_mode:
+            from hyperspace.pages.governance import render_kernel_policy_mode
+            st.markdown("---")
+            render_kernel_policy_mode(final_snap["kernel_labels"])
+        else:
+            # Standard kernel view with contest/annotate widgets
+            st.markdown("---")
+            st.markdown("### Discovered Kernels — Cross-Domain Patterns")
+            stability = st.session_state.get("ukt_multirun_stability")
+            from hyperspace.pages.governance import (
+                render_contest_popover,
+                render_annotation_widget,
+            )
+            for kl in final_snap["kernel_labels"]:
                 with st.expander(
-                    f"Dormant concepts ({len(dormant_concepts)})",
-                    expanded=False,
+                    f"{kl['label']}",
+                    expanded=kl["importance"] > 0.2,
                 ):
-                    for cl in dormant_concepts:
-                        st.caption(cl.get("label", cl["concept_id"]))
+                    st.markdown(kl["narrative"])
+                    if kl.get("semantic_narrative"):
+                        st.info(f"**Semantic interpretation:** {kl['semantic_narrative']}")
+                    st.markdown("---")
+                    col_contest, col_annotate = st.columns([1, 2])
+                    with col_contest:
+                        render_contest_popover(
+                            kl, stability=stability,
+                            key_suffix=f"interpreter_{kl['kernel_id']}",
+                        )
+                    with col_annotate:
+                        render_annotation_widget(
+                            kernel_id=kl["kernel_id"],
+                            label=kl.get("label", kl["kernel_id"]),
+                            key_suffix=f"interpreter_{kl['kernel_id']}",
+                        )
 
-            # Loss curve
-            loss_hist = sae_result.get("loss_history", [])
-            if loss_hist:
-                st.markdown("#### SAE Training Loss")
-                fig = px.line(
-                    x=list(range(len(loss_hist))), y=loss_hist,
-                    title="Sparse Autoencoder Loss Curve",
-                )
-                fig.update_layout(
-                    **PLOTLY_LAYOUT, height=250,
-                    xaxis_title="Epoch", yaxis_title="Loss",
-                )
-                st.plotly_chart(fig, use_container_width=True, key="interp_sae_loss_curve")
-                st.caption("v3.0 — SAE loss curve: convergence of sparse concept discovery.")
+        # ================================================================ #
+        # Stakeholder Annotations                                           #
+        # ================================================================ #
+        st.markdown("---")
+        st.markdown("### Stakeholder Annotation Record")
+        from hyperspace.pages.governance import render_annotations_summary
+        render_annotations_summary()
 
-            # Concept activation heatmap
-            act = sae_result.get("concept_activations")
-            if act is not None and act.shape[0] > 1:
-                st.markdown("#### Concept Activation per Block")
-                fig = px.imshow(
-                    act,
-                    x=[f"C{i:02d}" for i in range(act.shape[1])],
-                    y=block_names[:act.shape[0]],
-                    color_continuous_scale="Viridis",
-                    title="Concept Activations (Blocks x Concepts)",
-                )
-                fig.update_layout(**PLOTLY_LAYOUT, height=300)
-                st.plotly_chart(fig, use_container_width=True, key="interp_concept_activations")
-                st.caption(
-                    "v3.0 — Per-block concept activations show which abstract "
-                    "patterns are active in each data domain — enabling "
-                    "contestation at the concept level."
-                )
-
-        # Concept-kernel mapping
-        concept_kernel_map = st.session_state.get("concept_kernel_map", [])
-        if concept_kernel_map:
-            st.markdown("### Concept-Kernel Correspondence")
-            fig_ck = kernel_viz.plot_concept_kernel_map(concept_kernel_map)
-            st.plotly_chart(fig_ck, use_container_width=True, key="interp_concept_kernel_map")
+        # ================================================================ #
+        # ADVANCED DIAGNOSTICS (collapsed by default)                      #
+        # ML-engineering detail for expert review only                      #
+        # ================================================================ #
+        st.markdown("---")
+        with st.expander("Advanced Diagnostics (ML Engineering Detail)", expanded=False):
             st.caption(
-                "v3.0 — Concept-kernel correspondence maps SAE-discovered "
-                "concepts to SVD kernels, closing the interpretability loop: "
-                "raw data → features → kernels → concepts → narratives."
+                "The following diagnostics are intended for ML engineers reviewing "
+                "the system's internal state. They are not required for governance "
+                "or policy analysis."
             )
-            st.dataframe(pd.DataFrame(concept_kernel_map), use_container_width=True)
 
-        # ---- Universal Variance Tensor ---- #
-        uvt_result = st.session_state.get("uvt_result")
-        if uvt_result is not None:
-            st.markdown("---")
-            st.markdown("### Universal Variance Tensor — Cross-Block Interconnection")
+            # Kernel matrix
+            st.markdown("#### Universal Kernel Matrix")
+            fig_km = kernel_viz.plot_kernel_matrix(final_snap, block_names)
+            st.plotly_chart(fig_km, use_container_width=True,
+                            key="interp_adv_kernel_matrix")
             st.caption(
-                "A cross-block attention network maps each pipeline block's features "
-                "onto every other block, learning which data modalities co-vary. "
-                "The coupling matrix reveals inter-layer dependencies that SVD alone "
-                "cannot capture — it shows *directed* attention between blocks."
+                "Each cell: activation strength of a pipeline block on a UKT kernel. "
+                "Cross-block activation indicates shared latent structure."
             )
 
-            # Coupling matrix heatmap
-            coupling = uvt_result["coupling_matrix"]
-            # Use block names stored in the UVT result to avoid stale-run mismatches
-            uvt_block_names = uvt_result.get("block_names") or block_names
-            coupling_block_names = uvt_block_names[:coupling.shape[0]]
-            if len(coupling_block_names) != coupling.shape[0]:
-                coupling_block_names = [
-                    f"Block_{i}" for i in range(coupling.shape[0])
-                ]
-            fig_coup = px.imshow(
-                coupling,
-                x=coupling_block_names,
-                y=coupling_block_names,
-                color_continuous_scale="Viridis",
-                title="Cross-Block Coupling Matrix (Attention Weights)",
-                text_auto=".3f",
-            )
-            fig_coup.update_layout(**PLOTLY_LAYOUT, height=380)
-            st.plotly_chart(fig_coup, use_container_width=True,
-                            key="interp_uvt_coupling")
-            st.caption(
-                "Each cell shows how strongly one block attends to another. "
-                "High off-diagonal values indicate strong cross-modal coupling — "
-                "information from one domain informs interpretation of the other."
-            )
+            # Kernel importance
+            col1, col2 = st.columns(2)
+            with col1:
+                fig_imp = kernel_viz.plot_kernel_importance(final_snap)
+                st.plotly_chart(fig_imp, use_container_width=True,
+                                key="interp_adv_kernel_importance")
+                st.caption("Fraction of total variance explained per SVD kernel.")
+            with col2:
+                # Canvas trajectory heatmap
+                _canvas_adv = st.session_state.get("semantic_canvas")
+                if _canvas_adv is not None:
+                    _canvas_state_adv = _canvas_adv.get_accumulated_state()
+                    _dim_labels_adv = [d["label"] for d in CANVAS_DIMENSIONS]
+                    trajectory = _canvas_state_adv.get("trajectory", [])
+                    if len(trajectory) > 1:
+                        traj_matrix = np.array([t["state"] for t in trajectory])
+                        traj_block_labels = [t["block"] for t in trajectory]
+                        fig_traj = px.imshow(
+                            traj_matrix,
+                            x=_dim_labels_adv,
+                            y=traj_block_labels,
+                            color_continuous_scale="Viridis",
+                            title="Canvas Evolution per Step",
+                        )
+                        fig_traj.update_layout(**PLOTLY_LAYOUT, height=280)
+                        st.plotly_chart(fig_traj, use_container_width=True,
+                                        key="interp_adv_canvas_trajectory")
+                        st.caption(
+                            "Cumulative semantic canvas state after each pipeline step."
+                        )
 
-            # Per-head attention (detail view)
-            attn_per_head = uvt_result.get("attention_per_head")
-            if attn_per_head is not None and attn_per_head.shape[0] > 1:
-                with st.expander("Attention per Head (Detail)", expanded=False):
-                    head_cols = st.columns(min(4, attn_per_head.shape[0]))
-                    for h in range(attn_per_head.shape[0]):
-                        with head_cols[h % len(head_cols)]:
-                            fig_h = px.imshow(
-                                attn_per_head[h],
-                                x=coupling_block_names,
-                                y=coupling_block_names,
-                                color_continuous_scale="Viridis",
-                                title=f"Head {h}",
-                                text_auto=".2f",
-                            )
-                            fig_h.update_layout(
-                                **PLOTLY_LAYOUT, height=250,
-                                coloraxis_showscale=False,
-                            )
-                            st.plotly_chart(fig_h, use_container_width=True,
-                                            key=f"interp_uvt_head_{h}")
-
-            # Coupling modes (variance decomposition)
-            coupling_labels = uvt_result.get("coupling_labels", [])
-            if coupling_labels:
-                st.markdown("#### Cross-Block Coupling Modes")
-                var_exp = [cl["variance_explained"] for cl in coupling_labels]
-                mode_labels = [cl["mode_id"] for cl in coupling_labels]
-                fig_var = go.Figure(go.Bar(
-                    x=mode_labels, y=var_exp,
-                    marker_color=["#64ffda" if v > 0.2 else "#3498db"
-                                  for v in var_exp],
-                    text=[f"{v:.0%}" for v in var_exp],
-                    textposition="auto",
-                ))
-                fig_var.update_layout(
-                    **PLOTLY_LAYOUT, height=250,
-                    title="Variance Explained per Coupling Mode",
-                    xaxis_title="Mode", yaxis_title="Variance Share",
+            # SAE metrics + loss curve
+            if sae_result:
+                st.markdown("#### Sparse Autoencoder Diagnostics")
+                c1, c2, c3 = st.columns(3)
+                c1.metric(
+                    "Active Concepts",
+                    f"{sae_result['active_concepts']}/{sae_result['total_concepts']}",
                 )
-                st.plotly_chart(fig_var, use_container_width=True,
-                                key="interp_uvt_variance")
+                c2.metric("Final Loss", f"{sae_result['final_loss']:.4f}")
+                c3.metric("Total Concepts", str(sae_result["total_concepts"]))
 
-                for cl in coupling_labels:
-                    with st.expander(cl["label"], expanded=cl["variance_explained"] > 0.2):
-                        st.markdown(cl["narrative"])
-
-            # Feature variance modes
-            feature_modes = uvt_result.get("feature_variance_modes", [])
-            if feature_modes:
-                with st.expander("Cross-Feature Variance Modes", expanded=False):
-                    for fm in feature_modes[:5]:
-                        st.markdown(f"**{fm['label']}**")
-                        if fm.get("top_features"):
-                            feat_df = pd.DataFrame(fm["top_features"])
-                            st.dataframe(
-                                feat_df[["name", "loading"]].rename(
-                                    columns={"name": "Feature", "loading": "Loading"}
-                                ),
-                                use_container_width=True, hide_index=True,
-                            )
-
-        # ---- Universal Semantic Encoding ---- #
-        use_result = st.session_state.get("use_result")
-        if use_result is not None:
-            st.markdown("---")
-            st.markdown("### Universal Semantic Encoding — Unified Multi-Modal State")
-            st.caption(
-                "A bottleneck neural network fuses UKT features with cross-block "
-                "coupling information into a single compact vector — the system's "
-                "complete multi-modal state compressed into interpretable dimensions."
-            )
-
-            encoding = use_result["encoding"]
-
-            # Semantic encoding bar chart
-            dim_labels_use = [dl["label"] for dl in use_result["dimension_labels"]]
-            colors_use = [
-                "#64ffda" if dl["strength"] == "STRONG"
-                else "#3498db" if dl["strength"] == "MODERATE"
-                else "#555"
-                for dl in use_result["dimension_labels"]
-            ]
-            fig_enc = go.Figure(go.Bar(
-                x=list(range(len(encoding))),
-                y=encoding,
-                marker_color=colors_use,
-                text=[f"{v:+.2f}" for v in encoding],
-                textposition="auto",
-            ))
-            fig_enc.update_layout(
-                **PLOTLY_LAYOUT, height=300,
-                title="Universal Semantic Encoding Vector",
-                xaxis_title="Semantic Dimension",
-                yaxis_title="Activation",
-                yaxis=dict(range=[-1.1, 1.1]),
-            )
-            st.plotly_chart(fig_enc, use_container_width=True,
-                            key="interp_use_encoding")
-            st.caption(
-                "Each bar represents one dimension of the unified semantic encoding. "
-                "Strong activations (green) indicate dimensions where the multi-modal "
-                "system has clear, consistent signal across data sources."
-            )
-
-            # Semantic dimension detail table
-            with st.expander("Semantic Dimension Details", expanded=False):
-                dim_rows = [
-                    {
-                        "Dim": dl["dim_idx"],
-                        "Value": f"{dl['value']:+.3f}",
-                        "Strength": dl["strength"],
-                        "Polarity": dl["polarity"],
-                        "Canvas Dim": dl.get("canvas_dimension", "—"),
-                    }
-                    for dl in use_result["dimension_labels"]
-                    if dl["abs_value"] > 0.1
-                ]
-                if dim_rows:
-                    st.dataframe(pd.DataFrame(dim_rows),
-                                 use_container_width=True, hide_index=True)
-
-            # Cross-modal alignment scores
-            alignment = use_result.get("alignment_scores", [])
-            if alignment:
-                st.markdown("#### Cross-Modal Alignment")
-                st.caption(
-                    "Measures how sensitive the semantic encoding is to removing "
-                    "each block — high alignment means two blocks are tightly coupled "
-                    "in the unified representation."
-                )
-                align_df = pd.DataFrame(alignment)
-                fig_align = go.Figure(go.Bar(
-                    x=[a["label"].split(":")[0] for a in alignment],
-                    y=[a["alignment"] for a in alignment],
-                    marker_color=["#e74c3c" if a["alignment"] > 0.3
-                                  else "#e67e22" if a["alignment"] > 0.1
-                                  else "#2ecc71" for a in alignment],
-                    text=[f"{a['alignment']:.3f}" for a in alignment],
-                    textposition="auto",
-                ))
-                fig_align.update_layout(
-                    **PLOTLY_LAYOUT, height=280,
-                    title="Pairwise Cross-Modal Alignment",
-                    xaxis_title="Block Pair",
-                    yaxis_title="Alignment (ablation sensitivity)",
-                )
-                st.plotly_chart(fig_align, use_container_width=True,
-                                key="interp_use_alignment")
-
-            # Reconstruction quality
-            recon = use_result.get("reconstruction_per_block", {})
-            if recon:
-                with st.expander("Reconstruction Quality per Block"):
-                    for idx, err in recon.items():
-                        bname = block_names[idx] if idx < len(block_names) else f"Block {idx}"
-                        st.caption(f"{bname}: MSE = {err:.6f}")
-
-            # USE loss curve
-            use_loss = use_result.get("loss_history", [])
-            if use_loss:
-                with st.expander("USE Training Convergence"):
+                loss_hist = sae_result.get("loss_history", [])
+                if loss_hist:
                     fig_loss = px.line(
-                        x=list(range(len(use_loss))), y=use_loss,
-                        title="Universal Semantic Encoder Loss",
+                        x=list(range(len(loss_hist))), y=loss_hist,
+                        title="SAE Training Loss Curve",
                     )
                     fig_loss.update_layout(
                         **PLOTLY_LAYOUT, height=220,
                         xaxis_title="Epoch", yaxis_title="Loss",
                     )
                     st.plotly_chart(fig_loss, use_container_width=True,
-                                    key="interp_use_loss")
+                                    key="interp_adv_sae_loss")
 
-        # Stakeholder annotation summary
-        st.markdown("---")
-        st.markdown("### Stakeholder Annotation Record")
-        from hyperspace.pages.governance import render_annotations_summary
-        render_annotations_summary()
+                # Dormant concepts
+                dormant_concepts = [
+                    cl for cl in sae_result.get("concept_labels", [])
+                    if not cl["active"]
+                ]
+                if dormant_concepts:
+                    st.caption(
+                        f"{len(dormant_concepts)} dormant concepts (below-mean activation): "
+                        + ", ".join(
+                            cl.get("label", cl["concept_id"])
+                            for cl in dormant_concepts
+                        )
+                    )
 
-        # Step-by-step interpretation logs (now with rich text)
-        st.markdown("### Step-by-Step Interpretability Reports")
-        for snap in snapshots:
-            with st.expander(f"Step {snap['step']}: {snap['block_name']}"):
-                st.markdown(snap["report"])
+            # Concept-kernel map
+            concept_kernel_map = st.session_state.get("concept_kernel_map", [])
+            if concept_kernel_map:
+                st.markdown("#### Concept-Kernel Correspondence")
+                fig_ck = kernel_viz.plot_concept_kernel_map(concept_kernel_map)
+                st.plotly_chart(fig_ck, use_container_width=True,
+                                key="interp_adv_concept_kernel_map")
+
+            # UVT coupling matrix + per-head attention
+            uvt_result = st.session_state.get("uvt_result")
+            if uvt_result is not None:
+                st.markdown("#### Universal Variance Tensor — Cross-Block Coupling")
+                coupling = uvt_result["coupling_matrix"]
+                uvt_block_names = uvt_result.get("block_names") or block_names
+                coupling_block_names = uvt_block_names[:coupling.shape[0]]
+                if len(coupling_block_names) != coupling.shape[0]:
+                    coupling_block_names = [
+                        f"Block_{i}" for i in range(coupling.shape[0])
+                    ]
+                fig_coup = px.imshow(
+                    coupling,
+                    x=coupling_block_names,
+                    y=coupling_block_names,
+                    color_continuous_scale="Viridis",
+                    title="Cross-Block Coupling Matrix (Attention Weights)",
+                    text_auto=".3f",
+                )
+                fig_coup.update_layout(**PLOTLY_LAYOUT, height=350)
+                st.plotly_chart(fig_coup, use_container_width=True,
+                                key="interp_adv_uvt_coupling")
+
+                attn_per_head = uvt_result.get("attention_per_head")
+                if attn_per_head is not None and attn_per_head.shape[0] > 1:
+                    with st.expander("Per-Head Attention Detail", expanded=False):
+                        head_cols = st.columns(min(4, attn_per_head.shape[0]))
+                        for h in range(attn_per_head.shape[0]):
+                            with head_cols[h % len(head_cols)]:
+                                fig_h = px.imshow(
+                                    attn_per_head[h],
+                                    x=coupling_block_names,
+                                    y=coupling_block_names,
+                                    color_continuous_scale="Viridis",
+                                    title=f"Head {h}",
+                                    text_auto=".2f",
+                                )
+                                fig_h.update_layout(
+                                    **PLOTLY_LAYOUT, height=250,
+                                    coloraxis_showscale=False,
+                                )
+                                st.plotly_chart(fig_h, use_container_width=True,
+                                                key=f"interp_adv_uvt_head_{h}")
+
+                coupling_labels = uvt_result.get("coupling_labels", [])
+                if coupling_labels:
+                    fig_var = go.Figure(go.Bar(
+                        x=[cl["mode_id"] for cl in coupling_labels],
+                        y=[cl["variance_explained"] for cl in coupling_labels],
+                        marker_color=["#64ffda" if cl["variance_explained"] > 0.2
+                                      else "#3498db" for cl in coupling_labels],
+                    ))
+                    fig_var.update_layout(
+                        **PLOTLY_LAYOUT, height=220,
+                        title="Variance Explained per Coupling Mode",
+                    )
+                    st.plotly_chart(fig_var, use_container_width=True,
+                                    key="interp_adv_uvt_variance")
+
+            # USE encoding
+            use_result = st.session_state.get("use_result")
+            if use_result is not None:
+                st.markdown("#### Universal Semantic Encoding Vector")
+                encoding = use_result["encoding"]
+                dim_labels_use = [dl["label"] for dl in use_result["dimension_labels"]]
+                colors_use = [
+                    "#64ffda" if dl["strength"] == "STRONG"
+                    else "#3498db" if dl["strength"] == "MODERATE"
+                    else "#555"
+                    for dl in use_result["dimension_labels"]
+                ]
+                fig_enc = go.Figure(go.Bar(
+                    x=list(range(len(encoding))),
+                    y=encoding,
+                    marker_color=colors_use,
+                ))
+                fig_enc.update_layout(
+                    **PLOTLY_LAYOUT, height=260,
+                    title="USE: Unified Multi-Modal State Vector",
+                    yaxis=dict(range=[-1.1, 1.1]),
+                )
+                st.plotly_chart(fig_enc, use_container_width=True,
+                                key="interp_adv_use_encoding")
+
+                use_loss = use_result.get("loss_history", [])
+                if use_loss:
+                    fig_use_loss = px.line(
+                        x=list(range(len(use_loss))), y=use_loss,
+                        title="USE Training Loss",
+                    )
+                    fig_use_loss.update_layout(**PLOTLY_LAYOUT, height=200)
+                    st.plotly_chart(fig_use_loss, use_container_width=True,
+                                    key="interp_adv_use_loss")
+
+            # Step-by-step interpretability logs
+            st.markdown("#### Step-by-Step Interpretability Reports")
+            for snap in snapshots:
+                with st.expander(f"Step {snap['step']}: {snap['block_name']}"):
+                    st.markdown(snap["report"])

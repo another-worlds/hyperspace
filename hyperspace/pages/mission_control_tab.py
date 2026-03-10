@@ -6,14 +6,9 @@ Designed as the first tab a delegate or analyst sees after the pipeline runs.
 """
 from __future__ import annotations
 
-import numpy as np
 import pandas as pd
 import streamlit as st
 
-from hyperspace.config import (
-    PLOTLY_LAYOUT, UKT_FEATURE_DIM, GEOPOLITICAL_NODES,
-)
-from hyperspace.viz import kernel_viz
 from hyperspace.viz.charts import source_badge
 
 
@@ -28,7 +23,6 @@ def render() -> None:
     snapshots = st.session_state.get("ukt_snapshots", [])
     data_sources = st.session_state.get("data_sources", {})
     sae_result = st.session_state.get("sae_result")
-    stability = st.session_state.get("ukt_multirun_stability")
     gov_flags = st.session_state.get("governance_flags", [])
     scorecard = st.session_state.get("interpretability_scorecard", {})
 
@@ -47,55 +41,40 @@ def render() -> None:
     st.caption(f"Run ID: {run_id}  ·  {run_ts}")
 
     # ── Key metrics row ───────────────────────────────────────────────
-    st.markdown("### System Metrics")
-    m1, m2, m3, m4, m5 = st.columns(5)
-    m1.metric("Active Kernels", str(final_snap["n_kernels"]))
+    st.markdown("### System Status")
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric("Pipeline Blocks", str(len(snapshots)),
+              help="Number of data domains successfully processed")
 
-    finance_result = st.session_state.get("finance_result", {})
-    tft_params = (
-        f"{finance_result['model_params']:,}"
-        if isinstance(finance_result, dict) and "model_params" in finance_result
-        else "—"
+    data_live = sum(
+        1 for v in data_sources.values()
+        if "Live" in v or ("Offline" in v and "Synthetic" not in v)
     )
-    m2.metric("TFT Parameters", tft_params)
-
-    graph_result = st.session_state.get("graph_result", {})
-    if isinstance(graph_result, dict) and "analysis" in graph_result:
-        density = graph_result["analysis"].get("density", 0.0)
-        m3.metric("Graph Density", f"{density:.3f}")
-    else:
-        m3.metric("Graph Density", "—")
+    m2.metric("Live Data Sources", f"{data_live}/{len(data_sources)}",
+              help="Data blocks drawing from real sources vs. synthetic fallbacks")
 
     if sae_result:
-        m4.metric(
-            "Active Concepts",
+        m3.metric(
+            "Interpretable Concepts",
             f"{sae_result['active_concepts']}/{sae_result['total_concepts']}",
+            help="Named concepts discovered by the Sparse Autoencoder — higher = more interpretable",
         )
     else:
-        m4.metric("Active Concepts", "—")
+        m3.metric("Interpretable Concepts", "—")
 
-    m5.metric("Recon Error", f"{final_snap['reconstruction_error']:.6f}")
-
-    st.caption(
-        "v3.0 — These metrics summarise the Universal Knowledge Tensor state. "
-        "Each kernel is an SVD-derived latent direction that spans multiple data "
-        "domains; reconstruction error measures how much information the current "
-        "kernel set preserves."
+    pass_count = sum(1 for v in scorecard.values() if v.get("passed"))
+    total_sc = len(scorecard)
+    m4.metric(
+        "Accountability Score",
+        f"{pass_count}/{total_sc} PASS" if total_sc else "—",
+        help="Number of interpretability criteria passing the minimum governance threshold",
     )
 
-    # ── Stability summary ─────────────────────────────────────────────
-    if isinstance(stability, dict) and stability.get("n_runs", 0) > 0:
-        st.markdown("### Regression Stability")
-        s1, s2, s3 = st.columns(3)
-        s1.metric("Mean Cosine", f"{stability['mean_cosine']:.3f}")
-        s2.metric("Min Cosine", f"{stability['min_cosine']:.3f}")
-        s3.metric("Std", f"{stability['std_cosine']:.3f}")
-        st.caption(
-            "v3.0 — Reality regression stability is tested by adding small "
-            "Gaussian noise to the UKT matrix and re-computing the regression "
-            f"{stability['n_runs']} times. High cosine similarity (>0.9) means "
-            "conclusions are robust to small data perturbations."
-        )
+    st.caption(
+        "v3.0 — These vitals reflect the current governance health of the system. "
+        "All four dimensions are traced to specific data sources and are included "
+        "in the exported governance report."
+    )
 
     st.markdown("---")
 
@@ -179,41 +158,4 @@ def render() -> None:
             "activation, and data diversity."
         )
 
-    st.markdown("---")
 
-    # ── Kernel matrix snapshot ────────────────────────────────────────
-    st.markdown("### Universal Kernel Matrix")
-    block_names = [s["block_name"] for s in snapshots]
-    fig_km = kernel_viz.plot_kernel_matrix(final_snap, block_names)
-    st.plotly_chart(fig_km, use_container_width=True, key="mc_kernel_matrix")
-    st.caption(
-        "v3.0 — The kernel matrix shows how each pipeline block activates each "
-        "SVD-derived kernel. Strong cross-block activation indicates patterns "
-        "that span multiple data modalities — the core of the UKT's cross-domain "
-        "synthesis capability."
-    )
-
-    # ── Semantic canvas snapshot ──────────────────────────────────────
-    canvas = st.session_state.get("semantic_canvas")
-    canvas_narrative = st.session_state.get("canvas_narrative")
-    reality_narrative = st.session_state.get("reality_narrative")
-
-    if canvas is not None:
-        st.markdown("### Semantic Canvas Summary")
-        canvas_state = canvas.get_accumulated_state()
-        dominant = canvas_state.get("dominant_narrative", [])
-        if dominant:
-            for d in dominant:
-                st.markdown(f"- **{d['label']}** ({d['value']:.2f}): {d['desc']}")
-
-        if canvas_narrative:
-            st.success(f"**Cross-Domain Narrative:** {canvas_narrative}")
-        if reality_narrative:
-            st.info(f"**Reality Assessment:** {reality_narrative}")
-
-        st.caption(
-            "v3.0 — The Semantic Canvas projects each block's SAE-discovered "
-            "concepts onto 12 named interpretive dimensions. The dominant themes "
-            "above are the system's best summary of what matters most across all "
-            "data domains."
-        )
