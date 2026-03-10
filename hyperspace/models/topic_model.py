@@ -45,7 +45,14 @@ def fit_topic_model(docs_key: str, docs: list[str] | None = None, data_source: s
     """
     try:
         from bertopic import BERTopic
+    except ImportError as e:
+        st.warning(
+            f"BERTopic unavailable: missing dependency — {e}. "
+            "Install with: pip install bertopic sentence-transformers"
+        )
+        return None
 
+    try:
         if docs is None:
             docs, data_source = get_text_data()
 

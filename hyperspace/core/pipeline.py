@@ -71,6 +71,9 @@ class PipelineRunner:
         sae_hidden_dim: int = 16,
         sae_epochs: int = 80,
         stability_runs: int = 8,
+        compute_cross_block: bool = False,
+        cross_block_epochs_uvt: int = 120,
+        cross_block_epochs_use: int = 150,
     ) -> PipelineResult:
         """Execute the full pipeline.
 
@@ -86,6 +89,11 @@ class PipelineRunner:
             sae_hidden_dim: Hidden dim for final SAE.
             sae_epochs: Training epochs for final SAE.
             stability_runs: Number of noisy runs for stability estimation.
+            compute_cross_block: Whether to run the UVT + USE neural networks.
+                Disabled by default because each adds ~120–150 training epochs;
+                enable explicitly in UI contexts or when cross-block analysis is needed.
+            cross_block_epochs_uvt: Training epochs for the UVT network.
+            cross_block_epochs_use: Training epochs for the USE network.
 
         Returns:
             PipelineResult with all outputs.
@@ -237,6 +245,33 @@ class PipelineRunner:
                         sae_result, final_snap,
                     )
 
+        # ---- Cross-Block Interconnection: UVT + USE ----
+        uvt_result = None
+        use_result = None
+        if compute_cross_block and final_matrix is not None and final_matrix.shape[0] >= 2:
+            self._report("cross_block", "Computing Universal Variance Tensor...")
+            from hyperspace.models.cross_block_net import (
+                compute_universal_variance_tensor,
+                compute_universal_semantic_encoding,
+            )
+            from hyperspace.models.knowledge_matrix import HYPERSPACE_REGISTRY
+
+            active_block_names = [s["block_name"] for s in snapshots]
+            uvt_result = compute_universal_variance_tensor(
+                final_matrix, n_heads=4, d_model=32, epochs=cross_block_epochs_uvt,
+                registry=HYPERSPACE_REGISTRY,
+                block_names=active_block_names,
+            )
+
+            if uvt_result is not None:
+                self._report("cross_block", "Computing Universal Semantic Encoding...")
+                use_result = compute_universal_semantic_encoding(
+                    final_matrix, uvt_result,
+                    canvas=ukt.canvas, semantic_dim=24, epochs=cross_block_epochs_use,
+                    registry=HYPERSPACE_REGISTRY,
+                    block_names=active_block_names,
+                )
+
         # ---- Semantic Narratives ----
         canvas_narrative = None
         reality_narrative = None
@@ -287,6 +322,8 @@ class PipelineRunner:
             semantic_canvas=ukt.canvas,
             canvas_narrative=canvas_narrative,
             reality_narrative=reality_narrative,
+            uvt_result=uvt_result,
+            use_result=use_result,
             stability=stability,
             governance_flags=governance_flags,
             interpretability_scorecard=scorecard,
@@ -331,6 +368,23 @@ class PipelineRunner:
                         f"{importance.max():.1%} of total variance."
                     ),
                 ))
+
+        # GOV-002: Temporal coverage gap
+        finance_src = data_sources.get("Finance", "")
+        cluster_src = data_sources.get("Clusters", "")
+        if "Live" in finance_src and "Fallback" in cluster_src:
+            code_info = GOVERNANCE_FLAG_CODES["GOV-002"]
+            flags.append(GovernanceFlag(
+                code="GOV-002",
+                label=code_info["label"],
+                description=code_info["description"],
+                severity=code_info["severity"],
+                detail=(
+                    "Finance data is live but news/cluster data is from static "
+                    "fallback snippets. Cross-modal conclusions span different "
+                    "observation windows."
+                ),
+            ))
 
         # GOV-003: Geopolitical centrality skew
         if graph_result and "analysis" in graph_result:

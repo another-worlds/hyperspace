@@ -11,15 +11,15 @@ import streamlit as st
 
 from hyperspace.config import (
     DEFAULT_TICKERS, GEOPOLITICAL_NODES, PIPELINE_STEPS, UKT_FEATURE_DIM,
-    GOVERNANCE_FLAG_CODES, SCORECARD_THRESHOLDS,
+    SCORECARD_THRESHOLDS,
 )
 from hyperspace.models.knowledge_matrix import (
-    FEATURE_REGION_LABELS,
     UniversalKnowledgeTensor,
     estimate_reality_regression_stability,
 )
 from hyperspace.viz.charts import source_badge
 from hyperspace.viz import kernel_viz
+from hyperspace.core.pipeline import PipelineRunner
 
 
 # --------------------------------------------------------------------------- #
@@ -35,96 +35,16 @@ def _compute_governance_flags(
 ) -> list[dict]:
     """Auto-detect governance flags from pipeline results.
 
-    Returns a list of active flag dicts with keys:
-        code, label, description, severity
+    Delegates to PipelineRunner._compute_governance_flags to ensure
+    consistent flag detection logic across headless and UI pipelines.
     """
-    flags: list[dict] = []
-
-    # GOV-001: Modality imbalance — one block dominates reality regression
-    if ukt_snapshots:
-        final_snap = ukt_snapshots[-1]
-        rr = final_snap["reality_regression"]
-        region_sums = {
-            label: float(np.abs(rr[lo:hi]).sum())
-            for (lo, hi), label in FEATURE_REGION_LABELS.items()
-        }
-        total_rr = sum(region_sums.values()) + 1e-8
-        max_region_share = max(region_sums.values()) / total_rr
-        if max_region_share > 0.50:
-            dominant = max(region_sums, key=region_sums.get)
-            flag = GOVERNANCE_FLAG_CODES["GOV-001"].copy()
-            flag["code"] = "GOV-001"
-            flag["detail"] = (
-                f"Region '{dominant}' accounts for {max_region_share:.0%} of the "
-                "reality regression weight."
-            )
-            flags.append(flag)
-
-    # GOV-002: Temporal coverage gap — finance and news have different scopes
-    # Detected when both are live but news data source label doesn't match finance dates
-    finance_src = data_sources.get("Finance", "")
-    cluster_src = data_sources.get("Clusters", "")
-    if "Live" in finance_src and "Live" in cluster_src:
-        ctx = timeframe_context or {}
-        if ctx.get("start_date") and ctx.get("end_date"):
-            pass  # Coverage is aligned — no flag
-    elif "Live" in finance_src and "Fallback" in cluster_src:
-        flag = GOVERNANCE_FLAG_CODES["GOV-002"].copy()
-        flag["code"] = "GOV-002"
-        flag["detail"] = (
-            "Finance data is live but news/cluster data is from static fallback snippets. "
-            "Cross-modal conclusions span different observation windows."
-        )
-        flags.append(flag)
-
-    # GOV-003: Geopolitical centrality skew
-    if graph_result and "analysis" in graph_result:
-        degree_cent = graph_result["analysis"].get("degree_centrality", {})
-        degree_vals = list(degree_cent.values())
-        if len(degree_vals) > 1:
-            mean_deg = float(np.mean(degree_vals))
-            max_deg = float(max(degree_vals))
-            if mean_deg > 0 and max_deg > 2.0 * mean_deg:
-                dominant_node = max(degree_cent, key=degree_cent.get)
-                flag = GOVERNANCE_FLAG_CODES["GOV-003"].copy()
-                flag["code"] = "GOV-003"
-                flag["detail"] = (
-                    f"Node '{dominant_node}' has degree centrality {max_deg:.3f}, "
-                    f"which is {max_deg / mean_deg:.1f}× the network mean ({mean_deg:.3f})."
-                )
-                flags.append(flag)
-
-    # GOV-004: Low concept coverage
-    if sae_result:
-        total = sae_result.get("total_concepts", 1)
-        active = sae_result.get("active_concepts", 0)
-        dormancy_rate = 1.0 - (active / max(total, 1))
-        if dormancy_rate > 0.60:
-            flag = GOVERNANCE_FLAG_CODES["GOV-004"].copy()
-            flag["code"] = "GOV-004"
-            flag["detail"] = (
-                f"{dormancy_rate:.0%} of concepts are dormant ({total - active}/{total}). "
-                "The model found limited interpretable structure."
-            )
-            flags.append(flag)
-
-    # GOV-005: Synthetic data active
-    all_sources = list(data_sources.values())
-    synthetic_blocks = [
-        k for k, v in data_sources.items()
-        if "Synthetic" in v or "synthetic" in v or "Fallback" in v or "fallback" in v
-           or "Mock" in v or "mock" in v
-    ]
-    if synthetic_blocks:
-        flag = GOVERNANCE_FLAG_CODES["GOV-005"].copy()
-        flag["code"] = "GOV-005"
-        flag["detail"] = (
-            f"Blocks using synthetic/fallback data: {', '.join(synthetic_blocks)}. "
-            "These outputs are illustrative only."
-        )
-        flags.append(flag)
-
-    return flags
+    return PipelineRunner._compute_governance_flags(
+        data_sources=data_sources,
+        snapshots=ukt_snapshots,
+        sae_result=sae_result,
+        graph_result=graph_result,
+        timeframe_context=timeframe_context,
+    )
 
 
 def _compute_scorecard(
@@ -429,7 +349,10 @@ def run_pipeline() -> None:
         )
         if tft_result is None:
             status.update(label="Pipeline blocked: TFT fitting failed", state="error")
-            st.error("TFT fitting failed. Ensure live market data is reachable.")
+            st.error(
+                "TFT fitting failed. Check the error above — common causes: "
+                "missing pytorch-forecasting/lightning packages, or unreachable market data."
+            )
             return
         finance_features = tft_result["features_for_ukt"]
         data_sources["Finance"] = tft_result["data_source"]
@@ -565,6 +488,46 @@ def run_pipeline() -> None:
 
         # ---- Semantic Canvas: store + generate final narratives ---- #
         st.session_state.semantic_canvas = ukt.canvas
+
+        # ---- Cross-Block Interconnection: UVT + USE ----
+        final_matrix = ukt.get_final_matrix()
+        if final_matrix is not None and final_matrix.shape[0] >= 2:
+            st.write("Computing Universal Variance Tensor (cross-block attention)...")
+            from hyperspace.models.cross_block_net import (
+                compute_universal_variance_tensor,
+                compute_universal_semantic_encoding,
+            )
+            from hyperspace.models.knowledge_matrix import HYPERSPACE_REGISTRY
+
+            active_block_names = [s["block_name"] for s in snapshots]
+            uvt_result = compute_universal_variance_tensor(
+                final_matrix, n_heads=4, d_model=32, epochs=120,
+                registry=HYPERSPACE_REGISTRY,
+                block_names=active_block_names,
+            )
+            st.session_state.uvt_result = uvt_result
+
+            if uvt_result is not None:
+                st.write("Computing Universal Semantic Encoding...")
+                use_result = compute_universal_semantic_encoding(
+                    final_matrix, uvt_result,
+                    canvas=ukt.canvas, semantic_dim=24, epochs=150,
+                    registry=HYPERSPACE_REGISTRY,
+                    block_names=active_block_names,
+                )
+                st.session_state.use_result = use_result
+                st.write(
+                    f"UVT: {len(uvt_result['coupling_labels'])} coupling modes | "
+                    f"USE: {use_result['semantic_dim']}-dim encoding"
+                    if use_result else "UVT computed, USE unavailable"
+                )
+            else:
+                # UVT failed — clear any stale USE result to avoid mismatched UI
+                st.session_state.use_result = None
+        else:
+            # Not enough blocks — clear both to prevent stale visualizations
+            st.session_state.uvt_result = None
+            st.session_state.use_result = None
 
         st.write("Generating semantic narratives via Tiny-LLM...")
         try:

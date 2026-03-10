@@ -360,6 +360,217 @@ def render() -> None:
             )
             st.dataframe(pd.DataFrame(concept_kernel_map), use_container_width=True)
 
+        # ---- Universal Variance Tensor ---- #
+        uvt_result = st.session_state.get("uvt_result")
+        if uvt_result is not None:
+            st.markdown("---")
+            st.markdown("### Universal Variance Tensor — Cross-Block Interconnection")
+            st.caption(
+                "A cross-block attention network maps each pipeline block's features "
+                "onto every other block, learning which data modalities co-vary. "
+                "The coupling matrix reveals inter-layer dependencies that SVD alone "
+                "cannot capture — it shows *directed* attention between blocks."
+            )
+
+            # Coupling matrix heatmap
+            coupling = uvt_result["coupling_matrix"]
+            # Use block names stored in the UVT result to avoid stale-run mismatches
+            uvt_block_names = uvt_result.get("block_names") or block_names
+            coupling_block_names = uvt_block_names[:coupling.shape[0]]
+            if len(coupling_block_names) != coupling.shape[0]:
+                coupling_block_names = [
+                    f"Block_{i}" for i in range(coupling.shape[0])
+                ]
+            fig_coup = px.imshow(
+                coupling,
+                x=coupling_block_names,
+                y=coupling_block_names,
+                color_continuous_scale="Viridis",
+                title="Cross-Block Coupling Matrix (Attention Weights)",
+                text_auto=".3f",
+            )
+            fig_coup.update_layout(**PLOTLY_LAYOUT, height=380)
+            st.plotly_chart(fig_coup, use_container_width=True,
+                            key="interp_uvt_coupling")
+            st.caption(
+                "Each cell shows how strongly one block attends to another. "
+                "High off-diagonal values indicate strong cross-modal coupling — "
+                "information from one domain informs interpretation of the other."
+            )
+
+            # Per-head attention (detail view)
+            attn_per_head = uvt_result.get("attention_per_head")
+            if attn_per_head is not None and attn_per_head.shape[0] > 1:
+                with st.expander("Attention per Head (Detail)", expanded=False):
+                    head_cols = st.columns(min(4, attn_per_head.shape[0]))
+                    for h in range(attn_per_head.shape[0]):
+                        with head_cols[h % len(head_cols)]:
+                            fig_h = px.imshow(
+                                attn_per_head[h],
+                                x=coupling_block_names,
+                                y=coupling_block_names,
+                                color_continuous_scale="Viridis",
+                                title=f"Head {h}",
+                                text_auto=".2f",
+                            )
+                            fig_h.update_layout(
+                                **PLOTLY_LAYOUT, height=250,
+                                coloraxis_showscale=False,
+                            )
+                            st.plotly_chart(fig_h, use_container_width=True,
+                                            key=f"interp_uvt_head_{h}")
+
+            # Coupling modes (variance decomposition)
+            coupling_labels = uvt_result.get("coupling_labels", [])
+            if coupling_labels:
+                st.markdown("#### Cross-Block Coupling Modes")
+                var_exp = [cl["variance_explained"] for cl in coupling_labels]
+                mode_labels = [cl["mode_id"] for cl in coupling_labels]
+                fig_var = go.Figure(go.Bar(
+                    x=mode_labels, y=var_exp,
+                    marker_color=["#64ffda" if v > 0.2 else "#3498db"
+                                  for v in var_exp],
+                    text=[f"{v:.0%}" for v in var_exp],
+                    textposition="auto",
+                ))
+                fig_var.update_layout(
+                    **PLOTLY_LAYOUT, height=250,
+                    title="Variance Explained per Coupling Mode",
+                    xaxis_title="Mode", yaxis_title="Variance Share",
+                )
+                st.plotly_chart(fig_var, use_container_width=True,
+                                key="interp_uvt_variance")
+
+                for cl in coupling_labels:
+                    with st.expander(cl["label"], expanded=cl["variance_explained"] > 0.2):
+                        st.markdown(cl["narrative"])
+
+            # Feature variance modes
+            feature_modes = uvt_result.get("feature_variance_modes", [])
+            if feature_modes:
+                with st.expander("Cross-Feature Variance Modes", expanded=False):
+                    for fm in feature_modes[:5]:
+                        st.markdown(f"**{fm['label']}**")
+                        if fm.get("top_features"):
+                            feat_df = pd.DataFrame(fm["top_features"])
+                            st.dataframe(
+                                feat_df[["name", "loading"]].rename(
+                                    columns={"name": "Feature", "loading": "Loading"}
+                                ),
+                                use_container_width=True, hide_index=True,
+                            )
+
+        # ---- Universal Semantic Encoding ---- #
+        use_result = st.session_state.get("use_result")
+        if use_result is not None:
+            st.markdown("---")
+            st.markdown("### Universal Semantic Encoding — Unified Multi-Modal State")
+            st.caption(
+                "A bottleneck neural network fuses UKT features with cross-block "
+                "coupling information into a single compact vector — the system's "
+                "complete multi-modal state compressed into interpretable dimensions."
+            )
+
+            encoding = use_result["encoding"]
+
+            # Semantic encoding bar chart
+            dim_labels_use = [dl["label"] for dl in use_result["dimension_labels"]]
+            colors_use = [
+                "#64ffda" if dl["strength"] == "STRONG"
+                else "#3498db" if dl["strength"] == "MODERATE"
+                else "#555"
+                for dl in use_result["dimension_labels"]
+            ]
+            fig_enc = go.Figure(go.Bar(
+                x=list(range(len(encoding))),
+                y=encoding,
+                marker_color=colors_use,
+                text=[f"{v:+.2f}" for v in encoding],
+                textposition="auto",
+            ))
+            fig_enc.update_layout(
+                **PLOTLY_LAYOUT, height=300,
+                title="Universal Semantic Encoding Vector",
+                xaxis_title="Semantic Dimension",
+                yaxis_title="Activation",
+                yaxis=dict(range=[-1.1, 1.1]),
+            )
+            st.plotly_chart(fig_enc, use_container_width=True,
+                            key="interp_use_encoding")
+            st.caption(
+                "Each bar represents one dimension of the unified semantic encoding. "
+                "Strong activations (green) indicate dimensions where the multi-modal "
+                "system has clear, consistent signal across data sources."
+            )
+
+            # Semantic dimension detail table
+            with st.expander("Semantic Dimension Details", expanded=False):
+                dim_rows = [
+                    {
+                        "Dim": dl["dim_idx"],
+                        "Value": f"{dl['value']:+.3f}",
+                        "Strength": dl["strength"],
+                        "Polarity": dl["polarity"],
+                        "Canvas Dim": dl.get("canvas_dimension", "—"),
+                    }
+                    for dl in use_result["dimension_labels"]
+                    if dl["abs_value"] > 0.1
+                ]
+                if dim_rows:
+                    st.dataframe(pd.DataFrame(dim_rows),
+                                 use_container_width=True, hide_index=True)
+
+            # Cross-modal alignment scores
+            alignment = use_result.get("alignment_scores", [])
+            if alignment:
+                st.markdown("#### Cross-Modal Alignment")
+                st.caption(
+                    "Measures how sensitive the semantic encoding is to removing "
+                    "each block — high alignment means two blocks are tightly coupled "
+                    "in the unified representation."
+                )
+                align_df = pd.DataFrame(alignment)
+                fig_align = go.Figure(go.Bar(
+                    x=[a["label"].split(":")[0] for a in alignment],
+                    y=[a["alignment"] for a in alignment],
+                    marker_color=["#e74c3c" if a["alignment"] > 0.3
+                                  else "#e67e22" if a["alignment"] > 0.1
+                                  else "#2ecc71" for a in alignment],
+                    text=[f"{a['alignment']:.3f}" for a in alignment],
+                    textposition="auto",
+                ))
+                fig_align.update_layout(
+                    **PLOTLY_LAYOUT, height=280,
+                    title="Pairwise Cross-Modal Alignment",
+                    xaxis_title="Block Pair",
+                    yaxis_title="Alignment (ablation sensitivity)",
+                )
+                st.plotly_chart(fig_align, use_container_width=True,
+                                key="interp_use_alignment")
+
+            # Reconstruction quality
+            recon = use_result.get("reconstruction_per_block", {})
+            if recon:
+                with st.expander("Reconstruction Quality per Block"):
+                    for idx, err in recon.items():
+                        bname = block_names[idx] if idx < len(block_names) else f"Block {idx}"
+                        st.caption(f"{bname}: MSE = {err:.6f}")
+
+            # USE loss curve
+            use_loss = use_result.get("loss_history", [])
+            if use_loss:
+                with st.expander("USE Training Convergence"):
+                    fig_loss = px.line(
+                        x=list(range(len(use_loss))), y=use_loss,
+                        title="Universal Semantic Encoder Loss",
+                    )
+                    fig_loss.update_layout(
+                        **PLOTLY_LAYOUT, height=220,
+                        xaxis_title="Epoch", yaxis_title="Loss",
+                    )
+                    st.plotly_chart(fig_loss, use_container_width=True,
+                                    key="interp_use_loss")
+
         # Stakeholder annotation summary
         st.markdown("---")
         st.markdown("### Stakeholder Annotation Record")
