@@ -143,10 +143,18 @@ def render_landing() -> None:
     # Governance header
     st.markdown(
         '<div class="governance-header">'
-        '<h2 style="color:#64ffda; margin:0 0 8px 0;">Hyperspace — Accountability Infrastructure for AI Governance</h2>'
-        '<p style="color:#a8b2d1; margin:0; font-size:0.95em;">'
-        'A demonstration system for the UN Global Dialogue on AI Governance — '
-        'February 2026'
+        '<div style="display:flex; align-items:baseline; gap:12px; margin-bottom:10px;">'
+        '<h2 style="color:#64ffda; margin:0; font-family:Inter,sans-serif; '
+        'font-size:1.55em; font-weight:700; letter-spacing:-0.01em;">'
+        'Hyperspace</h2>'
+        '<span style="color:#3d5673; font-family:Inter,sans-serif; font-size:0.78em; '
+        'font-weight:600; letter-spacing:0.12em; text-transform:uppercase;">'
+        'Accountability Infrastructure for AI Governance</span>'
+        '</div>'
+        '<p style="color:#4a6880; margin:0; font-family:Inter,sans-serif; '
+        'font-size:0.88em; line-height:1.6;">'
+        'A demonstration system for the UN Global Dialogue on AI Governance &mdash; '
+        'February 2026. All conclusions are traceable, stability-tested, and contestable.'
         '</p>'
         '</div>',
         unsafe_allow_html=True,
@@ -155,55 +163,86 @@ def render_landing() -> None:
     st.markdown("---")
 
     # Three failure modes framing
-    st.markdown("### The Three Accountability Failures This System Addresses")
+    st.markdown(
+        '<p style="font-family:Inter,sans-serif; font-size:0.72em; font-weight:700; '
+        'letter-spacing:0.12em; text-transform:uppercase; color:#3d5673; margin:0 0 12px;">'
+        'The Three Accountability Failures This System Addresses</p>',
+        unsafe_allow_html=True,
+    )
     col1, col2, col3 = st.columns(3)
     with col1:
         st.markdown(
-            "**① Opacity**\n\n"
-            "Dominant AI systems use billions of parameters with learned concepts "
-            "that cannot be labeled, traced, or linked to causal stories. "
-            "It is impossible to explain *why* a conclusion was drawn."
+            '<div class="accountability-card">'
+            '<div class="card-num">01</div>'
+            '<h4>Opacity</h4>'
+            '<p>Dominant AI systems use billions of parameters with learned concepts '
+            'that cannot be labeled, traced, or linked to causal stories. '
+            'It is impossible to explain <em>why</em> a conclusion was drawn.</p>'
+            '</div>',
+            unsafe_allow_html=True,
         )
     with col2:
         st.markdown(
-            "**② Uncontestability**\n\n"
-            "Decisions derived from opaque pattern recognition cannot be robustly "
-            "validated, challenged, or improved when they fail. There is no mechanism "
-            "for due process against an algorithmic conclusion."
+            '<div class="accountability-card">'
+            '<div class="card-num">02</div>'
+            '<h4>Uncontestability</h4>'
+            '<p>Decisions derived from opaque pattern recognition cannot be robustly '
+            'validated, challenged, or improved when they fail. There is no mechanism '
+            'for due process against an algorithmic conclusion.</p>'
+            '</div>',
+            unsafe_allow_html=True,
         )
     with col3:
         st.markdown(
-            "**③ Untraceability**\n\n"
-            "Biased and partial knowledge is absorbed into authoritative-sounding "
-            "outputs while the pathways of influence remain invisible — machine-generated "
-            "meaning without provenance or responsibility."
+            '<div class="accountability-card">'
+            '<div class="card-num">03</div>'
+            '<h4>Untraceability</h4>'
+            '<p>Biased and partial knowledge is absorbed into authoritative-sounding '
+            'outputs while the pathways of influence remain invisible — machine-generated '
+            'meaning without provenance or responsibility.</p>'
+            '</div>',
+            unsafe_allow_html=True,
         )
 
     st.markdown("---")
 
     # Three technical guarantees
-    st.markdown("### Three Technical Guarantees")
+    st.markdown(
+        '<p style="font-family:Inter,sans-serif; font-size:0.72em; font-weight:700; '
+        'letter-spacing:0.12em; text-transform:uppercase; color:#3d5673; margin:0 0 12px;">'
+        'Three Technical Guarantees</p>',
+        unsafe_allow_html=True,
+    )
     g1, g2, g3 = st.columns(3)
     with g1:
-        st.success(
-            "**Full Feature Provenance**\n\n"
-            "Every one of 64 input dimensions carries a complete metadata chain: "
-            "source, entity, metric, time scope, and block. Any conclusion can be "
-            "traced back to its raw data inputs."
+        st.markdown(
+            '<div class="guarantee-card">'
+            '<h4>✓ Full Feature Provenance</h4>'
+            '<p>Every one of 80 input dimensions carries a complete metadata chain: '
+            'source, entity, metric, time scope, and block. Any conclusion can be '
+            'traced back to its raw data inputs.</p>'
+            '</div>',
+            unsafe_allow_html=True,
         )
     with g2:
-        st.success(
-            "**Stability-Tested Kernels**\n\n"
-            "The Universal Knowledge Tensor runs 8 noisy perturbation tests to verify "
-            "that conclusions are robust. A cosine similarity score quantifies how much "
-            "conclusions change under small data variations."
+        st.markdown(
+            '<div class="guarantee-card">'
+            '<h4>✓ Stability-Tested Kernels</h4>'
+            '<p>The Universal Knowledge Tensor runs 8 noisy perturbation tests to verify '
+            'that conclusions are robust. A cosine similarity score quantifies how much '
+            'conclusions change under small data variations.</p>'
+            '</div>',
+            unsafe_allow_html=True,
         )
     with g3:
-        st.success(
-            "**Concept-Level Interpretability**\n\n"
-            "A Sparse Autoencoder discovers a small set of named, interpretable concepts "
-            "from the data. Each concept is mapped to specific kernels and features — "
-            "enabling contestation at the level of individual claims."
+        st.markdown(
+            '<div class="guarantee-card">'
+            '<h4>✓ Concept-Level Interpretability</h4>'
+            '<p>A Sparse Autoencoder discovers a small set of named, interpretable concepts '
+            'from the data. Each concept is mapped to specific kernels and features — '
+            'enabling contestation at the level of individual claims.</p>'
+            '</div>',
+            unsafe_allow_html=True,
         )
 
     st.markdown("---")

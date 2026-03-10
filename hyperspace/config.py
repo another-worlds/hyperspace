@@ -3,78 +3,279 @@ from __future__ import annotations
 
 DARK_CSS = """
 <style>
-/* Global dark card styling */
+/* ─── Typography: Inter + JetBrains Mono ────────────────────────────── */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+html, body, [class*="css"] {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif !important;
+}
+
+/* ─── Clean presentation — remove Streamlit chrome ──────────────────── */
+#MainMenu { visibility: hidden; }
+footer { visibility: hidden; }
+header[data-testid="stHeader"] { background: transparent; border: none; }
+
+/* ─── Dividers ──────────────────────────────────────────────────────── */
+hr {
+    border: none !important;
+    border-top: 1px solid #182135 !important;
+    margin: 18px 0 !important;
+}
+
+/* ─── Sidebar ───────────────────────────────────────────────────────── */
+[data-testid="stSidebar"] {
+    background: linear-gradient(180deg, #060b17 0%, #090e1e 100%);
+    border-right: 1px solid #152030;
+}
+[data-testid="stSidebar"] .block-container { padding-top: 1.5rem; }
+
+/* ─── Metric cards ──────────────────────────────────────────────────── */
 div[data-testid="stMetric"] {
-    background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
-    border: 1px solid #0f3460;
-    border-radius: 12px;
-    padding: 16px;
-    box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+    background: linear-gradient(145deg, #0b1525 0%, #0f1e3a 100%);
+    border: 1px solid #1a2e50;
+    border-top: 2px solid #64ffda;
+    border-radius: 10px;
+    padding: 18px 16px 14px;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.35), 0 0 0 1px rgba(100,255,218,0.04);
+    transition: box-shadow 0.2s ease;
 }
-div[data-testid="stMetric"] label { color: #a8b2d1 !important; }
-div[data-testid="stMetric"] div[data-testid="stMetricValue"] {
-    color: #64ffda !important; font-weight: 700;
+div[data-testid="stMetric"]:hover {
+    box-shadow: 0 6px 28px rgba(0,0,0,0.5), 0 0 0 1px rgba(100,255,218,0.08);
 }
+div[data-testid="stMetric"] label {
+    color: #3d5673 !important;
+    font-size: 0.71em !important;
+    font-weight: 700 !important;
+    letter-spacing: 0.10em !important;
+    text-transform: uppercase !important;
+    font-family: 'Inter', sans-serif !important;
+}
+div[data-testid="stMetricValue"] {
+    color: #dce8f0 !important;
+    font-weight: 700 !important;
+    font-size: 1.65em !important;
+    font-family: 'Inter', sans-serif !important;
+}
+div[data-testid="stMetricDelta"] { color: #64ffda !important; }
+
+/* ─── Tab bar ───────────────────────────────────────────────────────── */
+.stTabs [data-baseweb="tab-list"] {
+    background: transparent;
+    border-bottom: 1px solid #152030;
+    gap: 0;
+    padding: 0;
+}
+.stTabs [data-baseweb="tab"] {
+    background: transparent !important;
+    border: none !important;
+    border-bottom: 2px solid transparent !important;
+    color: #3d5673 !important;
+    font-family: 'Inter', sans-serif !important;
+    font-weight: 500 !important;
+    font-size: 0.84em !important;
+    padding: 10px 18px !important;
+    letter-spacing: 0.025em !important;
+    transition: color 0.15s, border-color 0.15s !important;
+}
+.stTabs [data-baseweb="tab"]:hover {
+    color: #7a9ab8 !important;
+    background: transparent !important;
+}
+.stTabs [aria-selected="true"] {
+    background: transparent !important;
+    border-bottom: 2px solid #64ffda !important;
+    color: #dce8f0 !important;
+    font-weight: 600 !important;
+}
+.stTabs [data-baseweb="tab-panel"] { padding-top: 20px !important; }
+
+/* ─── Primary button ────────────────────────────────────────────────── */
+.stButton > button[kind="primary"] {
+    background: linear-gradient(135deg, #0d3f6b 0%, #1a5898 100%);
+    border: 1px solid rgba(100,255,218,0.28);
+    color: #dce8f0;
+    font-family: 'Inter', sans-serif;
+    font-weight: 600;
+    font-size: 0.9em;
+    letter-spacing: 0.05em;
+    border-radius: 8px;
+    padding: 10px 28px;
+    transition: all 0.2s ease;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.4), 0 0 0 1px rgba(100,255,218,0.08);
+}
+.stButton > button[kind="primary"]:hover {
+    background: linear-gradient(135deg, #1a5898 0%, #2471c0 100%);
+    border-color: rgba(100,255,218,0.55);
+    box-shadow: 0 6px 24px rgba(0,0,0,0.5), 0 0 18px rgba(100,255,218,0.18);
+    transform: translateY(-1px);
+}
+.stButton > button[kind="primary"]:active {
+    transform: translateY(0);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+}
+
+/* ─── Expanders ─────────────────────────────────────────────────────── */
+[data-testid="stExpander"] {
+    border: 1px solid #152030 !important;
+    border-radius: 8px !important;
+    background: #070d1a !important;
+}
+[data-testid="stExpander"] summary {
+    color: #567090 !important;
+    font-family: 'Inter', sans-serif !important;
+    font-size: 0.88em !important;
+    font-weight: 500 !important;
+}
+[data-testid="stExpander"]:hover summary { color: #8ba8c8 !important; }
+
+/* ─── Captions ──────────────────────────────────────────────────────── */
+.stCaption p, .stCaption {
+    color: #2d4a66 !important;
+    font-size: 0.79em !important;
+    font-family: 'Inter', sans-serif !important;
+    line-height: 1.55 !important;
+}
+
+/* ─── Concept badge ─────────────────────────────────────────────────── */
 .concept-badge {
-    display: inline-block; padding: 4px 12px; margin: 2px;
-    border-radius: 20px; font-size: 0.82em; font-weight: 600;
-    background: linear-gradient(90deg, #0f3460, #533483);
-    color: #e0e0ff;
+    display: inline-block; padding: 4px 14px; margin: 2px;
+    border-radius: 20px; font-size: 0.80em; font-weight: 600;
+    background: linear-gradient(90deg, #0c2d50, #112a50);
+    color: #7dd3fc;
+    border: 1px solid #1e4070;
+    letter-spacing: 0.03em;
+    font-family: 'Inter', sans-serif;
 }
+
+/* ─── Log entry ─────────────────────────────────────────────────────── */
 .log-entry {
-    font-family: 'Fira Code', monospace; font-size: 0.82em;
-    padding: 4px 8px; margin: 2px 0; border-left: 3px solid #64ffda;
-    background: #0d1117; color: #c9d1d9;
+    font-family: 'JetBrains Mono', 'Fira Code', monospace;
+    font-size: 0.79em;
+    padding: 5px 10px; margin: 2px 0;
+    border-left: 3px solid #64ffda;
+    background: #06111f; color: #7a9ab8;
+    border-radius: 0 4px 4px 0;
 }
+
+/* ─── Source badge ──────────────────────────────────────────────────── */
 .source-badge {
-    display: inline-block; padding: 2px 8px; margin: 2px;
-    border-radius: 10px; font-size: 0.75em; font-weight: 600;
-    background: #1a472a; color: #64ffda; border: 1px solid #2d6a4f;
+    display: inline-block; padding: 2px 10px; margin: 2px;
+    border-radius: 12px; font-size: 0.74em; font-weight: 600;
+    background: #041d12; color: #64ffda; border: 1px solid #0a3d28;
+    font-family: 'Inter', sans-serif;
 }
 .source-badge.fallback {
-    background: #4a2020; color: #ff6b6b; border: 1px solid #6a2d2d;
+    background: #200d0d; color: #f87171; border: 1px solid #4a1515;
 }
+
+/* ─── Governance flag / pass badges ────────────────────────────────── */
 .gov-flag {
-    display: inline-block; padding: 3px 10px; margin: 3px 2px;
-    border-radius: 8px; font-size: 0.78em; font-weight: 700;
-    background: #4a2000; color: #ffaa00; border: 1px solid #aa6600;
-    font-family: 'Fira Code', monospace;
+    display: inline-block; padding: 3px 12px; margin: 3px 2px;
+    border-radius: 6px; font-size: 0.77em; font-weight: 700;
+    background: #1c0e00; color: #fbbf24; border: 1px solid #6b3800;
+    font-family: 'JetBrains Mono', monospace;
+    letter-spacing: 0.04em;
 }
 .gov-pass {
-    display: inline-block; padding: 3px 10px; margin: 3px 2px;
-    border-radius: 8px; font-size: 0.78em; font-weight: 700;
-    background: #0a2a1a; color: #64ffda; border: 1px solid #2d6a4f;
-    font-family: 'Fira Code', monospace;
+    display: inline-block; padding: 3px 12px; margin: 3px 2px;
+    border-radius: 6px; font-size: 0.77em; font-weight: 700;
+    background: #031610; color: #34d399; border: 1px solid #065038;
+    font-family: 'JetBrains Mono', monospace;
+    letter-spacing: 0.04em;
 }
+
+/* ─── Jurisdiction badge ────────────────────────────────────────────── */
 .jurisdiction-badge {
-    display: inline-block; padding: 2px 8px; margin: 2px;
-    border-radius: 10px; font-size: 0.72em; font-weight: 600;
-    background: #1a1a3e; color: #a0aaff; border: 1px solid #3040a0;
+    display: inline-block; padding: 2px 10px; margin: 2px;
+    border-radius: 12px; font-size: 0.71em; font-weight: 600;
+    background: #0d1232; color: #818cf8; border: 1px solid #252480;
+    font-family: 'Inter', sans-serif;
 }
+
+/* ─── Synthetic data banner ─────────────────────────────────────────── */
 .synthetic-banner {
-    background: linear-gradient(90deg, #2a1500, #3a2000);
-    border: 1px solid #aa5500; border-radius: 8px;
-    padding: 10px 16px; margin: 8px 0; color: #ffcc88;
-    font-weight: 600; font-size: 0.92em;
+    background: linear-gradient(90deg, #120800, #1e0f00);
+    border: 1px solid #6b3800;
+    border-left: 4px solid #fbbf24;
+    border-radius: 8px;
+    padding: 12px 18px; margin: 8px 0;
+    color: #fcd34d; font-weight: 600; font-size: 0.88em;
+    font-family: 'Inter', sans-serif;
 }
+
+/* ─── Governance section header ─────────────────────────────────────── */
 .governance-header {
-    background: linear-gradient(135deg, #0a1628 0%, #0f2040 100%);
-    border: 1px solid #1a4080; border-radius: 12px;
-    padding: 20px 24px; margin: 8px 0;
+    background: linear-gradient(135deg, #050c1a 0%, #09152a 55%, #060f20 100%);
+    border: 1px solid #1a2e50;
+    border-top: 3px solid #64ffda;
+    border-radius: 12px;
+    padding: 28px 32px; margin: 8px 0 20px;
 }
+
+/* ─── Run ID watermark ──────────────────────────────────────────────── */
 .run-id-watermark {
-    font-family: 'Fira Code', monospace; font-size: 0.70em;
-    color: #445566; padding: 2px 6px;
+    font-family: 'JetBrains Mono', 'Fira Code', monospace;
+    font-size: 0.67em; color: #1e3348; padding: 2px 6px;
+    letter-spacing: 0.06em;
 }
+
+/* ─── Contestability note ───────────────────────────────────────────── */
 .contest-note {
-    background: #0d1a2e; border-left: 3px solid #ffaa00;
-    padding: 8px 12px; margin: 4px 0; font-size: 0.84em;
-    color: #c9d1d9; border-radius: 0 6px 6px 0;
+    background: #050f1e; border-left: 3px solid #fbbf24;
+    padding: 8px 14px; margin: 4px 0; font-size: 0.84em;
+    color: #7a9ab8; border-radius: 0 6px 6px 0;
 }
+
+/* ─── Annotation tag ────────────────────────────────────────────────── */
 .annotation-tag {
-    display: inline-block; padding: 2px 8px; margin: 2px;
-    border-radius: 10px; font-size: 0.72em; font-weight: 600;
-    background: #2a1a3e; color: #cc99ff; border: 1px solid #6040a0;
+    display: inline-block; padding: 2px 10px; margin: 2px;
+    border-radius: 12px; font-size: 0.71em; font-weight: 600;
+    background: #130e2c; color: #a5b4fc; border: 1px solid #2e28a0;
+    font-family: 'Inter', sans-serif;
+}
+
+/* ─── Landing page cards ────────────────────────────────────────────── */
+.accountability-card {
+    background: linear-gradient(145deg, #0b1525 0%, #0e1e3a 100%);
+    border: 1px solid #1a2e50;
+    border-radius: 10px;
+    padding: 24px 22px 20px;
+    height: 100%;
+}
+.accountability-card .card-num {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 1.9em; font-weight: 700;
+    color: #1a3050; line-height: 1;
+    margin-bottom: 10px;
+}
+.accountability-card h4 {
+    color: #f87171; margin: 0 0 10px;
+    font-size: 0.93em; font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    font-family: 'Inter', sans-serif;
+}
+.accountability-card p {
+    color: #7a9ab8; font-size: 0.87em; line-height: 1.65;
+    margin: 0; font-family: 'Inter', sans-serif;
+}
+.guarantee-card {
+    background: linear-gradient(145deg, #031610 0%, #052018 100%);
+    border: 1px solid #0a3d28;
+    border-top: 2px solid #34d399;
+    border-radius: 10px;
+    padding: 24px 22px 20px;
+    height: 100%;
+}
+.guarantee-card h4 {
+    color: #34d399; margin: 0 0 10px;
+    font-size: 0.92em; font-weight: 700;
+    letter-spacing: 0.03em;
+    font-family: 'Inter', sans-serif;
+}
+.guarantee-card p {
+    color: #7aab98; font-size: 0.87em; line-height: 1.65;
+    margin: 0; font-family: 'Inter', sans-serif;
 }
 </style>
 """
@@ -82,8 +283,24 @@ div[data-testid="stMetric"] div[data-testid="stMetricValue"] {
 # Plotly dark layout defaults
 PLOTLY_LAYOUT = dict(
     template="plotly_dark",
-    paper_bgcolor="#0d1117",
-    plot_bgcolor="#0d1117",
+    paper_bgcolor="#070d1a",
+    plot_bgcolor="#070d1a",
+    font=dict(
+        family="Inter, -apple-system, BlinkMacSystemFont, sans-serif",
+        size=12,
+        color="#7a9ab8",
+    ),
+    hoverlabel=dict(
+        bgcolor="#0d1e38",
+        bordercolor="#1a2e50",
+        font=dict(
+            family="Inter, sans-serif",
+            size=12,
+            color="#dce8f0",
+        ),
+    ),
+    xaxis=dict(gridcolor="#0d1e30", gridwidth=0.5, zerolinecolor="#182840"),
+    yaxis=dict(gridcolor="#0d1e30", gridwidth=0.5, zerolinecolor="#182840"),
 )
 
 GEOPOLITICAL_NODES: dict[str, dict] = {

@@ -37,8 +37,16 @@ init_session_state()
 
 # ── Sidebar ──────────────────────────────────────────────────────────
 with st.sidebar:
-    st.markdown("# Hyperspace")
-    st.markdown("### AI Accountability Infrastructure")
+    st.markdown(
+        '<div style="padding: 4px 0 14px;">'
+        '<div style="font-family:Inter,sans-serif; font-size:1.25em; font-weight:700; '
+        'color:#dce8f0; letter-spacing:-0.01em; line-height:1.2;">Hyperspace</div>'
+        '<div style="font-family:Inter,sans-serif; font-size:0.68em; font-weight:600; '
+        'color:#3d5673; letter-spacing:0.12em; text-transform:uppercase; margin-top:4px;">'
+        'AI Accountability Infrastructure</div>'
+        '</div>',
+        unsafe_allow_html=True,
+    )
     st.markdown(
         '<span class="concept-badge">UKT: Online</span> '
         '<span class="concept-badge">Governance: Active</span>',
