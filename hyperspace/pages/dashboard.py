@@ -18,7 +18,6 @@ from hyperspace.models.knowledge_matrix import (
     estimate_reality_regression_stability,
 )
 from hyperspace.viz.charts import source_badge
-from hyperspace.viz import kernel_viz
 from hyperspace.core.pipeline import PipelineRunner
 
 
@@ -734,26 +733,6 @@ def render_results() -> None:
 
     st.markdown("---")
 
-    # Kernel matrix visualization
-    st.markdown("### Universal Kernel Matrix")
-    block_names = [s["block_name"] for s in snapshots]
-    fig_km = kernel_viz.plot_kernel_matrix(final_snap, block_names)
-    st.plotly_chart(fig_km, use_container_width=True, key="dashboard_kernel_matrix")
-
-    # Kernel importance + reality regression
-    col1, col2 = st.columns(2)
-    with col1:
-        fig_imp = kernel_viz.plot_kernel_importance(final_snap)
-        st.plotly_chart(fig_imp, use_container_width=True, key="dashboard_kernel_importance")
-    with col2:
-        fig_rr = kernel_viz.plot_reality_regression(final_snap)
-        st.plotly_chart(fig_rr, use_container_width=True, key="dashboard_reality_regression")
-
-    # Kernel evolution
-    st.markdown("### Kernel Evolution Across Pipeline Steps")
-    fig_evo = kernel_viz.plot_kernel_evolution(snapshots)
-    st.plotly_chart(fig_evo, use_container_width=True, key="dashboard_kernel_evolution")
-
     # Semantic Canvas summary
     canvas_narrative = st.session_state.get("canvas_narrative")
     reality_narrative = st.session_state.get("reality_narrative")
@@ -764,31 +743,10 @@ def render_results() -> None:
         if reality_narrative:
             st.info(f"**Reality Assessment:** {reality_narrative}")
 
-    # Semantic interpretation log
-    st.markdown("### Semantic Interpretability Report")
-    for snap in snapshots:
-        with st.expander(f"Step {snap['step']}: {snap['block_name']}", expanded=False):
-            st.markdown(snap["report"])
-            # Show layer narrative if available
-            if snap.get("layer_narrative"):
-                st.info(f"**Layer narrative:** {snap['layer_narrative']}")
-            for kl in snap["kernel_labels"]:
-                st.markdown(
-                    f'<span class="concept-badge">{kl["label"]}</span>',
-                    unsafe_allow_html=True,
-                )
-                if kl.get("semantic_narrative"):
-                    st.caption(f"Semantic: {kl['semantic_narrative']}")
-                elif kl.get("narrative"):
-                    st.caption(kl["narrative"])
-
-    # Concept-kernel map (from SAE)
-    concept_kernel_map = st.session_state.get("concept_kernel_map", [])
-    if concept_kernel_map:
-        st.markdown("### Concept-Kernel Correspondence (Sparse Autoencoder)")
-        fig_ck = kernel_viz.plot_concept_kernel_map(concept_kernel_map)
-        st.plotly_chart(fig_ck, use_container_width=True, key="dashboard_concept_kernel_map")
-        st.dataframe(pd.DataFrame(concept_kernel_map), use_container_width=True)
+    st.caption(
+        "For detailed kernel analysis, concept discovery, and per-block interpretability "
+        "reports, see the **Semantic Interpreter** tab."
+    )
 
     # Export — D1: stamped with run ID
     st.markdown("### Export")

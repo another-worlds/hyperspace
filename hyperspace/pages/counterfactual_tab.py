@@ -367,8 +367,8 @@ def render() -> None:
         "operationalising contestability."
     )
 
-    # Region-level impact analysis
-    st.markdown("### Region-Level Impact Analysis")
+    # ── Domain-level impact summary (governance-readable) ────────────
+    st.markdown("### Domain-Level Impact")
     region_names = [
         "temporal-pattern", "semantic-embedding",
         "structural-centrality", "dynamic-agent", "geospatial-kernel",
@@ -380,67 +380,36 @@ def render() -> None:
         cf_energy_vals = rr_cf[lo:min(hi, len(rr_cf))]
         cf_energy = float(np.abs(cf_energy_vals).sum()) if len(cf_energy_vals) > 0 else 0.0
         delta = cf_energy - orig_energy
+        pct = (delta / (orig_energy + 1e-8)) * 100
         impact_rows.append({
-            "Region": rname.replace("-", " ").title(),
-            "Original Energy": round(orig_energy, 4),
-            "Counterfactual Energy": round(cf_energy, 4),
-            "Change": round(delta, 4),
-            "% Change": f"{(delta / (orig_energy + 1e-8)) * 100:+.1f}%",
+            "Data Domain": rname.replace("-", " ").title(),
+            "Change": f"{pct:+.0f}%",
+            "Interpretation": (
+                "Large increase — this domain now dominates" if pct > 15
+                else "Large decrease — this domain was previously dominant" if pct < -15
+                else "Minor shift — this domain is not highly dependent on the removed block"
+            ),
         })
-    impact_df = pd.DataFrame(impact_rows)
-    st.dataframe(impact_df, use_container_width=True, hide_index=True)
-    st.caption(
-        "Energy = sum of absolute reality regression weights in each region. "
-        "Large changes indicate that the removed block was a primary contributor to that region."
-    )
 
-    # Stability comparison
-    st.markdown("### Stability Comparison")
-    orig_stability = st.session_state.get("ukt_multirun_stability", {})
-    cf_stability = cf_result.get("stability", {})
-    sc1, sc2 = st.columns(2)
-    with sc1:
-        st.markdown("**Original (all blocks):**")
-        if orig_stability and orig_stability.get("n_runs", 0) > 0:
-            st.metric("Mean Cosine", f"{orig_stability['mean_cosine']:.3f}")
-            st.caption(f"Min: {orig_stability['min_cosine']:.3f} | Std: {orig_stability['std_cosine']:.3f}")
-        else:
-            st.caption("N/A")
-    with sc2:
-        st.markdown(f"**Counterfactual ('{removed}' removed):**")
-        if cf_stability and cf_stability.get("n_runs", 0) > 0:
-            orig_mc = orig_stability.get("mean_cosine", 0.0) if orig_stability else 0.0
-            delta_stability = cf_stability["mean_cosine"] - orig_mc
-            st.metric(
-                "Mean Cosine", f"{cf_stability['mean_cosine']:.3f}",
-                delta=f"{delta_stability:+.3f}",
-            )
-            st.caption(f"Min: {cf_stability['min_cosine']:.3f} | Std: {cf_stability['std_cosine']:.3f}")
-        else:
-            st.caption("N/A")
-
-    # SAE concept comparison
-    cf_sae = cf_result.get("sae_result")
-    if cf_sae:
-        st.markdown("### Concept Discovery Comparison")
-        orig_sae = st.session_state.get("sae_result")
-        cs1, cs2 = st.columns(2)
-        with cs1:
-            st.markdown("**Original concepts:**")
-            if orig_sae:
-                st.metric(
-                    "Active Concepts",
-                    f"{orig_sae['active_concepts']}/{orig_sae['total_concepts']}",
-                )
-        with cs2:
-            st.markdown(f"**Counterfactual ('{removed}' removed):**")
-            orig_active = orig_sae["active_concepts"] if orig_sae else 0
-            delta_active = cf_sae["active_concepts"] - orig_active
-            st.metric(
-                "Active Concepts",
-                f"{cf_sae['active_concepts']}/{cf_sae['total_concepts']}",
-                delta=str(delta_active),
-            )
+    # Only show rows with notable changes
+    notable = [r for r in impact_rows if abs(float(r["Change"].replace("%", ""))) > 5]
+    if notable:
+        st.caption(
+            "Data domains most affected by removing this block "
+            "(only domains with >5% change shown):"
+        )
+        for row in notable:
+            change_val = float(row["Change"].replace("%", ""))
+            if change_val > 15:
+                st.error(f"**{row['Data Domain']}**: {row['Change']} — {row['Interpretation']}")
+            elif change_val > 5:
+                st.warning(f"**{row['Data Domain']}**: {row['Change']} — {row['Interpretation']}")
+            elif change_val < -15:
+                st.warning(f"**{row['Data Domain']}**: {row['Change']} — {row['Interpretation']}")
+            else:
+                st.info(f"**{row['Data Domain']}**: {row['Change']} — {row['Interpretation']}")
+    else:
+        st.success("No data domain shows a change >5% — the removed block had minimal domain-specific impact.")
 
     # Export counterfactual report
     st.markdown("---")
@@ -460,24 +429,12 @@ def render() -> None:
         f"- Original Reconstruction Error: {orig_error:.6f}",
         f"- Counterfactual Reconstruction Error: {cf_error:.6f}",
         f"",
-        "### Region-Level Impact",
+        "### Domain-Level Impact",
     ]
     for row in impact_rows:
         cf_report_lines.append(
-            f"- {row['Region']}: {row['Original Energy']} → {row['Counterfactual Energy']} "
-            f"({row['% Change']})"
+            f"- {row['Data Domain']}: {row['Change']} — {row['Interpretation']}"
         )
-
-    if orig_stability and cf_stability:
-        orig_mc = orig_stability.get("mean_cosine")
-        cf_mc = cf_stability.get("mean_cosine")
-        if orig_mc is not None and cf_mc is not None:
-            cf_report_lines += [
-                "",
-                "### Stability Impact",
-                f"- Original mean cosine: {orig_mc:.3f}",
-                f"- Counterfactual mean cosine: {cf_mc:.3f}",
-            ]
 
     cf_report_md = "\n".join(cf_report_lines)
     st.download_button(

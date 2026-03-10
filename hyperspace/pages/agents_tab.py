@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import numpy as np
-import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
@@ -122,67 +121,10 @@ def render() -> None:
                 "are interpretable via the Semantic Canvas."
             )
 
-            # Metrics
-            c1, c2, c3 = st.columns(3)
-            total_resources = sum(resources)
-            max_agent = max(agents.values(), key=lambda a: a.resources)
-            min_agent = min(agents.values(), key=lambda a: a.resources)
-            c1.metric("Total Resources", f"{total_resources:.0f}")
-            c2.metric("Dominant Agent", f"{max_agent.name} ({max_agent.resources:.0f})")
-            c3.metric("Weakest Agent", f"{min_agent.name} ({min_agent.resources:.0f})")
-
-            # Event log
-            with st.expander("Simulation Event Log"):
-                for entry in log_entries[-20:]:
-                    st.markdown(
-                        f'<div class="log-entry">{entry}</div>',
-                        unsafe_allow_html=True,
-                    )
-
-            # UKT contribution
-            if "features_for_ukt" in sim_result:
-                with st.expander("UKT Contribution (Agent Feature Vector)"):
-                    fv = sim_result["features_for_ukt"]
-                    st.bar_chart(pd.DataFrame({"Value": fv}))
-
             # ----------------------------------------------------------- #
-            # Fitting Metrics                                              #
+            # Power Concentration Assessment (governance signal)          #
             # ----------------------------------------------------------- #
             st.markdown("---")
-            st.markdown("### Fitting Metrics")
-            n_agents = len(agents)
-            n_shocks = sum(1 for e in log_entries if "SHOCK" in e)
-            histories = [a.history for a in agents.values()]
-            n_steps_actual = max(len(h) for h in histories) if histories else 0
-
-            # Convergence: std of resources over last 20% of steps
-            if n_steps_actual > 10:
-                tail_start = max(0, n_steps_actual - n_steps_actual // 5)
-                tail_resources = np.array([
-                    h[tail_start:] for h in histories if len(h) > tail_start
-                ])
-                tail_std = float(np.std(tail_resources[:, -1])) if tail_resources.size else 0.0
-                mean_drift = float(np.mean(np.abs(np.diff(tail_resources, axis=1)))) if tail_resources.shape[1] > 1 else 0.0
-            else:
-                tail_std = 0.0
-                mean_drift = 0.0
-
-            fm1, fm2, fm3, fm4 = st.columns(4)
-            fm1.metric("Agents", str(n_agents))
-            fm2.metric("Steps Completed", str(n_steps_actual))
-            fm3.metric("Shocks Observed", str(n_shocks))
-            fm4.metric("Tail Resource Std", f"{tail_std:.2f}",
-                       help="Resource spread in final 20% of steps — "
-                            "lower = more converged")
-            st.metric("Mean Step-to-Step Drift", f"{mean_drift:.3f}",
-                      help="Average absolute resource change per step in tail — "
-                           "lower = more stable equilibrium")
-
-            # ----------------------------------------------------------- #
-            # Test Metrics                                                 #
-            # ----------------------------------------------------------- #
-            st.markdown("### Test Metrics")
-            # Gini coefficient of final resource distribution
             res_arr = np.array(resources, dtype=float)
             if len(res_arr) > 1 and res_arr.sum() > 0:
                 sorted_res = np.sort(res_arr)
@@ -192,33 +134,28 @@ def render() -> None:
                     (2 * np.sum(index * sorted_res) - (n_r + 1) * np.sum(sorted_res))
                     / (n_r * np.sum(sorted_res) + 1e-8)
                 )
-            else:
-                gini = 0.0
+                top_share = float(max(resources) / (res_arr.sum() + 1e-8))
+                max_agent = max(agents.values(), key=lambda a: a.resources)
 
-            # Alliance spectral gap (difference between top 2 eigenvalues)
-            eigs = np.sort(np.linalg.eigvalsh(alliance_mat))[::-1]
-            spectral_gap = float(eigs[0] - eigs[1]) if len(eigs) > 1 else 0.0
-            dominant_ratio = float(eigs[0] / (np.sum(np.abs(eigs)) + 1e-8))
-
-            # Resource share of top agent
-            top_share = float(max(resources) / (sum(resources) + 1e-8))
-
-            tm1, tm2, tm3, tm4 = st.columns(4)
-            tm1.metric("Resource Gini", f"{gini:.3f}",
-                       help="0 = perfect equality, 1 = total concentration")
-            tm2.metric("Alliance Spectral Gap", f"{spectral_gap:.3f}",
-                       help="Separation between dominant and second alliance eigenvalue")
-            tm3.metric("Dominant Eigenvalue Ratio", f"{dominant_ratio:.2%}",
-                       help="Share of alliance spectrum held by top eigenvalue — "
-                            "higher = more unipolar")
-            tm4.metric("Top Agent Resource Share", f"{top_share:.1%}")
-
-            # Shock resilience: how much total resources changed due to shocks
-            initial_total = sum(a.history[0] for a in agents.values() if a.history)
-            final_total = total_resources
-            resource_change = (final_total - initial_total) / (initial_total + 1e-8)
-            st.metric("Net Resource Change", f"{resource_change:+.1%}",
-                      help="Total resource growth/decline over the simulation")
+                if gini > 0.50:
+                    st.error(
+                        f"**Power Concentration: HIGH** — Resource Gini = {gini:.2f}. "
+                        f"{max_agent.name} holds {top_share:.0%} of all resources. "
+                        "This signals a highly unipolar equilibrium — governance risk for "
+                        "coercive influence or single-actor dependency."
+                    )
+                elif gini > 0.25:
+                    st.warning(
+                        f"**Power Concentration: MODERATE** — Resource Gini = {gini:.2f}. "
+                        f"Leading actor ({max_agent.name}) holds {top_share:.0%} of resources. "
+                        "Some imbalance detected; multipolarity partially maintained."
+                    )
+                else:
+                    st.success(
+                        f"**Power Concentration: LOW** — Resource Gini = {gini:.2f}. "
+                        "Resources are broadly distributed across actors. "
+                        "Multipolar equilibrium maintained at simulation end."
+                    )
 
             # ----------------------------------------------------------- #
             # Interpretability Report                                      #

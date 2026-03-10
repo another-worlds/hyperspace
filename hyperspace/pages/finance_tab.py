@@ -1,9 +1,6 @@
 """Finance-Neural Block tab: TFT forecasting with real data."""
 from __future__ import annotations
 
-import numpy as np
-import pandas as pd
-import plotly.graph_objects as go
 import streamlit as st
 
 from hyperspace.config import DEFAULT_TICKERS, PLOTLY_LAYOUT
@@ -104,38 +101,6 @@ def render() -> None:
             src = finance_result.get("data_source", "unknown")
             st.markdown(f"**Model data**: {source_badge(src)}", unsafe_allow_html=True)
 
-            # Interpretation (if real TFT)
-            if "attention" in finance_result:
-                with st.expander("TFT Interpretation (Attention + Variable Importance)"):
-                    st.markdown("**Temporal Attention Weights**")
-                    import plotly.express as px
-                    att = finance_result["attention"]
-                    fig = px.imshow(
-                        att.reshape(-1, att.shape[-1]) if att.ndim > 2 else att.reshape(1, -1),
-                        color_continuous_scale="Viridis",
-                        title="Attention over Encoder Time Steps",
-                    )
-                    fig.update_layout(**PLOTLY_LAYOUT, height=250)
-                    st.plotly_chart(fig, use_container_width=True, key="finance_attention")
-                    st.caption(
-                        "v3.0 — Attention heatmap shows which encoder time steps "
-                        "the TFT attends to, directly populating UKT temporal-pattern "
-                        "features and enabling provenance tracing."
-                    )
-
-                    if "encoder_importance" in finance_result:
-                        enc = finance_result["encoder_importance"]
-                        st.markdown("**Encoder Variable Importance**")
-                        st.bar_chart(pd.DataFrame(
-                            enc.flatten()[:10], columns=["Importance"],
-                        ))
-
-            # UKT contribution
-            if "features_for_ukt" in finance_result:
-                with st.expander("UKT Contribution (Finance Feature Vector)"):
-                    fv = finance_result["features_for_ukt"]
-                    st.bar_chart(pd.DataFrame({"Value": fv}))
-
             # Correlation heatmap
             st.markdown("### Cross-Ticker Correlation")
             if len(tickers) > 1 and "Ticker" in ohlcv_df.columns:
@@ -157,29 +122,10 @@ def render() -> None:
                 )
 
             # ----------------------------------------------------------- #
-            # Fitting Metrics                                              #
+            # Forecast Confidence Summary                                 #
             # ----------------------------------------------------------- #
-            st.markdown("---")
-            st.markdown("### Fitting Metrics")
-            fm1, fm2, fm3, fm4 = st.columns(4)
-            fm1.metric("Model Parameters", f"{finance_result.get('model_params', 0):,}")
-            fm2.metric("Training Epochs", "3")
-            fm3.metric("Hidden Size", str(hidden_size))
-            fm4.metric("Encoder Length", str(encoder_length))
-
-            if "attention" in finance_result:
-                att = finance_result["attention"]
-                att_entropy = float(-np.sum(
-                    att.flatten() * np.log(att.flatten() + 1e-8)
-                ))
-                st.metric("Attention Entropy", f"{att_entropy:.3f}",
-                          help="Higher entropy = more distributed attention across time steps")
-
-            # ----------------------------------------------------------- #
-            # Test Metrics                                                 #
-            # ----------------------------------------------------------- #
-            st.markdown("### Test Metrics")
             if "quantiles" in finance_result:
+                import numpy as np
                 q = finance_result["quantiles"]
                 if len(q.shape) == 3:
                     q_mean = q.mean(axis=0)
@@ -192,30 +138,24 @@ def render() -> None:
                     q_low = q_mean[:, 0]
                     q_mid = q_mean[:, q_mean.shape[1] // 2]
                     q_high = q_mean[:, -1]
-
-                    spread = float(np.mean(q_high - q_low))
-                    mid_range = float(q_mid.max() - q_mid.min())
                     coverage = float(np.mean(q_high - q_low) / (np.mean(np.abs(q_mid)) + 1e-8))
 
-                    tm1, tm2, tm3 = st.columns(3)
-                    tm1.metric("Mean Quantile Spread (q90 − q10)", f"{spread:.4f}",
-                               help="Average width of prediction interval")
-                    tm2.metric("Median Forecast Range", f"{mid_range:.4f}",
-                               help="Range of the median (q50) forecast")
-                    tm3.metric("Relative Uncertainty", f"{coverage:.2%}",
-                               help="Spread / |median| — lower = more confident")
-            else:
-                st.info("Run TFT forecast to compute test metrics.")
-
-            if "encoder_importance" in finance_result:
-                enc = finance_result["encoder_importance"].flatten()
-                top_var = enc[:min(10, len(enc))]
-                gini = float(
-                    np.sum(np.abs(np.subtract.outer(top_var, top_var)))
-                    / (2 * len(top_var) * (np.sum(top_var) + 1e-8))
-                )
-                st.metric("Encoder Variable Concentration (Gini)", f"{gini:.3f}",
-                          help="0 = uniform importance, 1 = single variable dominates")
+                    if coverage < 0.10:
+                        st.success(
+                            f"Forecast confidence: **HIGH** — uncertainty band is {coverage:.1%} "
+                            "of forecast magnitude. Conclusions from this block are robust."
+                        )
+                    elif coverage < 0.30:
+                        st.warning(
+                            f"Forecast confidence: **MODERATE** — uncertainty band is {coverage:.1%} "
+                            "of forecast magnitude. Exercise caution when citing specific values."
+                        )
+                    else:
+                        st.error(
+                            f"Forecast confidence: **LOW** — uncertainty band is {coverage:.1%} "
+                            "of forecast magnitude. Wide bands indicate high model uncertainty; "
+                            "directional trends may still be informative."
+                        )
 
             # ----------------------------------------------------------- #
             # Interpretability Report                                      #

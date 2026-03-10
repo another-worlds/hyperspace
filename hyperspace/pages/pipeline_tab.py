@@ -1,15 +1,11 @@
 """Full Pipeline tab: end-to-end orchestration with UKT evolution display."""
 from __future__ import annotations
 
-from datetime import datetime
-
 import pandas as pd
 import streamlit as st
 
-from hyperspace.config import GEOPOLITICAL_NODES
-from hyperspace.models.graph_engine import build_geopolitical_graph, plot_geopolitical_graph
 from hyperspace.viz import kernel_viz
-from hyperspace.viz.charts import forecast_chart, source_badge
+from hyperspace.viz.charts import source_badge
 
 
 def render() -> None:
@@ -26,6 +22,7 @@ def render() -> None:
     run_id = st.session_state.get("run_id", "UNKNOWN")
     run_ts = st.session_state.get("run_timestamp", "")
     policy_mode = st.session_state.get("policy_language_mode", False)
+    scorecard = st.session_state.get("interpretability_scorecard", {})
 
     if not snapshots:
         st.info(
@@ -55,124 +52,100 @@ def render() -> None:
 
     st.markdown("---")
 
-    # B3: Compact scorecard summary
-    scorecard = st.session_state.get("interpretability_scorecard", {})
-    if scorecard:
-        st.markdown("### Interpretability Score Card Summary")
-        sc_cols = st.columns(len(scorecard))
-        for col, (key, item) in zip(sc_cols, scorecard.items()):
-            passed = item.get("passed", False)
-            status_icon = "✅" if passed else "⚠️"
-            col.metric(
-                item.get("label", key),
-                f"{item.get('value', 'N/A')}{item.get('unit', '')}",
-                f"{status_icon} {'PASS' if passed else 'WARN'}",
-            )
-        st.markdown("---")
-
-    st.markdown("### Unified Dashboard Summary")
-
-    # Metrics row
-    final_snap = snapshots[-1]
-    m1, m2, m3, m4, m5 = st.columns(5)
-    m1.metric("Active Kernels", str(final_snap["n_kernels"]))
-    m2.metric("Recon Error", f"{final_snap['reconstruction_error']:.6f}")
-
-    finance_result = st.session_state.get("finance_result", {})
-    if isinstance(finance_result, dict) and "model_params" in finance_result:
-        m3.metric("TFT Params", f"{finance_result['model_params']:,}")
-    else:
-        m3.metric("TFT Params", "N/A")
-
-    sae_result = st.session_state.get("sae_result")
-    if sae_result:
-        m4.metric("SAE Concepts", f"{sae_result['active_concepts']}/{sae_result['total_concepts']}")
-    else:
-        m4.metric("SAE Concepts", "N/A")
-
-    graph_result = st.session_state.get("graph_result", {})
-    if isinstance(graph_result, dict) and "analysis" in graph_result:
-        m5.metric("Communities", str(len(graph_result["analysis"]["communities"])))
-    else:
-        m5.metric("Communities", "N/A")
-
-    # Kernel evolution chart
-    st.markdown("### Kernel Evolution Across Pipeline Steps")
-    fig_evo = kernel_viz.plot_kernel_evolution(snapshots)
-    st.plotly_chart(fig_evo, use_container_width=True, key="pipeline_kernel_evolution")
+    # ── Pipeline Step Status Table ────────────────────────────────────
+    st.markdown("### Pipeline Step Status")
     st.caption(
-        "v3.0 — Kernel evolution tracks how importance shifts as each pipeline "
-        "block is added. This visualises the UKT's incremental SVD: each step "
-        "recomputes the decomposition with the new data modality included."
+        "Overview of each processing block: data source, governance health, "
+        "and key analytical finding. For detailed visualizations, visit each block's tab."
     )
 
-    # Key outputs
-    st.markdown("### Key Outputs Across All Blocks")
-    r1c1, r1c2 = st.columns(2)
+    final_snap = snapshots[-1]
+    gov_flags = st.session_state.get("governance_flags", [])
+    finance_result = st.session_state.get("finance_result", {})
+    cluster_result = st.session_state.get("cluster_result", {})
+    graph_result = st.session_state.get("graph_result", {})
+    sim_result = st.session_state.get("sim_result", {})
+    sae_result = st.session_state.get("sae_result")
 
-    with r1c1:
-        # Finance forecast
-        if isinstance(finance_result, dict) and "q50" in finance_result:
-            x_ax = list(range(len(finance_result["q50"])))
-            fig = forecast_chart(
-                x_ax, finance_result["q10"], finance_result["q50"],
-                finance_result["q90"], title="Finance: Multi-Horizon Forecast",
-            )
-            st.plotly_chart(fig, use_container_width=True, key="pipeline_finance_forecast_q50")
-            st.caption("v3.0 — Finance forecast with quantile uncertainty bounds.")
-        elif isinstance(finance_result, dict) and "quantiles" in finance_result:
-            q = finance_result["quantiles"]
-            if len(q.shape) == 3:
-                q_mean = q.mean(axis=0)
-                if q_mean.shape[0] == 0 or q_mean.shape[1] < 2:
-                    st.warning("TFT quantile output has insufficient shape for forecast chart.")
-                else:
-                    x_ax = list(range(q_mean.shape[0]))
-                    fig = forecast_chart(
-                        x_ax, q_mean[:, 0], q_mean[:, q_mean.shape[1] // 2],
-                        q_mean[:, -1], title="Finance: TFT Forecast",
-                    )
-                    st.plotly_chart(fig, use_container_width=True, key="pipeline_finance_forecast_tft")
-                    st.caption("v3.0 — TFT forecast with quantile uncertainty bounds.")
+    # Build status rows
+    step_rows = []
+    for snap in snapshots:
+        block = snap["block_name"]
+        flags_for_block = [
+            f.get("code", "?") for f in gov_flags
+            if block.lower() in f.get("label", "").lower()
+            or block.lower() in f.get("detail", "").lower()
+        ]
+        flag_str = ", ".join(flags_for_block) if flags_for_block else "None"
+        status = "PASS" if not flags_for_block else "FLAG"
+
+        # Key finding per block
+        if block == "Finance" and isinstance(finance_result, dict):
+            finding = f"Forecast generated · data: {finance_result.get('data_source', '?')}"
+        elif block == "Clusters" and isinstance(cluster_result, dict):
+            topics = cluster_result.get("topics", [])
+            n_topics = len(set(t for t in topics if t != -1))
+            finding = f"{n_topics} topics discovered"
+        elif block == "Graph" and isinstance(graph_result, dict):
+            comms = graph_result.get("analysis", {}).get("communities", [])
+            finding = f"{len(comms)} alliance bloc(s) detected"
+        elif block == "Agents" and isinstance(sim_result, dict):
+            agents = sim_result.get("agents", {})
+            if agents:
+                max_a = max(agents.values(), key=lambda a: a.resources)
+                finding = f"Dominant actor: {max_a.name}"
+            else:
+                finding = "Simulation complete"
+        elif block == "Spatial":
+            finding = "Spatial raster kernels integrated"
         else:
-            st.info("Finance forecast unavailable — run the full pipeline first.")
+            finding = snap.get("report", "")[:80].split("\n")[0]
 
-    with r1c2:
-        # Graph
-        if isinstance(graph_result, dict) and "G" in graph_result:
-            fig_g = plot_geopolitical_graph(graph_result["G"], graph_result["pos"])
-            fig_g.update_layout(height=300, margin=dict(l=10, r=10, t=40, b=10))
-            st.plotly_chart(fig_g, use_container_width=True, key="pipeline_graph")
-            st.caption("v3.0 — Geopolitical relation graph (structural-centrality source).")
+        step_rows.append({
+            "Block": block,
+            "Data Source": data_sources.get(block, "—"),
+            "Governance": status,
+            "Flags": flag_str,
+            "Key Finding": finding,
+        })
 
-    r2c1, r2c2 = st.columns(2)
+    if step_rows:
+        step_df = pd.DataFrame(step_rows)
 
-    with r2c1:
-        # Agent resources
-        sim_result = st.session_state.get("sim_result")
-        if sim_result and "agents" in sim_result:
-            import plotly.graph_objects as go
-            agents = sim_result["agents"]
-            names = list(agents.keys())
-            resources = [agents[n].resources for n in names]
-            colors = [GEOPOLITICAL_NODES.get(n, {}).get("color", "#888") for n in names]
-            fig = go.Figure(go.Bar(x=names, y=resources, marker_color=colors))
-            fig.update_layout(
-                template="plotly_dark", title="Agents: Final Resources",
-                height=300, paper_bgcolor="#0d1117", plot_bgcolor="#0d1117",
-                margin=dict(l=20, r=20, t=40, b=20),
-            )
-            st.plotly_chart(fig, use_container_width=True, key="pipeline_agent_resources")
-            st.caption("v3.0 — Agent simulation equilibrium (dynamic-agent source).")
+        def _style_gov(val: str) -> str:
+            if val == "PASS":
+                return "color: #64ffda; font-weight: bold"
+            return "color: #ffaa00; font-weight: bold"
 
-    with r2c2:
-        # Final kernel matrix (compact)
-        fig_km = kernel_viz.plot_kernel_matrix(
-            final_snap, [s["block_name"] for s in snapshots],
-        )
-        fig_km.update_layout(height=300)
-        st.plotly_chart(fig_km, use_container_width=True, key="pipeline_kernel_matrix")
-        st.caption("v3.0 — Final kernel matrix: cross-block activation structure.")
+        try:
+            styled_steps = step_df.style.map(_style_gov, subset=["Governance"])
+        except AttributeError:
+            styled_steps = step_df.style.applymap(_style_gov, subset=["Governance"])
+        st.dataframe(styled_steps, use_container_width=True, hide_index=True)
+
+    st.markdown("---")
+
+    # ── Kernel Evolution (unique to this tab) ────────────────────────
+    st.markdown("### Kernel Evolution Across Pipeline Steps")
+    st.caption(
+        "This chart is unique to the Pipeline tab. It shows how the system's "
+        "cross-domain patterns (kernels) evolve as each data block is added. "
+        "A kernel that spikes when a new block is added indicates that block "
+        "introduced a dominant new pattern into the analysis."
+    )
+    fig_evo = kernel_viz.plot_kernel_evolution(snapshots)
+    st.plotly_chart(fig_evo, use_container_width=True, key="pipeline_kernel_evolution")
+
+    # ── Governance Narrative ─────────────────────────────────────────
+    canvas_narrative = st.session_state.get("canvas_narrative")
+    reality_narrative = st.session_state.get("reality_narrative")
+    if canvas_narrative or reality_narrative:
+        st.markdown("---")
+        st.markdown("### System-Level Governance Narrative")
+        if canvas_narrative:
+            st.success(f"**Cross-Domain Summary:** {canvas_narrative}")
+        if reality_narrative:
+            st.info(f"**Reality Assessment:** {reality_narrative}")
 
     # C1: Annotation summary
     annotations = st.session_state.get("stakeholder_annotations", [])
