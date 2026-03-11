@@ -87,15 +87,15 @@ NOAA Tides & Currents (sea-level proxy)
 
 ## Tabs (Streamlit UI)
 
-| Tab | Name | Content |
-|-----|------|---------|
+| Tab | Name | Core Feature |
+|-----|------|-------------|
 | 0 | Mission Control | System overview, metrics, governance scorecard, status |
-| 1 | Finance-Neural | TFT forecast, OHLCV charts, macro heatmaps |
-| 2 | Info Clusters | BERTopic topic map, document embeddings |
-| 3 | Politics-Military | Graph visualization, alliance network |
-| 4 | Agentic Sim | Resource competition, bloc formation |
-| 5 | Semantic Interpreter | Concept discovery, semantic canvas, LLM narratives |
-| 6 | Full Pipeline | End-to-end orchestration log |
+| 1 | Finance-Neural Block | TFT forecasting, correlation heatmaps |
+| 2 | Informational Cluster Mapping | BERTopic multilingual clustering |
+| 3 | Politics-Military Block | Graph engine, centrality, kernelization |
+| 4 | Agentic Simulation | Multi-agent resource/alliance sim |
+| 5 | Semantic Interpreter | Concept bottleneck, kernel viz, semantic canvas |
+| 6 | Hyperspace Pipeline | End-to-end orchestration |
 | 7 | Counterfactual | Block removal + diff analysis (contestability) |
 
 ---
