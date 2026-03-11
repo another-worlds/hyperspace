@@ -22,6 +22,7 @@ from urllib.parse import quote_plus
 import streamlit as st
 
 from hyperspace.config import GEOPOLITICAL_NODES
+from hyperspace.data import cache as _cache
 
 # ── Public RSS feeds ────────────────────────────────────────────────────── #
 
@@ -385,6 +386,9 @@ def get_text_data(
         sources_used.append("GDELT GKG 2.0")
 
     if not all_docs or len(all_docs) < 10:
+        cached = _cache.load("text_data")
+        if cached is not None:
+            return cached
         raise RuntimeError(
             "All 11 news sources unavailable "
             "(GDELT DOC 2.0, 5x RSS, Wikipedia API, Reddit, HN Algolia, "
@@ -400,4 +404,6 @@ def get_text_data(
             deduped.append(doc)
 
     source_label = f"Live: {' + '.join(sources_used)} ({len(deduped)} docs)"
-    return deduped, source_label
+    result = deduped, source_label
+    _cache.save("text_data", result)
+    return result

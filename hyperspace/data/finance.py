@@ -21,6 +21,8 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 
+from hyperspace.data import cache as _cache
+
 
 # ── Ticker → country / currency mappings ────────────────────────────────── #
 
@@ -584,6 +586,9 @@ def get_macro_features(tickers: list[str]) -> tuple[dict, str]:
         sources_used.append("BLS CPI")
 
     if not sources_used:
+        cached = _cache.load("macro_features")
+        if cached is not None:
+            return cached
         raise RuntimeError(
             "All 8 macro financial APIs unavailable "
             "(ECB SDW, IMF DataMapper, US Treasury FiscalData, CoinGecko, "
@@ -591,7 +596,9 @@ def get_macro_features(tickers: list[str]) -> tuple[dict, str]:
             "Check network connectivity."
         )
 
-    return features, f"Live: {', '.join(sources_used)}"
+    result = features, f"Live: {', '.join(sources_used)}"
+    _cache.save("macro_features", result)
+    return result
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -705,10 +712,12 @@ def prepare_tft_dataset_from_real(
 
 def get_ohlcv(tickers: list[str], period: str = "1y") -> tuple[pd.DataFrame, str]:
     """Get OHLCV from yfinance (primary) or Stooq.com (backup).
-    Raises RuntimeError if both unavailable.
+    Falls back to disk cache if both live sources are unavailable.
+    Raises RuntimeError if live sources and cache are all unavailable.
     """
     real = fetch_real_ohlcv(tuple(tickers), period)
     if real is not None and len(real) > 50:
+        _cache.save("ohlcv", real)
         return real, "Live: yfinance"
 
     # Stooq.com backup
@@ -720,7 +729,12 @@ def get_ohlcv(tickers: list[str], period: str = "1y") -> tuple[pd.DataFrame, str
     if frames:
         combined = pd.concat(frames, ignore_index=True)
         if len(combined) > 50:
+            _cache.save("ohlcv", combined)
             return combined, "Live: Stooq.com"
+
+    cached = _cache.load("ohlcv")
+    if cached is not None:
+        return cached, "Cached: OHLCV (offline)"
 
     raise RuntimeError(
         f"OHLCV data unavailable from yfinance and Stooq.com for tickers {tickers}. "

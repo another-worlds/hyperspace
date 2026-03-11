@@ -24,3 +24,4 @@ checkpoints/
 *.safetensors
 *.h5
 .streamlit/
+data_cache/

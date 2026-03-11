@@ -27,6 +27,7 @@ import numpy as np
 import streamlit as st
 
 from hyperspace.config import GEOPOLITICAL_NODES
+from hyperspace.data import cache as _cache
 
 # ── Node metadata ─────────────────────────────────────────────────────────── #
 
@@ -384,8 +385,7 @@ def fetch_noaa_sea_level_proxy() -> dict[str, float] | None:
 # Orchestrator — assembles all 12 sources
 # ══════════════════════════════════════════════════════════════════════════════
 
-@st.cache_data(ttl=3600, show_spinner=False)
-def fetch_all_spatial_data() -> dict:
+def _fetch_all_spatial_data_live() -> dict:
     """Fetch all multimodal spatial layers from 12 keyless sources.
 
     Physical raster (sources 1–2):
@@ -530,3 +530,22 @@ def fetch_all_spatial_data() -> dict:
         scalar_names=SCALAR_NAMES,
         source_label=core_label + env_label,
     )
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def fetch_all_spatial_data() -> dict:
+    """Fetch all multimodal spatial layers from 12 keyless sources.
+
+    Delegates to ``_fetch_all_spatial_data_live()``; on RuntimeError falls back
+    to the last successfully fetched result stored in the disk cache.
+    Raises RuntimeError only when both live sources and disk cache are absent.
+    """
+    try:
+        result = _fetch_all_spatial_data_live()
+        _cache.save("spatial_data", result)
+        return result
+    except RuntimeError:
+        cached = _cache.load("spatial_data")
+        if cached is not None:
+            return cached
+        raise

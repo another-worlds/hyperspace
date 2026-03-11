@@ -21,6 +21,7 @@ import pandas as pd
 import streamlit as st
 
 from hyperspace.config import GEOPOLITICAL_NODES
+from hyperspace.data import cache as _cache
 
 
 # ── Shared constants ──────────────────────────────────────────────────────── #
@@ -427,6 +428,9 @@ def get_political_data(
             agreement = _agreement_from_config_edges()
             dataverse_ok = False
         except Exception as exc:
+            cached = _cache.load("political_data")
+            if cached is not None:
+                return cached
             raise RuntimeError(
                 "Political pipeline unavailable: Harvard Dataverse unreachable "
                 "and config-edge fallback failed."
@@ -454,4 +458,6 @@ def get_political_data(
     if supp_sources:
         base_label += f" + {', '.join(supp_sources)}"
 
-    return un_df, agreement, base_label
+    result = un_df, agreement, base_label
+    _cache.save("political_data", result)
+    return result
