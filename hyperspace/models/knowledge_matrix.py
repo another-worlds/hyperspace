@@ -255,6 +255,28 @@ class UniversalKnowledgeTensor:
                 sae_result=stage_sae_result,
             )
 
+            # Attach feature provenance evidence — links canvas narrative back to
+            # concrete feature indices, names, and data sources for governance audit.
+            top_local = np.argsort(np.abs(region_features))[-3:][::-1]
+            canvas_dim_keys = [
+                self.canvas.dimensions[ci].key
+                for ci, _ in self.canvas.region_mapping.get(region_name, [])
+                if ci < self.canvas.n_dims
+            ]
+            evidence = []
+            for local_idx in top_local:
+                global_idx = lo + int(local_idx)
+                meta = self.global_feature_meta.get(global_idx, {})
+                evidence.append({
+                    "index": global_idx,
+                    "name": _feature_name(global_idx, self.global_feature_meta),
+                    "loading": round(float(normalized[global_idx]), 4),
+                    "source": meta.get("source", "synthetic"),
+                    "region": region_name,
+                    "canvas_dims": canvas_dim_keys,
+                })
+            canvas_entry.feature_evidence = evidence
+
         # Generate Tiny-LLM narratives (graceful degradation)
         layer_narrative = None
         try:
