@@ -20,12 +20,16 @@ def candlestick_chart(df, ticker: str) -> go.Figure:
     tdf = df[df.Ticker == ticker] if "Ticker" in df.columns else df
     fig = go.Figure(data=[go.Candlestick(
         x=tdf.Date, open=tdf.Open, high=tdf.High, low=tdf.Low, close=tdf.Close,
-        increasing_line_color="#64ffda", decreasing_line_color="#ff6b6b",
+        increasing_line_color="#64ffda", decreasing_line_color="#f87171",
+        increasing_fillcolor="rgba(100,255,218,0.25)",
+        decreasing_fillcolor="rgba(248,113,113,0.25)",
     )])
     fig.update_layout(**dark_layout(
-        title=f"{ticker} OHLCV",
-        height=350,
+        title=f"{ticker} — Price History",
+        height=360,
         xaxis_rangeslider_visible=False,
+        xaxis_title=None,
+        yaxis_title="Price (USD)",
     ))
     return fig
 
@@ -33,19 +37,28 @@ def candlestick_chart(df, ticker: str) -> go.Figure:
 def forecast_chart(x_axis, q10, q50, q90, title: str = "Forecast") -> go.Figure:
     """Create a multi-quantile forecast chart with confidence interval."""
     fig = go.Figure()
+    x_list = list(x_axis)
+    q10_list = list(q10)
+    q50_list = list(q50)
+    q90_list = list(q90)
+    # Confidence band first (drawn behind)
     fig.add_trace(go.Scatter(
-        x=x_axis, y=q50, mode="lines",
-        name="Forecast (median)", line=dict(color="#64ffda", width=2),
+        x=x_list + x_list[::-1],
+        y=q90_list + q10_list[::-1],
+        fill="toself", fillcolor="rgba(100,255,218,0.10)",
+        line=dict(width=0), name="80% CI", showlegend=True,
     ))
+    # Median forecast line
     fig.add_trace(go.Scatter(
-        x=list(x_axis) + list(x_axis)[::-1],
-        y=list(q90) + list(q10)[::-1],
-        fill="toself", fillcolor="rgba(100,255,218,0.15)",
-        line=dict(width=0), name="80% CI",
+        x=x_list, y=q50_list, mode="lines",
+        name="Median forecast",
+        line=dict(color="#64ffda", width=2.5),
     ))
     fig.update_layout(**dark_layout(
-        title=title, height=300,
-        margin=dict(l=20, r=20, t=40, b=20),
+        title=title, height=320,
+        margin=dict(l=24, r=24, t=44, b=24),
+        legend=dict(orientation="h", y=-0.15, x=0.5, xanchor="center",
+                    font=dict(size=11)),
     ))
     return fig
 
@@ -55,10 +68,11 @@ def bar_chart(names, values, title: str = "", colors=None) -> go.Figure:
     fig = go.Figure(go.Bar(
         x=names, y=values,
         marker_color=colors if colors else "#64ffda",
+        marker_line_width=0,
     ))
     fig.update_layout(**dark_layout(
-        title=title, height=300,
-        margin=dict(l=20, r=20, t=40, b=20),
+        title=title, height=310,
+        margin=dict(l=24, r=24, t=44, b=24),
     ))
     return fig
 
@@ -72,7 +86,7 @@ def heatmap_chart(matrix: np.ndarray, x_labels: list[str],
         color_continuous_scale="RdBu_r",
         text_auto=".2f",
     )
-    fig.update_layout(**PLOTLY_LAYOUT, title=title, height=350)
+    fig.update_layout(**PLOTLY_LAYOUT, title=title, height=360)
     return fig
 
 
