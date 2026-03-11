@@ -37,16 +37,20 @@ def candlestick_chart(df, ticker: str) -> go.Figure:
 def forecast_chart(x_axis, q10, q50, q90, title: str = "Forecast") -> go.Figure:
     """Create a multi-quantile forecast chart with confidence interval."""
     fig = go.Figure()
+    x_list = list(x_axis)
+    q10_list = list(q10)
+    q50_list = list(q50)
+    q90_list = list(q90)
     # Confidence band first (drawn behind)
     fig.add_trace(go.Scatter(
-        x=list(x_axis) + list(x_axis)[::-1],
-        y=list(q90) + list(q10)[::-1],
+        x=x_list + x_list[::-1],
+        y=q90_list + q10_list[::-1],
         fill="toself", fillcolor="rgba(100,255,218,0.10)",
         line=dict(width=0), name="80% CI", showlegend=True,
     ))
     # Median forecast line
     fig.add_trace(go.Scatter(
-        x=x_axis, y=q50, mode="lines",
+        x=x_list, y=q50_list, mode="lines",
         name="Median forecast",
         line=dict(color="#64ffda", width=2.5),
     ))
