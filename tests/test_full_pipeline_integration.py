@@ -1702,3 +1702,60 @@ class TestCrossBlockNeuralNetworks:
         assert result["reconstruction_error"] < 1.0, (
             f"Reconstruction error too high: {result['reconstruction_error']:.4f}"
         )
+
+
+class TestNarrativeConfidenceAndInterventions:
+    """Regression tests for confidence downgrade and intervention mismatch handling."""
+
+    def test_high_confidence_path_keeps_full_narrative_mode(self):
+        intervention_report = {
+            "module_checks": [{"module": "Finance", "status": "pass"}],
+            "pass_rate": 1.0,
+        }
+        narrative = PipelineRunner._compute_narrative_governance(
+            stability={"n_runs": 4, "mean_cosine": 0.91},
+            intervention_report=intervention_report,
+        )
+        assert narrative["mode"] == "full"
+        assert narrative["confidence_ok"] is True
+
+    def test_low_confidence_path_downgrades_narrative(self):
+        intervention_report = {
+            "module_checks": [{"module": "Finance", "status": "pass"}],
+            "pass_rate": 1.0,
+        }
+        narrative = PipelineRunner._compute_narrative_governance(
+            stability={"n_runs": 4, "mean_cosine": 0.32},
+            intervention_report=intervention_report,
+        )
+        downgraded = PipelineRunner._downgrade_narrative(
+            "Markets are stable.",
+            narrative,
+            fallback_prefix="Cross-domain summary",
+        )
+        assert narrative["mode"] == "low_confidence"
+        assert "LOW-CONFIDENCE EXPLANATORY MODE" in downgraded
+
+    def test_intervention_mismatch_sets_flag_and_status(self):
+        snapshots = [
+            {
+                "block_name": "Finance",
+                "reality_regression": np.array([0.8, 0.1, 0.0]),
+            },
+            {
+                "block_name": "Graph",
+                "reality_regression": np.array([0.0, 0.0, 0.0]),
+            },
+        ]
+        intervention_report = PipelineRunner._compute_intervention_report(snapshots)
+        assert intervention_report["status"] == "fail"
+        flags = PipelineRunner._compute_governance_flags(
+            data_sources={"Finance": "live_finance"},
+            snapshots=snapshots,
+            sae_result=None,
+            graph_result=None,
+            timeframe_context={},
+            intervention_report=intervention_report,
+        )
+        codes = {f["code"] for f in flags}
+        assert "GOV-006" in codes

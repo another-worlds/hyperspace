@@ -131,6 +131,12 @@ def render() -> None:
             # Cross-domain narrative from Tiny-LLM
             canvas_narrative = st.session_state.get("canvas_narrative")
             reality_narrative = st.session_state.get("reality_narrative")
+            narrative_governance = st.session_state.get("narrative_governance", {})
+            if narrative_governance.get("mode") == "low_confidence":
+                st.warning(
+                    "Low-confidence explanatory mode is active: "
+                    + "; ".join(narrative_governance.get("reasons", []))
+                )
             if canvas_narrative:
                 st.success(f"**System Summary:** {canvas_narrative}")
                 # Provenance: surface the concrete features behind the narrative
