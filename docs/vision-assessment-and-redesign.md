@@ -5,7 +5,7 @@
 This document evaluates the current Hyperspace architecture against the target
 vision for:
 
-1. Universal Knowledge Tensor (UTK) kernels as a modality-agnostic, shared
+1. Universal Knowledge Tensor (UKT) kernels as a modality-agnostic, shared
    representation substrate
 2. Embedded semantic interpretability as an intrinsic interface for each model
    component
@@ -30,7 +30,7 @@ optimization.
 | Mechanistic introspection | Causal/feature pathway explanations | Mostly feature loading narratives; limited mechanistic probing/circuit analysis | **Gap** |
 
 Bottom line: the system has a strong interpretability-first shell and a usable
-shared matrix abstraction, but it does **not yet** satisfy the stricter UTK
+shared matrix abstraction, but it does **not yet** satisfy the stricter UKT
 vision of learned, modality-agnostic, cross-domain representation alignment.
 
 ---
@@ -49,7 +49,7 @@ vision of learned, modality-agnostic, cross-domain representation alignment.
    - The interpreter tab and pipeline reports expose kernel labels, semantic
      dimensions, and layer-level narratives.
 
-### Structural gaps vs target UTK design
+### Structural gaps vs target UKT design
 
 1. **Latent space is hand-partitioned, not learned jointly**
    - The 80-d space is fixed into modality-owned slices (0-15, 16-31, etc.).
@@ -58,7 +58,7 @@ vision of learned, modality-agnostic, cross-domain representation alignment.
    - SVD is applied after concatenation; there is no paired objective that pulls
      semantically related cross-modal representations together.
 3. **No world-model style temporal memory**
-   - Current UKT snapshoting is per pipeline run; it lacks sequence modeling
+   - Current UKT snapshotting is per pipeline run; it lacks sequence modeling
      over transitions and interventions.
 4. **Knowledge reuse is weakly defined**
    - Kernels summarize variance in the current matrix but are not versioned,
@@ -96,14 +96,14 @@ cross-modal embedding alignment patterns.
 
 ### A2) Replace rigid region concatenation with tensorized factorization
 
-- Represent UTK state as a factorized tensor `Z[t, m, k]` (time, modality,
+- Represent UKT state as a factorized tensor `Z[t, m, k]` (time, modality,
   latent channel) instead of only `(n_blocks, 80)`.
 - Add low-rank tensor factorization (CP/Tucker) or linear attention pooling to
   derive global kernels while preserving modality interactions.
 
 ### A3) Add temporal world-model memory
 
-- Introduce recurrent/transformer state over UTK updates so kernels encode
+- Introduce recurrent/transformer state over UKT updates so kernels encode
   transitions, not just static co-variance.
 - Train auxiliary next-state prediction and masked-modality reconstruction.
 
@@ -140,7 +140,7 @@ This preserves flexibility while forcing intrinsic interpretability coverage.
 ## C. Preserve existing strengths while migrating
 
 1. Keep current UKT SVD report as a governance-facing baseline.
-2. Run old and new UTK paths in shadow mode with parity dashboards.
+2. Run old and new UKT paths in shadow mode with parity dashboards.
 3. Promote canvas + narrative outputs to consume both legacy and learned latent
    kernels.
 4. Add strict faithfulness checks so narratives are constrained by measurable
@@ -182,7 +182,7 @@ This preserves flexibility while forcing intrinsic interpretability coverage.
 A system revision should be considered compliant with the vision only when all
 conditions below pass.
 
-### UTK kernel criteria
+### UKT kernel criteria
 
 1. **Shared latent tensor**
    - Pass if all modalities map to a common latent space with measurable overlap
@@ -217,5 +217,5 @@ conditions below pass.
    - legacy UKT kernel quality
    - shared-latent alignment quality
    - explanation faithfulness metrics
-4. Only promote the learned UTK path to default once it matches current
+4. Only promote the learned UKT path to default once it matches current
    governance transparency and exceeds current cross-modal utility.
