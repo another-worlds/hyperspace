@@ -339,6 +339,14 @@ AVAILABLE_TICKERS: list[str] = ["SPY", "EWZ", "INDA", "FXI", "EWU", "ERUS", "RSX
 # Default tickers for finance block — country-representative ETFs / major stocks
 DEFAULT_TICKERS: list[str] = ["SPY", "EWZ", "INDA"]
 
+
+# Feature flags
+FEATURE_FLAGS: dict[str, bool] = {
+    # Shared-latent prototype remains shadow-only until parity + governance
+    # transparency criteria are met.
+    "shared_latent_shadow": True,
+}
+
 # Pipeline step names
 PIPELINE_STEPS: list[str] = [
     "data_fetch",
@@ -525,6 +533,24 @@ SCORECARD_THRESHOLDS: dict[str, dict] = {
         unit="",
         threshold=0,        # 0 = PASS; any flag = WARN
         description="Auto-detected data quality, bias, or coverage issues. 0 = no issues detected.",
+    ),
+    "legacy_retrieval_at_1": dict(
+        label="Legacy Retrieval@1",
+        unit="",
+        threshold=0.0,
+        description="Baseline paired-window retrieval accuracy from the legacy normalized 80-d pathway.",
+    ),
+    "shared_latent_retrieval_at_1": dict(
+        label="Shared-Latent Retrieval@1",
+        unit="",
+        threshold=0.0,
+        description="Prototype paired-window retrieval accuracy in shared latent space (shadow mode).",
+    ),
+    "shared_latent_probe_cosine": dict(
+        label="Shared-Latent Probe Cosine",
+        unit="",
+        threshold=0.0,
+        description="Average positive-pair cosine alignment for shared-latent prototype (shadow mode).",
     ),
 }
 

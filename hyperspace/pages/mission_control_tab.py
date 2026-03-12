@@ -26,6 +26,7 @@ def render() -> None:
     gov_flags = st.session_state.get("governance_flags", [])
     scorecard = st.session_state.get("interpretability_scorecard", {})
     contract_summary = st.session_state.get("interpretability_contract_summary", {})
+    alignment_metrics = st.session_state.get("alignment_metrics", {})
 
     if not snapshots:
         st.info(
@@ -167,6 +168,22 @@ def render() -> None:
             "interpretability thresholds. It operationalises the traceability "
             "guarantee by quantifying feature coverage, kernel stability, concept "
             "activation, and data diversity."
+        )
+
+
+    if alignment_metrics:
+        st.markdown("---")
+        st.markdown("### Shadow Alignment Metrics")
+        legacy = alignment_metrics.get("legacy", {})
+        shared = alignment_metrics.get("shared_latent", {})
+        parity = alignment_metrics.get("parity_delta", {})
+        a1, a2, a3 = st.columns(3)
+        a1.metric("Legacy Retrieval@1", f"{legacy.get('retrieval_at_1', 0.0):.3f}")
+        a2.metric("Shared Retrieval@1", f"{shared.get('retrieval_at_1', 0.0):.3f}")
+        a3.metric("Shared Probe Cosine", f"{shared.get('probe_cosine', 0.0):.3f}")
+        st.caption(
+            "Shadow-only prototype comparison. Production decision path remains legacy UKT "
+            f"(retrieval delta {parity.get('retrieval_at_1', 0.0):+.3f})."
         )
 
     contract = st.session_state.get("interpretability_contract", {})

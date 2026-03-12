@@ -138,6 +138,7 @@ class PipelineResult(TypedDict, total=False):
     stability: StabilityResult | None
     governance_flags: list[GovernanceFlag]
     interpretability_scorecard: dict[str, ScorecardEntry]
+    alignment_metrics: dict[str, Any]
 
     # Provenance
     run_id: str

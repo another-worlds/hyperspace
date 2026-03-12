@@ -548,6 +548,17 @@ class TestCrossModuleWiring:
         result = runner.run(sim_steps=5, sae_epochs=5, stability_runs=2)
         assert len(result["snapshots"]) >= 2  # At least Graph + Agents
 
+
+    def test_pipeline_runner_emits_alignment_sections(self):
+        from hyperspace.core.pipeline import PipelineRunner
+
+        runner = PipelineRunner()
+        result = runner.run(sim_steps=5, sae_epochs=5, stability_runs=2)
+
+        assert "alignment_metrics" in result
+        assert "legacy" in result["alignment_metrics"]
+        assert "shared_latent" in result["alignment_metrics"]
+
     def test_agent_sim_uses_graph_engine(self):
         from hyperspace.models.graph_engine import build_geopolitical_graph, analyze_graph
         from hyperspace.models.agent_sim import initialize_agents_from_data
@@ -608,6 +619,8 @@ class TestStateSessionDefaults:
         state_mod.init_session_state()
 
         assert "interpretability_contract" in mock_st.session_state
+        assert "alignment_metrics" in mock_st.session_state
+        assert mock_st.session_state["alignment_metrics"] == {}
         assert mock_st.session_state["interpretability_contract"] == {}
         assert "interpretability_contract_summary" in mock_st.session_state
         assert mock_st.session_state["interpretability_contract_summary"] == {
