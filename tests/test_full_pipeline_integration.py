@@ -1092,6 +1092,44 @@ class TestPipelineRunner:
             assert "threshold" in sc[dim]
             assert "passed" in sc[dim]
 
+
+    def test_dashboard_scorecard_parity_with_pipeline_runner(self):
+        """Dashboard helper must match canonical PipelineRunner scorecard logic."""
+        from hyperspace.pages.dashboard import _compute_scorecard as dashboard_scorecard
+
+        snapshots = [
+            {
+                "feature_meta": {
+                    0: {"label": "f0"},
+                    1: {"label": "f1"},
+                    2: {},
+                },
+            },
+        ]
+        sae_result = {"active_concepts": 5, "total_concepts": 10}
+        data_sources = {
+            "Finance": "synthetic_fallback",
+            "Graph": "UN_voting + networkx_centrality",
+        }
+        stability = {"n_runs": 4, "mean_cosine": 0.75}
+        governance_flags = [{"code": "GOV-005"}]
+
+        expected = PipelineRunner._compute_scorecard(
+            snapshots=snapshots,
+            sae_result=sae_result,
+            data_sources=data_sources,
+            stability=stability,
+            governance_flags=governance_flags,
+        )
+        actual = dashboard_scorecard(
+            ukt_snapshots=snapshots,
+            sae_result=sae_result,
+            data_sources=data_sources,
+            stability=stability,
+            governance_flags=governance_flags,
+        )
+
+        assert actual == expected
     def test_pipeline_runner_run_id_generated(
         self, rng, synthetic_spatial_data, synthetic_agreement_matrix, timeframe_context,
     ):

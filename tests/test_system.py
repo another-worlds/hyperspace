@@ -350,6 +350,16 @@ class TestModuleAPIs:
         runner_cls = pipeline.PipelineRunner
         assert hasattr(runner_cls, "run")
 
+
+    def test_counterfactual_region_color_mapping(self):
+        from hyperspace.pages.counterfactual_tab import _region_color_for_index
+
+        # Verify boundaries across all 5 configured regions
+        assert _region_color_for_index(0) == "#3498db"
+        assert _region_color_for_index(16) == "#e67e22"
+        assert _region_color_for_index(32) == "#2ecc71"
+        assert _region_color_for_index(48) == "#e74c3c"
+        assert _region_color_for_index(64) == "#9b59b6"
     def test_page_modules_have_render(self):
         """All tab pages should expose a render() function."""
         tab_modules = [
@@ -366,6 +376,65 @@ class TestModuleAPIs:
             mod = importlib.import_module(mod_path)
             assert hasattr(mod, "render"), f"{mod_path} missing render()"
             assert callable(mod.render)
+
+
+    def test_dashboard_governance_report_includes_contract_section(self):
+        from hyperspace.pages.dashboard import _build_governance_report_markdown
+
+        report = _build_governance_report_markdown(
+            run_id="RUN123",
+            run_ts="2026-01-01 00:00 UTC",
+            scorecard={},
+            governance_flags=[],
+            snapshots=[{"report": "step report", "step": 1, "block_name": "Finance"}],
+            canvas_narrative=None,
+            reality_narrative=None,
+            interpretability_contract={
+                "UniversalKnowledgeTensor": {
+                    "compliant": True,
+                    "interface_issues": [],
+                    "payload_issues": [],
+                },
+            },
+            interpretability_contract_summary={
+                "total_modules": 1,
+                "compliant_modules": 1,
+                "noncompliant_modules": 0,
+                "compliance_rate": 1.0,
+            },
+        )
+
+        assert "## Interpretability Contract Compliance" in report
+        assert "UniversalKnowledgeTensor" in report
+        assert "rate=1.00" in report
+
+    def test_dashboard_contract_export_rows(self):
+        from hyperspace.pages.dashboard import _build_contract_export_rows
+
+        rows = _build_contract_export_rows(
+            run_id="RUN123",
+            run_ts="2026-01-01 00:00 UTC",
+            interpretability_contract={
+                "SemanticCanvas": {
+                    "compliant": False,
+                    "interface_issues": ["missing method"],
+                    "payload_issues": ["bad payload"],
+                },
+            },
+            interpretability_contract_summary={
+                "total_modules": 2,
+                "compliant_modules": 1,
+                "noncompliant_modules": 1,
+                "compliance_rate": 0.5,
+            },
+        )
+
+        assert len(rows) == 1
+        assert rows[0]["Module"] == "SemanticCanvas"
+        assert rows[0]["Compliant"] is False
+        assert rows[0]["InterfaceIssueCount"] == 1
+        assert rows[0]["PayloadIssueCount"] == 1
+        assert rows[0]["ComplianceRate"] == 0.5
 
     def test_dashboard_api(self):
         from hyperspace.pages import dashboard
@@ -455,3 +524,62 @@ class TestCrossModuleWiring:
         # All flag codes referenced by PipelineRunner exist in config
         for code in ["GOV-001", "GOV-003", "GOV-004", "GOV-005"]:
             assert code in GOVERNANCE_FLAG_CODES
+
+
+class _MockSessionState(dict):
+    def __getattr__(self, key):
+        try:
+            return self[key]
+        except KeyError as exc:
+            raise AttributeError(key) from exc
+
+    def __setattr__(self, key, value):
+        self[key] = value
+
+
+class TestStateSessionDefaults:
+    """Validate session-state defaults/reset for governance contract fields."""
+
+    def test_state_includes_interpretability_contract_defaults(self, monkeypatch):
+        import types
+        import hyperspace.state as state_mod
+
+        mock_st = types.SimpleNamespace(session_state=_MockSessionState())
+        monkeypatch.setattr(state_mod, "st", mock_st)
+
+        state_mod.init_session_state()
+
+        assert "interpretability_contract" in mock_st.session_state
+        assert mock_st.session_state["interpretability_contract"] == {}
+        assert "interpretability_contract_summary" in mock_st.session_state
+        assert mock_st.session_state["interpretability_contract_summary"] == {
+            "total_modules": 0,
+            "compliant_modules": 0,
+            "noncompliant_modules": 0,
+            "compliance_rate": 0.0,
+        }
+
+    def test_state_reset_clears_interpretability_contract(self, monkeypatch):
+        import types
+        import hyperspace.state as state_mod
+
+        ss = _MockSessionState()
+        ss.interpretability_contract = {"X": {"compliant": False}}
+        ss.interpretability_contract_summary = {
+            "total_modules": 1,
+            "compliant_modules": 0,
+            "noncompliant_modules": 1,
+            "compliance_rate": 0.0,
+        }
+        mock_st = types.SimpleNamespace(session_state=ss)
+        monkeypatch.setattr(state_mod, "st", mock_st)
+
+        state_mod.reset_pipeline()
+
+        assert mock_st.session_state["interpretability_contract"] == {}
+        assert mock_st.session_state["interpretability_contract_summary"] == {
+            "total_modules": 0,
+            "compliant_modules": 0,
+            "noncompliant_modules": 0,
+            "compliance_rate": 0.0,
+        }

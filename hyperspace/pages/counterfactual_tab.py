@@ -13,7 +13,10 @@ import streamlit as st
 from plotly.subplots import make_subplots
 
 from hyperspace.config import PLOTLY_LAYOUT, POLICY_KERNEL_NAMES
-from hyperspace.models.knowledge_matrix import estimate_reality_regression_stability
+from hyperspace.models.knowledge_matrix import (
+    FEATURE_REGION_LABELS,
+    estimate_reality_regression_stability,
+)
 from hyperspace.models.sparse_ae import train_sparse_ae, map_concepts_to_kernels
 from hyperspace.viz import kernel_viz
 
@@ -36,13 +39,13 @@ def _run_counterfactual_ukt(
     # More reliably: reconstruct from scratch using the rows stored in the final matrix
     final_snap = snapshots[-1]
     block_names = [s["block_name"] for s in snapshots]
-    full_matrix = final_snap["matrix"]  # shape (n_blocks, 64)
+    full_matrix = final_snap["matrix"]  # shape (n_blocks, 80)
 
     kept_indices = [i for i, name in enumerate(block_names) if name != removed_block]
     if len(kept_indices) < 2:
         return None
 
-    sub_matrix = full_matrix[kept_indices, :]  # (n_remaining, 64)
+    sub_matrix = full_matrix[kept_indices, :]  # (n_remaining, 80)
     kept_names = [block_names[i] for i in kept_indices]
 
     # SVD
@@ -85,6 +88,21 @@ def _run_counterfactual_ukt(
     )
 
 
+def _region_color_for_index(idx: int) -> str:
+    """Return the configured feature-region color for a feature index."""
+    region_palette = {
+        "temporal-pattern": "#3498db",
+        "semantic-embedding": "#e67e22",
+        "structural-centrality": "#2ecc71",
+        "dynamic-agent": "#e74c3c",
+        "geospatial-kernel": "#9b59b6",
+    }
+    for (lo, hi), region_name in FEATURE_REGION_LABELS.items():
+        if lo <= idx < hi:
+            return region_palette.get(region_name, "#95a5a6")
+    return "#95a5a6"
+
+
 def _plot_rr_diff(
     rr_original: np.ndarray,
     rr_counterfactual: np.ndarray,
@@ -97,22 +115,11 @@ def _plot_rr_diff(
     rr_orig_padded = np.pad(rr_original, (0, max_n - n))
     rr_cf_padded = np.pad(rr_counterfactual, (0, max_n - n_cf))
 
-    # Color by region
+    # Color by configured feature regions
     colors_orig = []
     colors_cf = []
-    region_colors = {
-        "temporal":   "#3498db",
-        "semantic":   "#e67e22",
-        "structural": "#2ecc71",
-        "dynamic":    "#e74c3c",
-        "geospatial": "#9b59b6",
-    }
     for i in range(max_n):
-        c = (region_colors["temporal"]   if i < 16
-             else region_colors["semantic"]   if i < 32
-             else region_colors["structural"] if i < 48
-             else region_colors["dynamic"]    if i < 64
-             else region_colors["geospatial"])
+        c = _region_color_for_index(i)
         colors_orig.append(c)
         colors_cf.append(c)
 
