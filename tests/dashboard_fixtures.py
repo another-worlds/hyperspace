@@ -1,0 +1,79 @@
+"""Centralized fixtures for dashboard pipeline mapping tests."""
+from __future__ import annotations
+
+from typing import Any
+
+
+EXPECTED_RUNNER_PAYLOAD_KEYS: tuple[str, ...] = (
+    "run_id",
+    "run_timestamp",
+    "finance_result",
+    "cluster_result",
+    "graph_result",
+    "spatial_result",
+    "sim_result",
+    "sae_result",
+    "concept_kernel_map",
+    "snapshots",
+    "data_sources",
+    "semantic_canvas",
+    "canvas_narrative",
+    "reality_narrative",
+    "uvt_result",
+    "use_result",
+    "stability",
+    "governance_flags",
+    "interpretability_scorecard",
+    "interpretability_contract",
+    "interpretability_contract_summary",
+)
+
+
+SESSION_TO_PAYLOAD_KEY_MAP: dict[str, str] = {
+    "run_id": "run_id",
+    "run_timestamp": "run_timestamp",
+    "finance_result": "finance_result",
+    "cluster_result": "cluster_result",
+    "graph_result": "graph_result",
+    "spatial_result": "spatial_result",
+    "sim_result": "sim_result",
+    "sae_result": "sae_result",
+    "concept_kernel_map": "concept_kernel_map",
+    "ukt_snapshots": "snapshots",
+    "data_sources": "data_sources",
+    "semantic_canvas": "semantic_canvas",
+    "canvas_narrative": "canvas_narrative",
+    "reality_narrative": "reality_narrative",
+    "uvt_result": "uvt_result",
+    "use_result": "use_result",
+    "ukt_multirun_stability": "stability",
+    "governance_flags": "governance_flags",
+    "interpretability_scorecard": "interpretability_scorecard",
+}
+
+
+def build_runner_payload() -> dict[str, Any]:
+    """Fixture payload representing PipelineRunner.run() contract outputs."""
+    return {
+        "run_id": "RUN-INTEGRATION-001",
+        "run_timestamp": "2026-01-01T00:00:00Z",
+        "finance_result": {"forecast": [0.1, 0.2], "source": "stubbed"},
+        "cluster_result": {"topics": ["governance", "risk"], "source": "stubbed"},
+        "graph_result": {"nodes": ["USA", "China"], "edges": [["USA", "China", 0.4]]},
+        "spatial_result": {"kernel": [[0.9, 0.1], [0.1, 0.9]]},
+        "sim_result": {"agents": {"USA": {"stability": 0.88}}},
+        "sae_result": {"concept_labels": [{"id": 0, "dominant_region": "temporal-pattern"}]},
+        "concept_kernel_map": {"0": [0.3, 0.7]},
+        "snapshots": [{"step": 1, "block_name": "Finance", "report": "ok"}],
+        "data_sources": {"finance": "fixture", "news": "fixture", "political": "fixture"},
+        "semantic_canvas": {"regions": [{"region": "temporal-pattern", "score": 0.9}]},
+        "canvas_narrative": "Canvas narrative fixture",
+        "reality_narrative": "Reality narrative fixture",
+        "uvt_result": {"variance": 0.12},
+        "use_result": {"entropy": 0.21},
+        "stability": {"stability_index": 0.93},
+        "governance_flags": [{"code": "GOV-001", "severity": "medium"}],
+        "interpretability_scorecard": {"traceability": 0.95, "confidence": 0.91},
+        "interpretability_contract": {"from": "runner", "unused_in_dashboard": True},
+        "interpretability_contract_summary": {"from": "runner", "unused_in_dashboard": True},
+    }
