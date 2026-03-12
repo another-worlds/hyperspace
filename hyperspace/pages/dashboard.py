@@ -11,7 +11,6 @@ import streamlit as st
 
 from hyperspace.config import (
     DEFAULT_TICKERS, GEOPOLITICAL_NODES, PIPELINE_STEPS, UKT_FEATURE_DIM,
-    SCORECARD_THRESHOLDS,
 )
 from hyperspace.models.knowledge_matrix import (
     UniversalKnowledgeTensor,
@@ -19,6 +18,10 @@ from hyperspace.models.knowledge_matrix import (
 )
 from hyperspace.viz.charts import source_badge
 from hyperspace.core.pipeline import PipelineRunner
+from hyperspace.core.types import (
+    build_interpretable_report,
+    summarize_interpretable_reports,
+)
 
 
 # --------------------------------------------------------------------------- #
@@ -53,265 +56,47 @@ def _compute_scorecard(
     stability: dict | None,
     governance_flags: list,
 ) -> dict:
-    """Compute the interpretability scorecard values.
+    """Compute interpretability scorecard via canonical PipelineRunner logic.
 
-    Returns dict mapping criterion key -> {value, threshold, pass, label, unit, description}
+    Delegates to PipelineRunner._compute_scorecard to guarantee parity between
+    headless pipeline runs and Streamlit dashboard execution.
     """
-    scorecard: dict[str, dict] = {}
-
-    # Feature traceability: count features with metadata
-    if ukt_snapshots:
-        final_snap = ukt_snapshots[-1]
-        feature_meta = final_snap.get("feature_meta", {})
-        traced = sum(
-            1 for idx in range(UKT_FEATURE_DIM)
-            if idx in feature_meta and feature_meta[idx].get("label")
-        )
-    else:
-        traced = 0
-
-    scorecard["feature_traceability"] = dict(
-        value=traced,
-        threshold=SCORECARD_THRESHOLDS["feature_traceability"]["threshold"],
-        passed=traced >= SCORECARD_THRESHOLDS["feature_traceability"]["threshold"],
-        label=SCORECARD_THRESHOLDS["feature_traceability"]["label"],
-        unit=SCORECARD_THRESHOLDS["feature_traceability"]["unit"],
-        description=SCORECARD_THRESHOLDS["feature_traceability"]["description"],
+    return PipelineRunner._compute_scorecard(
+        snapshots=ukt_snapshots,
+        sae_result=sae_result,
+        data_sources=data_sources,
+        stability=stability,
+        governance_flags=governance_flags,
     )
 
-    # Kernel stability
-    mean_cosine = stability.get("mean_cosine", 0.0) if stability else 0.0
-    scorecard["kernel_stability"] = dict(
-        value=round(mean_cosine, 3),
-        threshold=SCORECARD_THRESHOLDS["kernel_stability"]["threshold"],
-        passed=mean_cosine >= SCORECARD_THRESHOLDS["kernel_stability"]["threshold"],
-        label=SCORECARD_THRESHOLDS["kernel_stability"]["label"],
-        unit=SCORECARD_THRESHOLDS["kernel_stability"]["unit"],
-        description=SCORECARD_THRESHOLDS["kernel_stability"]["description"],
-    )
-
-    # Concept activation rate
-    if sae_result:
-        total = sae_result.get("total_concepts", 1)
-        active = sae_result.get("active_concepts", 0)
-        rate = round(100.0 * active / max(total, 1), 1)
-    else:
-        rate = 0.0
-    scorecard["concept_activation_rate"] = dict(
-        value=rate,
-        threshold=SCORECARD_THRESHOLDS["concept_activation_rate"]["threshold"],
-        passed=rate >= SCORECARD_THRESHOLDS["concept_activation_rate"]["threshold"],
-        label=SCORECARD_THRESHOLDS["concept_activation_rate"]["label"],
-        unit=SCORECARD_THRESHOLDS["concept_activation_rate"]["unit"],
-        description=SCORECARD_THRESHOLDS["concept_activation_rate"]["description"],
-    )
-
-    # Data source diversity (live count)
-    live_count = sum(
-        1 for v in data_sources.values()
-        if "Live" in v or ("Offline" in v and "Synthetic" not in v)
-    )
-    scorecard["data_source_diversity"] = dict(
-        value=live_count,
-        threshold=SCORECARD_THRESHOLDS["data_source_diversity"]["threshold"],
-        passed=live_count >= SCORECARD_THRESHOLDS["data_source_diversity"]["threshold"],
-        label=SCORECARD_THRESHOLDS["data_source_diversity"]["label"],
-        unit=SCORECARD_THRESHOLDS["data_source_diversity"]["unit"],
-        description=SCORECARD_THRESHOLDS["data_source_diversity"]["description"],
-    )
-
-    # Governance flags count
-    flag_count = len(governance_flags)
-    scorecard["governance_flags"] = dict(
-        value=flag_count,
-        threshold=SCORECARD_THRESHOLDS["governance_flags"]["threshold"],
-        passed=flag_count == 0,
-        label=SCORECARD_THRESHOLDS["governance_flags"]["label"],
-        unit=SCORECARD_THRESHOLDS["governance_flags"]["unit"],
-        description=SCORECARD_THRESHOLDS["governance_flags"]["description"],
-    )
-
-    return scorecard
 
 
 # --------------------------------------------------------------------------- #
-# Landing page (C3: Governance reframe)                                        #
+# Landing page                                                                  #
 # --------------------------------------------------------------------------- #
 
 def render_landing() -> None:
-    """Render the governance-framed dashboard landing page."""
-    # Governance header
+    """Render a compact governance-framed dashboard landing page."""
     st.markdown(
-        '<div class="governance-header">'
-        '<div style="display:flex; align-items:baseline; gap:12px; margin-bottom:10px;">'
-        '<h2 style="color:#64ffda; margin:0; font-family:Inter,sans-serif; '
-        'font-size:1.55em; font-weight:700; letter-spacing:-0.01em;">'
-        'Hyperspace</h2>'
-        '<span style="color:#3d5673; font-family:Inter,sans-serif; font-size:0.78em; '
-        'font-weight:600; letter-spacing:0.12em; text-transform:uppercase;">'
-        'Accountability Infrastructure for AI Governance</span>'
-        '</div>'
-        '<p style="color:#4a6880; margin:0; font-family:Inter,sans-serif; '
-        'font-size:0.88em; line-height:1.6;">'
-        'A demonstration system for the UN Global Dialogue on AI Governance &mdash; '
-        'February 2026. All conclusions are traceable, stability-tested, and contestable.'
-        '</p>'
-        '</div>',
+        """
+        <div class="governance-header">
+            <h2 style="margin:0;color:#64ffda;">Hyperspace</h2>
+            <p style="margin:8px 0 0;color:#4a6880;">
+                Accountability Infrastructure for AI Governance.
+                Launch the full cycle to run all modality blocks and generate
+                traceable UKT + interpretability outputs.
+            </p>
+        </div>
+        """,
         unsafe_allow_html=True,
     )
 
     st.markdown("---")
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Feature Space", f"{UKT_FEATURE_DIM} dims")
+    c2.metric("Pipeline Steps", str(len(PIPELINE_STEPS)))
+    c3.metric("Geopolitical Nodes", str(len(GEOPOLITICAL_NODES)))
 
-    # Three failure modes framing
-    st.markdown(
-        '<p style="font-family:Inter,sans-serif; font-size:0.72em; font-weight:700; '
-        'letter-spacing:0.12em; text-transform:uppercase; color:#3d5673; margin:0 0 12px;">'
-        'The Three Accountability Failures This System Addresses</p>',
-        unsafe_allow_html=True,
-    )
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        st.markdown(
-            '<div class="accountability-card">'
-            '<div class="card-num">01</div>'
-            '<h4>Opacity</h4>'
-            '<p>Dominant AI systems use billions of parameters with learned concepts '
-            'that cannot be labeled, traced, or linked to causal stories. '
-            'It is impossible to explain <em>why</em> a conclusion was drawn.</p>'
-            '</div>',
-            unsafe_allow_html=True,
-        )
-    with col2:
-        st.markdown(
-            '<div class="accountability-card">'
-            '<div class="card-num">02</div>'
-            '<h4>Uncontestability</h4>'
-            '<p>Decisions derived from opaque pattern recognition cannot be robustly '
-            'validated, challenged, or improved when they fail. There is no mechanism '
-            'for due process against an algorithmic conclusion.</p>'
-            '</div>',
-            unsafe_allow_html=True,
-        )
-    with col3:
-        st.markdown(
-            '<div class="accountability-card">'
-            '<div class="card-num">03</div>'
-            '<h4>Untraceability</h4>'
-            '<p>Biased and partial knowledge is absorbed into authoritative-sounding '
-            'outputs while the pathways of influence remain invisible — machine-generated '
-            'meaning without provenance or responsibility.</p>'
-            '</div>',
-            unsafe_allow_html=True,
-        )
-
-    st.markdown("---")
-
-    # Three technical guarantees
-    st.markdown(
-        '<p style="font-family:Inter,sans-serif; font-size:0.72em; font-weight:700; '
-        'letter-spacing:0.12em; text-transform:uppercase; color:#3d5673; margin:0 0 12px;">'
-        'Three Technical Guarantees</p>',
-        unsafe_allow_html=True,
-    )
-    g1, g2, g3 = st.columns(3)
-    with g1:
-        st.markdown(
-            '<div class="guarantee-card">'
-            '<h4>✓ Full Feature Provenance</h4>'
-            '<p>Every one of 80 input dimensions carries a complete metadata chain: '
-            'source, entity, metric, time scope, and block. Any conclusion can be '
-            'traced back to its raw data inputs.</p>'
-            '</div>',
-            unsafe_allow_html=True,
-        )
-    with g2:
-        st.markdown(
-            '<div class="guarantee-card">'
-            '<h4>✓ Stability-Tested Kernels</h4>'
-            '<p>The Universal Knowledge Tensor runs 8 noisy perturbation tests to verify '
-            'that conclusions are robust. A cosine similarity score quantifies how much '
-            'conclusions change under small data variations.</p>'
-            '</div>',
-            unsafe_allow_html=True,
-        )
-    with g3:
-        st.markdown(
-            '<div class="guarantee-card">'
-            '<h4>✓ Concept-Level Interpretability</h4>'
-            '<p>A Sparse Autoencoder discovers a small set of named, interpretable concepts '
-            'from the data. Each concept is mapped to specific kernels and features — '
-            'enabling contestation at the level of individual claims.</p>'
-            '</div>',
-            unsafe_allow_html=True,
-        )
-
-    st.markdown("---")
-
-    # System Accountability Statement
-    with st.expander("📋 System Accountability Statement", expanded=True):
-        st.markdown("""
-**What this system CAN conclude:**
-- Which data domains (financial, informational, geopolitical, agentic) are most active in the current information environment
-- Which structural patterns cut across multiple modalities simultaneously
-- Whether those patterns are stable under small data perturbations
-- Which specific features drive each cross-modal pattern
-
-**What this system CANNOT conclude:**
-- Causal relationships between geopolitical events and market movements
-- Future outcomes with certainty — all forecasts are probabilistic
-- Ground truth about classified or non-public information
-- Anything not derivable from the four data domains listed above
-
-**Limitations:**
-- All pipeline stages require live network access — the pipeline blocks with an error if any source is unavailable (no silent synthetic fallbacks)
-- The geopolitical graph covers 6 actors only — systemic omissions exist
-- TFT forecasting runs for 3 epochs on CPU — not production-grade
-- All interpretations are generated algorithmically and require human expert review
-        """)
-
-    # Pipeline architecture (compact)
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Pipeline Steps", "7", "")
-    c2.metric("Feature Dimensions", str(UKT_FEATURE_DIM), "")
-    c3.metric("Blocks", "5", "Finance + Clusters + Graph + Spatial + Agents")
-    c4.metric("Kernels (max)", "5", "grows with blocks")
-
-    st.markdown("---")
-
-    # Cold-start kernel matrix placeholder
-    st.markdown("### Universal Kernel Matrix")
-    st.caption("The kernel matrix will populate as each pipeline block completes.")
-    placeholder_matrix = np.zeros((1, UKT_FEATURE_DIM))
-    import plotly.express as px
-    fig = px.imshow(
-        placeholder_matrix,
-        color_continuous_scale="RdBu_r",
-        template="plotly_dark",
-        title="UKT: Awaiting pipeline launch...",
-    )
-    fig.update_layout(height=150, paper_bgcolor="#0d1117", plot_bgcolor="#0d1117")
-    st.plotly_chart(fig, use_container_width=True, key="dashboard_ukt_placeholder")
-
-    st.markdown("---")
-
-    with st.expander("v3.0 Pipeline Architecture"):
-        st.code("""
-Data Fetch (yfinance + GDELT/RSS + Harvard Dataverse UN Votes + Open-Elevation + Open-Meteo + World Bank)
-          |
-    [Finance Block]  --> TFT train    --> UKT row 1 [0:16]  --> SVD --> Interpret
-          |
-    [Cluster Block]  --> BERTopic     --> UKT row 2 [16:32] --> SVD --> Interpret
-          |
-    [Graph Block]    --> Centrality   --> UKT row 3 [32:48] --> SVD --> Interpret
-          |
-    [Spatial Raster] --> SVD Kernels  --> UKT row 4 [64:80] --> SVD --> Interpret
-          |
-    [Agent Sim]      --> Simulate     --> UKT row 5 [48:64] --> SVD --> Interpret
-          |
-    [Final SAE]      --> Concept discovery on full UKT (80-dim)
-          |
-    Universal Reality Regression + Governance Accountability Report
-        """, language="text")
 
 
 # --------------------------------------------------------------------------- #
@@ -319,15 +104,7 @@ Data Fetch (yfinance + GDELT/RSS + Harvard Dataverse UN Votes + Open-Elevation +
 # --------------------------------------------------------------------------- #
 
 def run_pipeline() -> None:
-    """Execute the full pipeline with step-by-step UKT updates."""
-    # D1: Generate run ID at pipeline start
-    from hyperspace.state import generate_run_id
-    run_id, run_timestamp = generate_run_id()
-
-    ukt = UniversalKnowledgeTensor(feature_dim=UKT_FEATURE_DIM)
-    snapshots: list[dict] = []
-    data_sources: dict[str, str] = {}
-
+    """Execute dashboard pipeline via canonical PipelineRunner orchestration."""
     with st.status("Running Hyperspace Pipeline...", expanded=True) as status:
         # ---- Step 1: Fetch Data ----
         st.write("Fetching real data sources...")
@@ -342,6 +119,7 @@ def run_pipeline() -> None:
             status.update(label="Pipeline blocked: finance data unavailable", state="error")
             st.error(str(exc))
             return
+
         finance_start = None
         finance_end = None
         if "Date" in ohlcv_df.columns and len(ohlcv_df) > 0:
@@ -354,30 +132,28 @@ def run_pipeline() -> None:
             status.update(label="Pipeline blocked: no live news source", state="error")
             st.error(str(exc))
             return
+
         min_year = finance_start.year if finance_start else 2000
         max_year = finance_end.year if finance_end else None
         try:
-            un_df, agreement, pol_src = get_political_data(min_year=min_year, max_year=max_year)
+            _, agreement, pol_src = get_political_data(min_year=min_year, max_year=max_year)
         except RuntimeError as exc:
             status.update(label="Pipeline blocked: political data unavailable", state="error")
             st.error(str(exc))
             return
 
-        data_sources["Finance"] = fin_src
-        data_sources["Clusters"] = docs_src
-        data_sources["Graph"] = pol_src
-        st.session_state.data_sources = data_sources
-        st.session_state.raw_ohlcv = ohlcv_df
-        st.session_state.raw_docs = docs
-        st.session_state.timeframe_context = {
+        timeframe_context = {
             "start_date": finance_start.date().isoformat() if finance_start else None,
             "end_date": finance_end.date().isoformat() if finance_end else None,
             "min_year": min_year,
             "max_year": max_year,
         }
+        st.session_state.raw_ohlcv = ohlcv_df
+        st.session_state.raw_docs = docs
+        st.session_state.timeframe_context = timeframe_context
         st.write(f"Data fetched: {fin_src} | {docs_src} | {pol_src}")
 
-        # ---- Step 2: Finance Block ----
+        # ---- Step 2: Build precomputed block inputs ----
         st.write("Training Temporal Fusion Transformer (3 epochs, CPU)...")
         from hyperspace.models.tft_forecast import fit_tft
 
@@ -392,23 +168,11 @@ def run_pipeline() -> None:
                 "missing pytorch-forecasting/lightning packages, or unreachable market data."
             )
             return
-        finance_features = tft_result["features_for_ukt"]
-        data_sources["Finance"] = tft_result["data_source"]
 
-        snap = ukt.add_block(
-            "Finance", finance_features,
-            feature_meta=tft_result.get("feature_meta", {}),
-            timeframe_context=st.session_state.timeframe_context,
-        )
-        snapshots.append(snap)
-        st.session_state.finance_result = tft_result
-        st.write(f"Finance: {(snap.get('report') or '').split(chr(10))[0]}")
-
-        # ---- Step 3: Cluster Block ----
         st.write("Fitting BERTopic on real documents...")
         from hyperspace.models.topic_model import fit_topic_model
-
         import hashlib
+
         docs_hash = hashlib.md5("".join(docs[:5]).encode()).hexdigest()[:8]
         cluster_result = fit_topic_model(docs_hash, docs=docs, data_source=docs_src)
         if cluster_result is None:
@@ -416,208 +180,160 @@ def run_pipeline() -> None:
             st.error("BERTopic is unavailable; cluster fallback was intentionally removed.")
             return
 
-        cluster_features = cluster_result["features_for_ukt"]
-        data_sources["Clusters"] = cluster_result["data_source"]
-
-        snap = ukt.add_block(
-            "Clusters", cluster_features,
-            feature_meta=cluster_result.get("feature_meta", {}),
-            timeframe_context=st.session_state.timeframe_context,
-        )
-        snapshots.append(snap)
-        st.session_state.cluster_result = cluster_result
-        st.write(f"Clusters: {(snap.get('report') or '').split(chr(10))[0]}")
-
-        # ---- Step 4: Graph Block ----
-        st.write("Analyzing geopolitical graph + centrality...")
-        from hyperspace.models.graph_engine import build_geopolitical_graph, analyze_graph
-
-        G, pos = build_geopolitical_graph(agreement_matrix=agreement)
-        graph_analysis = analyze_graph(G)
-        graph_features = graph_analysis["features_for_ukt"]
-
-        snap = ukt.add_block(
-            "Graph", graph_features,
-            feature_meta=graph_analysis.get("feature_meta", {}),
-            timeframe_context=st.session_state.timeframe_context,
-        )
-        snapshots.append(snap)
-        st.session_state.graph_result = dict(
-            G=G, pos=pos, analysis=graph_analysis,
-            features_for_ukt=graph_features,
-            feature_meta=graph_analysis.get("feature_meta", {}),
-            data_source=pol_src,
-        )
-        st.write(f"Graph: {(snap.get('report') or '').split(chr(10))[0]}")
-
-        # ---- Step 3.5: Spatial Raster Kernelization ----
         st.write("Fetching multimodal spatial rasters (elevation, climate, economics, conflict)...")
         from hyperspace.data.spatial import fetch_all_spatial_data
-        from hyperspace.models.spatial_kernels import get_spatial_features
 
         try:
             raw_spatial = fetch_all_spatial_data()
-            spatial_result = get_spatial_features(
-                raw_spatial["physical_raster"],
-                raw_spatial["country_scalars"],
-                raw_spatial["scalar_names"],
-                raw_spatial["node_order"],
-                st.session_state.timeframe_context,
-            )
-            data_sources["Spatial"] = raw_spatial["source_label"]
-            snap = ukt.add_block(
-                "Spatial", spatial_result["features_for_ukt"],
-                feature_meta=spatial_result["feature_meta"],
-                timeframe_context=st.session_state.timeframe_context,
-            )
-            snapshots.append(snap)
-            st.session_state.spatial_result = spatial_result
-            st.write(f"Spatial: {(snap.get('report') or '').split(chr(10))[0]}")
         except RuntimeError as exc:
             status.update(label="Pipeline blocked: spatial data unavailable", state="error")
             st.error(str(exc))
             return
 
-        # ---- Step 5: Agent Simulation ----
-        st.write("Running agent simulation (50 steps)...")
-        from hyperspace.models.agent_sim import (
-            initialize_agents_from_data, run_simulation,
+        # ---- Step 3: Canonical orchestration (single path) ----
+        st.write("Running canonical pipeline runner for graph/spatial/agents/interpreter...")
+        runner = PipelineRunner()
+        result = runner.run(
+            finance_result=tft_result,
+            cluster_result=cluster_result,
+            agreement_matrix=agreement,
+            spatial_data=raw_spatial,
+            timeframe_context=timeframe_context,
+            compute_cross_block=True,
         )
 
-        agents = initialize_agents_from_data(
-            graph_analysis, agreement,
-            spatial_features=st.session_state.get("spatial_result"),
-        )
-        agents, log_entries, agent_features, agent_feature_meta = run_simulation(agents, steps=50)
-
-        snap = ukt.add_block(
-            "Agents", agent_features,
-            feature_meta=agent_feature_meta,
-            timeframe_context=st.session_state.timeframe_context,
-        )
-        snapshots.append(snap)
-        data_sources["Agents"] = "agent_simulation (derived from Graph + Spatial)"
-        st.session_state.sim_result = dict(
-            agents=agents, log=log_entries,
-            features_for_ukt=agent_features,
-            feature_meta=agent_feature_meta,
-            data_source=data_sources["Agents"],
-        )
-        st.write(f"Agents: {(snap.get('report') or '').split(chr(10))[0]}")
-
-        # ---- Step 6: Final Interpretation ----
-        st.write("Running sparse autoencoder for concept discovery...")
-        from hyperspace.models.sparse_ae import train_sparse_ae, map_concepts_to_kernels
-
-        final_matrix = ukt.get_final_matrix()
-        sae_result = None
-        concept_kernel_map = []
-        if final_matrix is not None:
-            sae_result = train_sparse_ae(final_matrix, hidden_dim=16, epochs=80)
-            if sae_result is not None:
-                final_snap = ukt.get_latest_snapshot()
-                if final_snap:
-                    concept_kernel_map = map_concepts_to_kernels(sae_result, final_snap)
-
-        st.session_state.sae_result = sae_result
-        st.session_state.concept_kernel_map = concept_kernel_map
-        st.session_state.ukt_snapshots = snapshots
-        st.session_state.data_sources = data_sources
-
-        # ---- Semantic Canvas: store + generate final narratives ---- #
-        st.session_state.semantic_canvas = ukt.canvas
-
-        # ---- Cross-Block Interconnection: UVT + USE ----
-        final_matrix = ukt.get_final_matrix()
-        if final_matrix is not None and final_matrix.shape[0] >= 2:
-            st.write("Computing Universal Variance Tensor (cross-block attention)...")
-            from hyperspace.models.cross_block_net import (
-                compute_universal_variance_tensor,
-                compute_universal_semantic_encoding,
-            )
-            from hyperspace.models.knowledge_matrix import HYPERSPACE_REGISTRY
-
-            active_block_names = [s["block_name"] for s in snapshots]
-            uvt_result = compute_universal_variance_tensor(
-                final_matrix, n_heads=4, d_model=32, epochs=120,
-                registry=HYPERSPACE_REGISTRY,
-                block_names=active_block_names,
-            )
-            st.session_state.uvt_result = uvt_result
-
-            if uvt_result is not None:
-                st.write("Computing Universal Semantic Encoding...")
-                use_result = compute_universal_semantic_encoding(
-                    final_matrix, uvt_result,
-                    canvas=ukt.canvas, semantic_dim=24, epochs=150,
-                    registry=HYPERSPACE_REGISTRY,
-                    block_names=active_block_names,
-                )
-                st.session_state.use_result = use_result
-                st.write(
-                    f"UVT: {len(uvt_result['coupling_labels'])} coupling modes | "
-                    f"USE: {use_result['semantic_dim']}-dim encoding"
-                    if use_result else "UVT computed, USE unavailable"
-                )
-            else:
-                # UVT failed — clear any stale USE result to avoid mismatched UI
-                st.session_state.use_result = None
-        else:
-            # Not enough blocks — clear both to prevent stale visualizations
-            st.session_state.uvt_result = None
-            st.session_state.use_result = None
-
-        st.write("Generating semantic narratives via Tiny-LLM...")
-        try:
-            from hyperspace.models.semantic_narrator import (
-                narrate_canvas, narrate_reality_regression,
-            )
-            from hyperspace.models.sparse_ae import enrich_concepts_with_narratives
-
-            # Full canvas narrative
-            canvas_narrative = narrate_canvas(ukt.canvas)
-            st.session_state.canvas_narrative = canvas_narrative
-
-            # Reality regression narrative (from final snapshot)
-            if snapshots:
-                rr_narrative = narrate_reality_regression(snapshots[-1], ukt.canvas)
-                st.session_state.reality_narrative = rr_narrative
-
-            # Enrich SAE concepts with semantic narratives
-            if sae_result is not None:
-                enrich_concepts_with_narratives(sae_result, ukt.canvas)
-
-        except Exception:
-            pass  # Narrator unavailable — graceful degradation
-
-        final_matrix = ukt.get_final_matrix()
-        if final_matrix is not None:
-            st.session_state.ukt_multirun_stability = estimate_reality_regression_stability(
-                final_matrix, n_runs=8, noise_std=0.01, seed=42,
-            )
-
-        # ---- A3: Compute governance flags ----
-        gov_flags = _compute_governance_flags(
-            data_sources=data_sources,
-            ukt_snapshots=snapshots,
-            sae_result=sae_result,
-            graph_result=st.session_state.get("graph_result"),
-            timeframe_context=st.session_state.get("timeframe_context", {}),
-        )
-        st.session_state.governance_flags = gov_flags
-
-        # ---- B3: Compute interpretability scorecard ----
-        scorecard = _compute_scorecard(
-            ukt_snapshots=snapshots,
-            sae_result=sae_result,
-            data_sources=data_sources,
-            stability=st.session_state.get("ukt_multirun_stability"),
-            governance_flags=gov_flags,
-        )
-        st.session_state.interpretability_scorecard = scorecard
+        st.session_state.run_id = result["run_id"]
+        st.session_state.run_timestamp = result["run_timestamp"]
+        st.session_state.finance_result = result["finance_result"]
+        st.session_state.cluster_result = result["cluster_result"]
+        st.session_state.graph_result = result["graph_result"]
+        st.session_state.spatial_result = result["spatial_result"]
+        st.session_state.sim_result = result["sim_result"]
+        st.session_state.sae_result = result["sae_result"]
+        st.session_state.concept_kernel_map = result["concept_kernel_map"]
+        st.session_state.ukt_snapshots = result["snapshots"]
+        st.session_state.data_sources = result["data_sources"]
+        st.session_state.semantic_canvas = result["semantic_canvas"]
+        st.session_state.canvas_narrative = result["canvas_narrative"]
+        st.session_state.reality_narrative = result["reality_narrative"]
+        st.session_state.uvt_result = result["uvt_result"]
+        st.session_state.use_result = result["use_result"]
+        st.session_state.ukt_multirun_stability = result["stability"]
+        st.session_state.governance_flags = result["governance_flags"]
+        st.session_state.interpretability_scorecard = result["interpretability_scorecard"]
+        st.session_state.interpretability_contract = result["interpretability_contract"]
+        st.session_state.interpretability_contract_summary = result[
+            "interpretability_contract_summary"
+        ]
 
         status.update(label="Pipeline complete!", state="complete")
         st.session_state.pipeline_complete = True
+
+
+
+def _build_governance_report_markdown(
+    *,
+    run_id: str,
+    run_ts: str,
+    scorecard: dict,
+    governance_flags: list[dict],
+    snapshots: list[dict],
+    canvas_narrative: str | None,
+    reality_narrative: str | None,
+    interpretability_contract: dict,
+    interpretability_contract_summary: dict,
+) -> str:
+    """Build exportable markdown governance report with compliance artifacts."""
+    report_lines = [
+        "# Hyperspace Governance Report",
+        f"## Run ID: {run_id} | {run_ts}",
+        "",
+        "## Interpretability Score Card",
+    ]
+
+    if scorecard:
+        for item in scorecard.values():
+            status_str = "PASS" if item.get("passed") else "WARN"
+            report_lines.append(
+                f"- {item.get('label')}: {item.get('value')}{item.get('unit','')} "
+                f"(threshold ≥{item.get('threshold')}{item.get('unit','')}) — {status_str}"
+            )
+
+    report_lines.append("")
+    report_lines.append("## Interpretability Contract Compliance")
+    if interpretability_contract_summary:
+        report_lines.append(
+            "- Summary: "
+            f"{interpretability_contract_summary.get('compliant_modules', 0)}/"
+            f"{interpretability_contract_summary.get('total_modules', 0)} compliant "
+            f"(rate={interpretability_contract_summary.get('compliance_rate', 0.0):.2f})"
+        )
+
+    if interpretability_contract:
+        for module_name, module_report in interpretability_contract.items():
+            report_lines.append(
+                f"- {module_name}: compliant={module_report.get('compliant', False)}; "
+                f"interface_issues={len(module_report.get('interface_issues', []))}; "
+                f"payload_issues={len(module_report.get('payload_issues', []))}"
+            )
+
+    if governance_flags:
+        report_lines.append("")
+        report_lines.append("## Governance Flags")
+        for flag in governance_flags:
+            report_lines.append(
+                f"- [{flag.get('code')}] {flag.get('label')}: {flag.get('detail', '')}"
+            )
+
+    if canvas_narrative or reality_narrative:
+        report_lines.append("")
+        report_lines.append("## Semantic Narratives (Tiny-LLM)")
+        if canvas_narrative:
+            report_lines.append(f"**Cross-Domain Narrative:** {canvas_narrative}")
+        if reality_narrative:
+            report_lines.append(f"**Reality Assessment:** {reality_narrative}")
+        report_lines.append("")
+        for snap in snapshots:
+            if snap.get("layer_narrative"):
+                report_lines.append(
+                    f"**Step {snap['step']} ({snap['block_name']}):** "
+                    f"{snap['layer_narrative']}"
+                )
+
+    report_lines.append("")
+    report_lines.append("## Pipeline Reports")
+    for snap in snapshots:
+        report_lines.append(snap["report"])
+
+    return "\n".join(report_lines)
+
+
+def _build_contract_export_rows(
+    *,
+    run_id: str,
+    run_ts: str,
+    interpretability_contract: dict,
+    interpretability_contract_summary: dict,
+) -> list[dict[str, object]]:
+    """Flatten interpretability contract reports for CSV export."""
+    rows: list[dict[str, object]] = []
+    for module_name, module_report in interpretability_contract.items():
+        rows.append({
+            "RunID": run_id,
+            "Timestamp": run_ts,
+            "Module": module_name,
+            "Compliant": module_report.get("compliant", False),
+            "InterfaceIssueCount": len(module_report.get("interface_issues", [])),
+            "PayloadIssueCount": len(module_report.get("payload_issues", [])),
+            "InterfaceIssues": " | ".join(module_report.get("interface_issues", [])),
+            "PayloadIssues": " | ".join(module_report.get("payload_issues", [])),
+            "TotalModules": interpretability_contract_summary.get("total_modules", 0),
+            "CompliantModules": interpretability_contract_summary.get("compliant_modules", 0),
+            "NoncompliantModules": interpretability_contract_summary.get("noncompliant_modules", 0),
+            "ComplianceRate": interpretability_contract_summary.get("compliance_rate", 0.0),
+        })
+    return rows
+
 
 
 # --------------------------------------------------------------------------- #
@@ -791,51 +507,24 @@ def render_results() -> None:
     st.markdown("### Export")
     run_id = st.session_state.get("run_id", "UNKNOWN")
     run_ts = st.session_state.get("run_timestamp", "")
-    exp1, exp2, exp3 = st.columns(3)
+    exp1, exp2, exp3, exp4 = st.columns(4)
 
-    # Build report with scorecard and flags
-    report_lines = [
-        f"# Hyperspace Governance Report",
-        f"## Run ID: {run_id} | {run_ts}",
-        "",
-        "## Interpretability Score Card",
-    ]
-    if scorecard:
-        for key, item in scorecard.items():
-            status_str = "PASS" if item.get("passed") else "WARN"
-            report_lines.append(
-                f"- {item.get('label')}: {item.get('value')}{item.get('unit','')} "
-                f"(threshold ≥{item.get('threshold')}{item.get('unit','')}) — {status_str}"
-            )
-    if gov_flags:
-        report_lines.append("")
-        report_lines.append("## Governance Flags")
-        for flag in gov_flags:
-            report_lines.append(f"- [{flag.get('code')}] {flag.get('label')}: {flag.get('detail', '')}")
+    interpretability_contract = st.session_state.get("interpretability_contract", {})
+    interpretability_contract_summary = st.session_state.get(
+        "interpretability_contract_summary", {},
+    )
 
-    # Semantic narratives section
-    canvas_narrative = st.session_state.get("canvas_narrative")
-    reality_narrative = st.session_state.get("reality_narrative")
-    if canvas_narrative or reality_narrative:
-        report_lines.append("")
-        report_lines.append("## Semantic Narratives (Tiny-LLM)")
-        if canvas_narrative:
-            report_lines.append(f"**Cross-Domain Narrative:** {canvas_narrative}")
-        if reality_narrative:
-            report_lines.append(f"**Reality Assessment:** {reality_narrative}")
-        report_lines.append("")
-        for snap in snapshots:
-            if snap.get("layer_narrative"):
-                report_lines.append(
-                    f"**Step {snap['step']} ({snap['block_name']}):** "
-                    f"{snap['layer_narrative']}"
-                )
-
-    report_lines.append("")
-    report_lines.append("## Pipeline Reports")
-    for snap in snapshots:
-        report_lines.append(snap["report"])
-    report_md = "\n".join(report_lines)
+    report_md = _build_governance_report_markdown(
+        run_id=run_id,
+        run_ts=run_ts,
+        scorecard=scorecard,
+        governance_flags=gov_flags,
+        snapshots=snapshots,
+        canvas_narrative=canvas_narrative,
+        reality_narrative=reality_narrative,
+        interpretability_contract=interpretability_contract,
+        interpretability_contract_summary=interpretability_contract_summary,
+    )
 
     exp1.download_button(
         "Download Report (Markdown)", report_md,
@@ -876,4 +565,19 @@ def render_results() -> None:
             pd.DataFrame(sc_export_rows).to_csv(index=False),
             f"hyperspace_scorecard_{run_id}.csv", "text/csv",
             key="dashboard_download_scorecard",
+        )
+
+
+    contract_export_rows = _build_contract_export_rows(
+        run_id=run_id,
+        run_ts=run_ts,
+        interpretability_contract=interpretability_contract,
+        interpretability_contract_summary=interpretability_contract_summary,
+    )
+    if contract_export_rows:
+        exp4.download_button(
+            "Download Contract Compliance (CSV)",
+            pd.DataFrame(contract_export_rows).to_csv(index=False),
+            f"hyperspace_contract_{run_id}.csv", "text/csv",
+            key="dashboard_download_interpretability_contract",
         )

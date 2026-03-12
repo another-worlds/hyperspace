@@ -5,7 +5,7 @@ across all pipeline blocks, data fetchers, and model outputs.
 """
 from __future__ import annotations
 
-from typing import Any, TypedDict
+from typing import Any, Protocol, TypedDict, runtime_checkable
 
 import numpy as np
 
@@ -78,6 +78,21 @@ class ScorecardEntry(TypedDict):
     description: str
 
 
+class InterpretabilityContractReport(TypedDict):
+    """Validation report for one InterpretableModule implementation."""
+    compliant: bool
+    interface_issues: list[str]
+    payload_issues: list[str]
+
+
+class InterpretabilityContractSummary(TypedDict):
+    """Aggregated compliance summary across reported modules."""
+    total_modules: int
+    compliant_modules: int
+    noncompliant_modules: int
+    compliance_rate: float
+
+
 class PipelineResult(TypedDict, total=False):
     """Full pipeline output — everything needed to render the UI.
 
@@ -115,6 +130,32 @@ class PipelineResult(TypedDict, total=False):
     # Provenance
     run_id: str
     run_timestamp: str
+
+    # Interpretability contract coverage
+    interpretability_contract: dict[str, InterpretabilityContractReport]
+    interpretability_contract_summary: InterpretabilityContractSummary
+
+
+@runtime_checkable
+class InterpretableModule(Protocol):
+    """Intrinsic interpretability contract for core model components.
+
+    Any module that claims interpretability support should expose a consistent
+    interface for latent unit export, attribution, modality alignment reports,
+    and structured explanations.
+    """
+
+    def export_latent_units(self) -> dict[str, Any]:
+        """Return named latent units/subspaces/concepts exposed by the module."""
+
+    def export_feature_attributions(self, input_batch: Any | None = None) -> dict[str, Any]:
+        """Return feature-level attributions for the latest state or input."""
+
+    def export_alignment_report(self, reference_modalities: list[str] | None = None) -> dict[str, Any]:
+        """Return modality alignment diagnostics in a machine-readable form."""
+
+    def explain_prediction(self, context: dict[str, Any] | None = None) -> dict[str, Any]:
+        """Return structured and narrative explanation for current outputs."""
 
 
 # --------------------------------------------------------------------------- #
@@ -161,4 +202,93 @@ def validate_snapshot(snapshot: dict) -> list[str]:
     missing = [k for k in required if k not in snapshot]
     if missing:
         return [f"Snapshot missing keys: {missing}"]
+    return []
+
+
+
+
+def build_interpretable_report(module: Any, module_name: str) -> InterpretabilityContractReport:
+    """Return a structured interpretability compliance report."""
+    interface_issues = validate_interpretable_module(module, module_name)
+    payload_issues = validate_interpretable_payload(module, module_name)
+    return InterpretabilityContractReport(
+        compliant=(len(interface_issues) == 0 and len(payload_issues) == 0),
+        interface_issues=interface_issues,
+        payload_issues=payload_issues,
+    )
+
+
+def summarize_interpretable_reports(
+    reports: dict[str, InterpretabilityContractReport],
+) -> InterpretabilityContractSummary:
+    """Summarize module-level interpretability compliance reports."""
+    total = len(reports)
+    compliant = sum(1 for r in reports.values() if r.get("compliant", False))
+    noncompliant = total - compliant
+    rate = (compliant / total) if total > 0 else 0.0
+    return InterpretabilityContractSummary(
+        total_modules=total,
+        compliant_modules=compliant,
+        noncompliant_modules=noncompliant,
+        compliance_rate=round(float(rate), 4),
+    )
+
+
+def validate_interpretable_payload(module: Any, module_name: str) -> list[str]:
+    """Validate that interpretability methods return expected payload shapes."""
+    issues: list[str] = []
+
+    try:
+        latent = module.export_latent_units()
+        if not isinstance(latent, dict):
+            issues.append(f"{module_name}: export_latent_units must return dict")
+    except Exception as exc:  # pragma: no cover - defensive runtime check
+        issues.append(f"{module_name}: export_latent_units raised {type(exc).__name__}")
+
+    try:
+        attr = module.export_feature_attributions()
+        if not isinstance(attr, dict):
+            issues.append(f"{module_name}: export_feature_attributions must return dict")
+        elif "attributions" not in attr:
+            issues.append(f"{module_name}: export_feature_attributions missing 'attributions'")
+        elif not isinstance(attr.get("attributions"), list):
+            issues.append(f"{module_name}: 'attributions' must be a list")
+    except Exception as exc:  # pragma: no cover - defensive runtime check
+        issues.append(f"{module_name}: export_feature_attributions raised {type(exc).__name__}")
+
+    try:
+        align = module.export_alignment_report()
+        if not isinstance(align, dict):
+            issues.append(f"{module_name}: export_alignment_report must return dict")
+    except Exception as exc:  # pragma: no cover - defensive runtime check
+        issues.append(f"{module_name}: export_alignment_report raised {type(exc).__name__}")
+
+    try:
+        expl = module.explain_prediction()
+        if not isinstance(expl, dict):
+            issues.append(f"{module_name}: explain_prediction must return dict")
+        elif "summary" not in expl:
+            issues.append(f"{module_name}: explain_prediction missing 'summary'")
+    except Exception as exc:  # pragma: no cover - defensive runtime check
+        issues.append(f"{module_name}: explain_prediction raised {type(exc).__name__}")
+
+    return issues
+
+
+def validate_interpretable_module(module: Any, module_name: str) -> list[str]:
+    """Validate that an object satisfies the InterpretableModule contract."""
+    missing: list[str] = []
+    required = [
+        "export_latent_units",
+        "export_feature_attributions",
+        "export_alignment_report",
+        "explain_prediction",
+    ]
+    for method_name in required:
+        method = getattr(module, method_name, None)
+        if method is None or not callable(method):
+            missing.append(method_name)
+
+    if missing:
+        return [f"{module_name}: missing interpretability methods {missing}"]
     return []

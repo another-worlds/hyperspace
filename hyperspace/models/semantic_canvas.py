@@ -52,16 +52,6 @@ CANVAS_DIMENSIONS: list[dict[str, str]] = [
      "desc": "Net positive alignment and cooperative dynamics between agents."},
     {"key": "competition_signal",    "label": "Competition Signal",
      "desc": "Net negative alignment, rivalry, and zero-sum dynamics."},
-    # Cross-domain dimensions — receive contributions from multiple regions
-    {"key": "finance_geopolitical_coupling", "label": "Finance–Geopolitical Coupling",
-     "desc": "Co-activation of market momentum and geopolitical network structure — "
-             "indicates whether financial stress and political instability move together."},
-    {"key": "information_power_dynamics",    "label": "Information–Power Dynamics",
-     "desc": "Interaction between narrative diversity and agent power concentration — "
-             "reveals whether information fragmentation tracks with power shifts."},
-    {"key": "spatial_systemic_risk",         "label": "Spatial–Systemic Risk",
-     "desc": "Joint signal from geospatial stress indicators and structural network "
-             "centrality — captures geographically-grounded systemic risk."},
 ]
 
 CANVAS_DIM = len(CANVAS_DIMENSIONS)
@@ -72,30 +62,30 @@ REGION_TO_CANVAS: dict[str, list[tuple[int, float]]] = {
         (0, 1.0),   # market_momentum
         (1, 1.0),   # temporal_memory
         (2, 0.8),   # volatility_regime
-        (12, 0.7),  # finance_geopolitical_coupling (cross-domain)
+        (9, 0.3),   # systemic_stress (cross-domain coupling signal)
     ],
     "semantic-embedding": [
         (3, 1.0),   # information_focus
         (4, 1.0),   # narrative_diversity
-        (13, 0.8),  # information_power_dynamics (cross-domain)
+        (7, 0.4),   # power_concentration (cross-domain coupling signal)
     ],
     "structural-centrality": [
         (5, 1.0),   # alliance_polarity
         (6, 1.0),   # network_cohesion
         (7, 0.5),   # power_concentration
-        (12, 0.7),  # finance_geopolitical_coupling (cross-domain)
-        (14, 0.5),  # spatial_systemic_risk (cross-domain)
+        (0, 0.3),   # market_momentum (cross-domain coupling signal)
+        (9, 0.4),   # systemic_stress (cross-domain coupling signal)
     ],
     "dynamic-agent": [
         (7, 0.5),   # power_concentration (shared with structural)
         (10, 1.0),  # cooperation_signal
         (11, 1.0),  # competition_signal
-        (13, 0.6),  # information_power_dynamics (cross-domain)
+        (4, 0.3),   # narrative_diversity (cross-domain coupling signal)
     ],
     "geospatial-kernel": [
         (8, 1.0),   # geographic_coupling
         (9, 1.0),   # systemic_stress
-        (14, 0.9),  # spatial_systemic_risk (cross-domain)
+        (6, 0.3),   # network_cohesion (cross-domain coupling signal)
     ],
 }
 
@@ -120,3 +110,86 @@ class SemanticCanvas(_StandaloneCanvas):
             dimensions=_build_hyperspace_dimensions(),
             region_mapping=REGION_TO_CANVAS,
         )
+
+    # ------------------------------------------------------------------ #
+    # Interpretability contract methods                                    #
+    # ------------------------------------------------------------------ #
+
+    def export_latent_units(self) -> dict[str, object]:
+        """Export per-layer semantic coordinates as latent units."""
+        return {
+            "dimensions": [d.key for d in self.dimensions],
+            "entries": [
+                {
+                    "step": int(e.step),
+                    "block_name": e.block_name,
+                    "dominant_dimensions": list(e.dominant_dimensions),
+                    "coordinates": np.asarray(e.coordinates).tolist(),
+                }
+                for e in self.entries
+            ],
+        }
+
+    def export_feature_attributions(
+        self,
+        input_batch: object | None = None,
+    ) -> dict[str, object]:
+        """Export canvas-level attributions from cumulative semantic state."""
+        del input_batch  # Canvas attribution is state-based.
+        state = self.get_accumulated_state()
+        coords = np.asarray(state.get("coordinates", []), dtype=float)
+        if coords.size == 0:
+            return {"attributions": []}
+
+        top_idx = np.argsort(np.abs(coords))[-5:][::-1]
+        attributions = []
+        for idx in top_idx:
+            i = int(idx)
+            dim = self.dimensions[i]
+            attributions.append({
+                "index": i,
+                "key": dim.key,
+                "label": dim.label,
+                "value": float(coords[i]),
+            })
+        return {"attributions": attributions}
+
+    def export_alignment_report(
+        self,
+        reference_modalities: list[str] | None = None,
+    ) -> dict[str, object]:
+        """Export modality→dimension mapping as an alignment report."""
+        del reference_modalities  # Not used for canvas-level mapping.
+        mapping: dict[str, list[dict[str, object]]] = {}
+        for region, links in self.region_mapping.items():
+            mapping[region] = [
+                {
+                    "dimension_key": self.dimensions[idx].key,
+                    "weight": float(weight),
+                }
+                for idx, weight in links
+                if idx < self.n_dims
+            ]
+
+        return {
+            "region_to_dimensions": mapping,
+            "n_entries": len(self.entries),
+        }
+
+    def explain_prediction(
+        self,
+        context: dict[str, object] | None = None,
+    ) -> dict[str, object]:
+        """Return a structured explanation for current canvas state."""
+        state = self.get_accumulated_state()
+        dom = state.get("dominant_narrative", [])
+        summary = "No semantic narrative available."
+        if dom:
+            summary = "Dominant semantic dimensions: " + ", ".join(
+                f"{d['label']} ({d['value']:.2f})" for d in dom[:3]
+            )
+        return {
+            "summary": summary,
+            "dominant_narrative": dom,
+            "context": context or {},
+        }
