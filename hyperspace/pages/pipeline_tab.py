@@ -137,9 +137,15 @@ def render() -> None:
     # ── Governance Narrative ─────────────────────────────────────────
     canvas_narrative = st.session_state.get("canvas_narrative")
     reality_narrative = st.session_state.get("reality_narrative")
+    narrative_governance = st.session_state.get("narrative_governance", {})
     if canvas_narrative or reality_narrative:
         st.markdown("---")
         st.markdown("### System-Level Governance Narrative")
+        if narrative_governance.get("mode") == "low_confidence":
+            st.warning(
+                "Narrative is running in low-confidence explanatory mode due to "
+                + "; ".join(narrative_governance.get("reasons", []))
+            )
         if canvas_narrative:
             st.success(f"**Cross-Domain Summary:** {canvas_narrative}")
         if reality_narrative:

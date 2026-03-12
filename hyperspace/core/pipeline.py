@@ -23,6 +23,7 @@ import pandas as pd
 from hyperspace.config import (
     GEOPOLITICAL_NODES,
     GOVERNANCE_FLAG_CODES,
+    NARRATIVE_CONFIDENCE_THRESHOLDS,
     SCORECARD_THRESHOLDS,
     UKT_FEATURE_DIM,
 )
@@ -300,13 +301,35 @@ class PipelineRunner:
                 final_matrix, n_runs=stability_runs, noise_std=0.01, seed=42,
             )
 
+        intervention_report = self._compute_intervention_report(snapshots)
+        narrative_governance = self._compute_narrative_governance(
+            stability=stability,
+            intervention_report=intervention_report,
+        )
+        if narrative_governance["mode"] != "full":
+            canvas_narrative = self._downgrade_narrative(
+                canvas_narrative,
+                narrative_governance,
+                fallback_prefix="Cross-domain summary",
+            )
+            reality_narrative = self._downgrade_narrative(
+                reality_narrative,
+                narrative_governance,
+                fallback_prefix="Reality assessment",
+            )
+
         # ---- Governance ----
         governance_flags = self._compute_governance_flags(
             data_sources, snapshots, sae_result, graph_result_full,
-            timeframe_context,
+            timeframe_context, intervention_report,
         )
         scorecard = self._compute_scorecard(
-            snapshots, sae_result, data_sources, stability, governance_flags,
+            snapshots,
+            sae_result,
+            data_sources,
+            stability,
+            governance_flags,
+            intervention_report,
         )
 
         interpretability_contract = {
@@ -341,11 +364,109 @@ class PipelineRunner:
             stability=stability,
             governance_flags=governance_flags,
             interpretability_scorecard=scorecard,
+            intervention_report=intervention_report,
+            narrative_governance=narrative_governance,
             interpretability_contract=interpretability_contract,
             interpretability_contract_summary=interpretability_contract_summary,
             run_id=run_id,
             run_timestamp=run_timestamp,
         )
+
+    @staticmethod
+    def _compute_intervention_report(snapshots: list[dict]) -> dict[str, Any]:
+        """Run intervention checks for each major alpha module."""
+        module_checks: list[dict[str, Any]] = []
+        for snap in snapshots:
+            block = snap.get("block_name", "unknown")
+            rr = np.asarray(snap.get("reality_regression", np.array([])), dtype=float)
+            if rr.size == 0:
+                module_checks.append({
+                    "module": block,
+                    "status": "fail",
+                    "reason": "missing_reality_regression",
+                    "expected_attribution": 0.0,
+                    "observed_delta": 0.0,
+                    "consistency_ratio": 0.0,
+                })
+                continue
+
+            top_idx = int(np.argmax(np.abs(rr)))
+            expected = float(abs(rr[top_idx]))
+            zeroed = rr.copy()
+            zeroed[top_idx] = 0.0
+            observed = float(abs(rr[top_idx] - zeroed[top_idx]))
+            ratio = float(observed / expected) if expected > 1e-12 else 0.0
+            passed = ratio >= 0.90
+            module_checks.append({
+                "module": block,
+                "intervention": f"zero_feature_{top_idx}",
+                "feature_index": top_idx,
+                "expected_attribution": round(expected, 6),
+                "observed_delta": round(observed, 6),
+                "consistency_ratio": round(ratio, 6),
+                "threshold": 0.90,
+                "status": "pass" if passed else "fail",
+            })
+
+        total = len(module_checks)
+        passed_n = sum(1 for c in module_checks if c.get("status") == "pass")
+        pass_rate = (passed_n / total) if total > 0 else 0.0
+        return {
+            "module_checks": module_checks,
+            "total_modules": total,
+            "passed_modules": passed_n,
+            "failed_modules": total - passed_n,
+            "pass_rate": round(float(pass_rate), 4),
+            "threshold": NARRATIVE_CONFIDENCE_THRESHOLDS["min_intervention_pass_rate"],
+            "status": "pass" if pass_rate >= NARRATIVE_CONFIDENCE_THRESHOLDS["min_intervention_pass_rate"] else "fail",
+        }
+
+    @staticmethod
+    def _compute_narrative_governance(
+        *,
+        stability: dict | None,
+        intervention_report: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Determine if narrative output can be rendered in full-confidence mode."""
+        reasons: list[str] = []
+        mean_cos = 0.0
+        if stability and stability.get("n_runs", 0) > 0:
+            mean_cos = float(stability.get("mean_cosine", 0.0))
+        if mean_cos < NARRATIVE_CONFIDENCE_THRESHOLDS["min_kernel_stability"]:
+            reasons.append(
+                f"kernel_stability={mean_cos:.3f} below {NARRATIVE_CONFIDENCE_THRESHOLDS['min_kernel_stability']:.2f}",
+            )
+
+        pass_rate = float(intervention_report.get("pass_rate", 0.0))
+        if pass_rate < NARRATIVE_CONFIDENCE_THRESHOLDS["min_intervention_pass_rate"]:
+            reasons.append(
+                f"intervention_pass_rate={pass_rate:.2%} below {NARRATIVE_CONFIDENCE_THRESHOLDS['min_intervention_pass_rate']:.0%}",
+            )
+
+        return {
+            "mode": "full" if not reasons else "low_confidence",
+            "confidence_ok": len(reasons) == 0,
+            "reasons": reasons,
+            "kernel_stability": round(mean_cos, 4),
+            "intervention_pass_rate": round(pass_rate, 4),
+        }
+
+    @staticmethod
+    def _downgrade_narrative(
+        narrative: str | None,
+        narrative_governance: dict[str, Any],
+        *,
+        fallback_prefix: str,
+    ) -> str:
+        """Return low-confidence explanatory mode narrative when thresholds fail."""
+        reasons = narrative_governance.get("reasons", [])
+        reason_text = "; ".join(reasons) if reasons else "confidence checks not satisfied"
+        if narrative:
+            return (
+                f"LOW-CONFIDENCE EXPLANATORY MODE — {reason_text}. "
+                f"Evidence summary only: {narrative}"
+            )
+        return f"LOW-CONFIDENCE EXPLANATORY MODE — {fallback_prefix} withheld: {reason_text}."
 
     # ------------------------------------------------------------------ #
     # Governance flags                                                     #
@@ -358,6 +479,7 @@ class PipelineRunner:
         sae_result: dict | None,
         graph_result: dict | None,
         timeframe_context: dict,
+        intervention_report: dict[str, Any] | None = None,
     ) -> list[GovernanceFlag]:
         """Auto-detect governance issues from pipeline outputs."""
         flags: list[GovernanceFlag] = []
@@ -455,6 +577,25 @@ class PipelineRunner:
                 detail=f"Blocks using synthetic data: {', '.join(synthetic_blocks)}.",
             ))
 
+        # GOV-006: Intervention mismatch
+        failed_modules: list[str] = []
+        if intervention_report:
+            for check in intervention_report.get("module_checks", []):
+                if check.get("status") == "fail":
+                    failed_modules.append(str(check.get("module", "unknown")))
+        if failed_modules:
+            code_info = GOVERNANCE_FLAG_CODES["GOV-006"]
+            flags.append(GovernanceFlag(
+                code="GOV-006",
+                label=code_info["label"],
+                description=code_info["description"],
+                severity=code_info["severity"],
+                detail=(
+                    "Modules failing intervention checks: "
+                    f"{', '.join(sorted(set(failed_modules)))}."
+                ),
+            ))
+
         return flags
 
     # ------------------------------------------------------------------ #
@@ -468,6 +609,7 @@ class PipelineRunner:
         data_sources: dict[str, str],
         stability: dict | None,
         governance_flags: list[dict],
+        intervention_report: dict[str, Any] | None = None,
     ) -> dict[str, ScorecardEntry]:
         """Compute the interpretability scorecard."""
         scorecard: dict[str, ScorecardEntry] = {}
@@ -542,6 +684,19 @@ class PipelineRunner:
             threshold=float(thresh["threshold"]),
             unit=thresh["unit"],
             passed=n_flags <= thresh["threshold"],
+            description=thresh["description"],
+        )
+
+        intervention_pct = 0.0
+        if intervention_report:
+            intervention_pct = float(intervention_report.get("pass_rate", 0.0) * 100.0)
+        thresh = SCORECARD_THRESHOLDS["intervention_consistency"]
+        scorecard["intervention_consistency"] = ScorecardEntry(
+            label=thresh["label"],
+            value=round(intervention_pct, 1),
+            threshold=float(thresh["threshold"]),
+            unit=thresh["unit"],
+            passed=intervention_pct >= float(thresh["threshold"]),
             description=thresh["description"],
         )
 

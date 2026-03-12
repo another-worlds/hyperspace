@@ -526,6 +526,20 @@ SCORECARD_THRESHOLDS: dict[str, dict] = {
         threshold=0,        # 0 = PASS; any flag = WARN
         description="Auto-detected data quality, bias, or coverage issues. 0 = no issues detected.",
     ),
+    "intervention_consistency": dict(
+        label="Intervention Consistency",
+        unit="%",
+        threshold=70.0,
+        description=(
+            "Share of alpha-scope modules where intervention deltas agree with "
+            "reported attribution strength. ≥70% = acceptable mechanistic faithfulness."
+        ),
+    ),
+}
+
+NARRATIVE_CONFIDENCE_THRESHOLDS: dict[str, float] = {
+    "min_kernel_stability": 0.75,
+    "min_intervention_pass_rate": 0.70,
 }
 
 # --------------------------------------------------------------------------- #
@@ -666,5 +680,14 @@ GOVERNANCE_FLAG_CODES: dict[str, dict] = {
             "inputs are illustrative only and must not be treated as empirical findings."
         ),
         severity="info",
+    ),
+    "GOV-006": dict(
+        label="Intervention Faithfulness Mismatch",
+        description=(
+            "Mechanistic intervention checks did not match attribution-derived "
+            "expectations for one or more alpha modules. Narrative outputs are "
+            "downgraded to low-confidence mode."
+        ),
+        severity="warning",
     ),
 }

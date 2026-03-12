@@ -64,6 +64,8 @@ def init_session_state() -> None:
             "noncompliant_modules": 0,
             "compliance_rate": 0.0,
         },
+        intervention_report={},
+        narrative_governance={"mode": "full", "confidence_ok": True, "reasons": []},
         # B1: Policy language mode toggle
         policy_language_mode=False,
         # A1: Per-kernel contest annotations dict[kernel_id -> str]
@@ -145,6 +147,8 @@ def reset_pipeline() -> None:
         "noncompliant_modules": 0,
         "compliance_rate": 0.0,
     }
+    st.session_state.intervention_report = {}
+    st.session_state.narrative_governance = {"mode": "full", "confidence_ok": True, "reasons": []}
     st.session_state.kernel_annotations = {}
     st.session_state.stakeholder_annotations = []
     st.session_state.counterfactual_result = None

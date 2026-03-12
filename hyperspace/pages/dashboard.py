@@ -55,6 +55,7 @@ def _compute_scorecard(
     data_sources: dict,
     stability: dict | None,
     governance_flags: list,
+    intervention_report: dict | None = None,
 ) -> dict:
     """Compute interpretability scorecard via canonical PipelineRunner logic.
 
@@ -67,6 +68,7 @@ def _compute_scorecard(
         data_sources=data_sources,
         stability=stability,
         governance_flags=governance_flags,
+        intervention_report=intervention_report,
     )
 
 
@@ -221,6 +223,8 @@ def run_pipeline() -> None:
         st.session_state.ukt_multirun_stability = result["stability"]
         st.session_state.governance_flags = result["governance_flags"]
         st.session_state.interpretability_scorecard = result["interpretability_scorecard"]
+        st.session_state.intervention_report = result.get("intervention_report", {})
+        st.session_state.narrative_governance = result.get("narrative_governance", {})
         st.session_state.interpretability_contract = result["interpretability_contract"]
         st.session_state.interpretability_contract_summary = result[
             "interpretability_contract_summary"
@@ -256,6 +260,8 @@ def _build_governance_report_markdown(
     reality_narrative: str | None,
     interpretability_contract: dict,
     interpretability_contract_summary: dict,
+    intervention_report: dict,
+    narrative_governance: dict,
 ) -> str:
     """Build exportable markdown governance report with compliance artifacts."""
     report_lines = [
@@ -290,6 +296,32 @@ def _build_governance_report_markdown(
                 f"interface_issues={len(module_report.get('interface_issues', []))}; "
                 f"payload_issues={len(module_report.get('payload_issues', []))}"
             )
+
+    report_lines.append("")
+    report_lines.append("## Mechanistic Intervention Checks")
+    if intervention_report:
+        report_lines.append(
+            f"- Status: {intervention_report.get('status', 'unknown')} | "
+            f"Pass rate: {float(intervention_report.get('pass_rate', 0.0)):.1%}"
+        )
+        for check in intervention_report.get("module_checks", []):
+            report_lines.append(
+                "- "
+                f"{check.get('module', 'unknown')}: {check.get('status', 'unknown')} "
+                f"(ratio={float(check.get('consistency_ratio', 0.0)):.2f}; "
+                f"expected={float(check.get('expected_attribution', 0.0)):.4f}; "
+                f"delta={float(check.get('observed_delta', 0.0)):.4f})"
+            )
+
+    if narrative_governance:
+        report_lines.append("")
+        report_lines.append("## Narrative Confidence Mode")
+        report_lines.append(
+            f"- Mode: {narrative_governance.get('mode', 'unknown')} | "
+            f"Confidence OK: {narrative_governance.get('confidence_ok', False)}"
+        )
+        for reason in narrative_governance.get("reasons", []):
+            report_lines.append(f"- Reason: {reason}")
 
     if governance_flags:
         report_lines.append("")
