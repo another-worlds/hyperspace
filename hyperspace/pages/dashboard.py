@@ -226,6 +226,20 @@ def run_pipeline() -> None:
             "interpretability_contract_summary"
         ]
 
+        # ---- Interpretability contract reports (UI parity with PipelineRunner) ----
+        interpretability_contract = {
+            "UniversalKnowledgeTensor": build_interpretable_report(
+                ukt, "UniversalKnowledgeTensor",
+            ),
+            "SemanticCanvas": build_interpretable_report(
+                ukt.canvas, "SemanticCanvas",
+            ),
+        }
+        st.session_state.interpretability_contract = interpretability_contract
+        st.session_state.interpretability_contract_summary = summarize_interpretable_reports(
+            interpretability_contract,
+        )
+
         status.update(label="Pipeline complete!", state="complete")
         st.session_state.pipeline_complete = True
 
