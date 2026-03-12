@@ -36,6 +36,7 @@ class TestPackageImports:
         "hyperspace.models.sparse_ae",
         "hyperspace.models.semantic_canvas",
         "hyperspace.models.semantic_narrator",
+        "hyperspace.models.cross_block_net",
         "hyperspace.viz.charts",
         "hyperspace.viz.kernel_viz",
     ])

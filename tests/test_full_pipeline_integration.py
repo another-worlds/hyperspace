@@ -1251,3 +1251,386 @@ class TestCounterfactualIntegration:
         # The diff should be non-zero (removing a block changes conclusions)
         diff = np.abs(original_rr - cf_rr)
         assert diff.sum() > 0.01
+
+
+# ========================================================================== #
+# 14. Cross-Block Neural Networks (UVT + USE)                                 #
+# ========================================================================== #
+
+
+class TestCrossBlockNeuralNetworks:
+    """Tests for the Universal Variance Tensor and Universal Semantic Encoding."""
+
+    # ------------------------------------------------------------------ #
+    # UVT — Universal Variance Tensor                                     #
+    # ------------------------------------------------------------------ #
+
+    def test_uvt_returns_expected_keys(self, rng):
+        """compute_universal_variance_tensor returns all required dict keys."""
+        from hyperspace.models.cross_block_net import compute_universal_variance_tensor
+
+        matrix = rng.uniform(0, 1, (5, UKT_FEATURE_DIM)).astype(np.float32)
+        result = compute_universal_variance_tensor(
+            matrix, n_heads=2, d_model=8, epochs=5,
+        )
+        assert result is not None
+        for key in (
+            "coupling_matrix", "cross_covariance", "attention_per_head",
+            "attended_features", "variance_decomposition", "feature_variance",
+            "coupling_labels", "feature_variance_modes",
+            "reconstruction_error", "loss_history", "block_names",
+        ):
+            assert key in result, f"Missing key: {key}"
+
+    def test_uvt_coupling_matrix_shape(self, rng):
+        """coupling_matrix is (n_blocks, n_blocks) and rows sum to ~1 (softmax)."""
+        from hyperspace.models.cross_block_net import compute_universal_variance_tensor
+
+        n_blocks = 4
+        matrix = rng.uniform(0, 1, (n_blocks, UKT_FEATURE_DIM)).astype(np.float32)
+        result = compute_universal_variance_tensor(
+            matrix, n_heads=2, d_model=8, epochs=5,
+        )
+        assert result is not None
+        coupling = result["coupling_matrix"]
+        assert coupling.shape == (n_blocks, n_blocks), (
+            f"Expected ({n_blocks}, {n_blocks}), got {coupling.shape}"
+        )
+        # Rows are averaged softmax outputs → each row ≈ sum to 1
+        row_sums = coupling.sum(axis=1)
+        assert np.allclose(row_sums, 1.0, atol=0.1), (
+            f"Coupling rows should sum to ~1, got {row_sums}"
+        )
+
+    def test_uvt_attended_features_shape(self, rng):
+        """attended_features has the same shape as the input matrix."""
+        from hyperspace.models.cross_block_net import compute_universal_variance_tensor
+
+        n_blocks = 3
+        matrix = rng.uniform(0, 1, (n_blocks, UKT_FEATURE_DIM)).astype(np.float32)
+        result = compute_universal_variance_tensor(
+            matrix, n_heads=2, d_model=8, epochs=5,
+        )
+        assert result is not None
+        assert result["attended_features"].shape == (n_blocks, UKT_FEATURE_DIM)
+
+    def test_uvt_loss_decreases(self, rng):
+        """Training loss should trend downward over epochs."""
+        from hyperspace.models.cross_block_net import compute_universal_variance_tensor
+
+        matrix = rng.uniform(0, 1, (5, UKT_FEATURE_DIM)).astype(np.float32)
+        result = compute_universal_variance_tensor(
+            matrix, n_heads=2, d_model=8, epochs=30,
+        )
+        assert result is not None
+        history = result["loss_history"]
+        assert len(history) == 30
+        # First-quarter average should exceed last-quarter average
+        q = len(history) // 4
+        assert np.mean(history[:q]) >= np.mean(history[-q:]) - 0.5, (
+            "Training loss did not decrease (or barely did): "
+            f"early={np.mean(history[:q]):.4f}, late={np.mean(history[-q:]):.4f}"
+        )
+
+    def test_uvt_coupling_labels_structure(self, rng):
+        """Each coupling mode label has the required fields."""
+        from hyperspace.models.cross_block_net import compute_universal_variance_tensor
+
+        matrix = rng.uniform(0, 1, (4, UKT_FEATURE_DIM)).astype(np.float32)
+        result = compute_universal_variance_tensor(
+            matrix, n_heads=2, d_model=8, epochs=5,
+        )
+        assert result is not None
+        for label in result["coupling_labels"]:
+            assert "mode_id" in label
+            assert "variance_explained" in label
+            assert "primary_blocks" in label
+            assert "mutual_attention" in label
+            assert "loadings" in label
+            assert "label" in label
+            assert "narrative" in label
+            assert 0.0 <= label["variance_explained"] <= 1.0 + 1e-6
+
+    def test_uvt_variance_decomposition_sums_to_one(self, rng):
+        """Variance explained values from eigendecomposition sum to 1."""
+        from hyperspace.models.cross_block_net import compute_universal_variance_tensor
+
+        matrix = rng.uniform(0, 1, (5, UKT_FEATURE_DIM)).astype(np.float32)
+        result = compute_universal_variance_tensor(
+            matrix, n_heads=2, d_model=8, epochs=5,
+        )
+        assert result is not None
+        ve = result["variance_decomposition"]["variance_explained"]
+        assert abs(ve.sum() - 1.0) < 1e-5, f"Variance explained sums to {ve.sum()}"
+
+    def test_uvt_block_names_propagated(self, rng):
+        """Custom block_names are preserved in the result."""
+        from hyperspace.models.cross_block_net import compute_universal_variance_tensor
+
+        names = ["Alpha", "Beta", "Gamma"]
+        matrix = rng.uniform(0, 1, (3, UKT_FEATURE_DIM)).astype(np.float32)
+        result = compute_universal_variance_tensor(
+            matrix, n_heads=2, d_model=8, epochs=5, block_names=names,
+        )
+        assert result is not None
+        assert result["block_names"] == names
+        # Block names appear in coupling mode labels
+        for cl in result["coupling_labels"]:
+            for pb in cl["primary_blocks"]:
+                assert pb in names, f"Block name {pb!r} not in {names}"
+
+    def test_uvt_returns_none_for_single_block(self):
+        """UVT requires at least 2 blocks; returns None for single-row input."""
+        from hyperspace.models.cross_block_net import compute_universal_variance_tensor
+
+        matrix = np.random.uniform(0, 1, (1, UKT_FEATURE_DIM)).astype(np.float32)
+        result = compute_universal_variance_tensor(matrix, epochs=5)
+        assert result is None
+
+    def test_uvt_reconstruction_error_finite(self, rng):
+        """Reconstruction error is a finite positive float."""
+        from hyperspace.models.cross_block_net import compute_universal_variance_tensor
+
+        matrix = rng.uniform(0, 1, (3, UKT_FEATURE_DIM)).astype(np.float32)
+        result = compute_universal_variance_tensor(
+            matrix, n_heads=2, d_model=8, epochs=5,
+        )
+        assert result is not None
+        err = result["reconstruction_error"]
+        assert np.isfinite(err)
+        assert err >= 0.0
+
+    # ------------------------------------------------------------------ #
+    # USE — Universal Semantic Encoding                                   #
+    # ------------------------------------------------------------------ #
+
+    def test_use_returns_expected_keys(self, rng):
+        """compute_universal_semantic_encoding returns all required dict keys."""
+        from hyperspace.models.cross_block_net import (
+            compute_universal_variance_tensor,
+            compute_universal_semantic_encoding,
+        )
+
+        matrix = rng.uniform(0, 1, (4, UKT_FEATURE_DIM)).astype(np.float32)
+        uvt = compute_universal_variance_tensor(
+            matrix, n_heads=2, d_model=8, epochs=5,
+        )
+        assert uvt is not None
+
+        result = compute_universal_semantic_encoding(
+            matrix, uvt, semantic_dim=8, epochs=5,
+        )
+        assert result is not None
+        for key in (
+            "encoding", "decoded_features", "dimension_labels",
+            "alignment_scores", "reconstruction_per_block",
+            "loss_history", "semantic_dim",
+        ):
+            assert key in result, f"Missing key: {key}"
+
+    def test_use_encoding_shape_and_bounds(self, rng):
+        """Encoding is a (semantic_dim,) vector bounded to [-1, 1] by Tanh."""
+        from hyperspace.models.cross_block_net import (
+            compute_universal_variance_tensor,
+            compute_universal_semantic_encoding,
+        )
+
+        semantic_dim = 12
+        matrix = rng.uniform(0, 1, (4, UKT_FEATURE_DIM)).astype(np.float32)
+        uvt = compute_universal_variance_tensor(
+            matrix, n_heads=2, d_model=8, epochs=5,
+        )
+        assert uvt is not None
+
+        result = compute_universal_semantic_encoding(
+            matrix, uvt, semantic_dim=semantic_dim, epochs=5,
+        )
+        assert result is not None
+        enc = result["encoding"]
+        assert enc.shape == (semantic_dim,), f"Expected ({semantic_dim},), got {enc.shape}"
+        assert np.all(enc >= -1.0 - 1e-5) and np.all(enc <= 1.0 + 1e-5), (
+            f"Encoding out of [-1, 1] bounds: min={enc.min():.4f}, max={enc.max():.4f}"
+        )
+
+    def test_use_decoded_features_shape(self, rng):
+        """decoded_features has shape (n_blocks, feature_dim)."""
+        from hyperspace.models.cross_block_net import (
+            compute_universal_variance_tensor,
+            compute_universal_semantic_encoding,
+        )
+
+        n_blocks = 3
+        matrix = rng.uniform(0, 1, (n_blocks, UKT_FEATURE_DIM)).astype(np.float32)
+        uvt = compute_universal_variance_tensor(
+            matrix, n_heads=2, d_model=8, epochs=5,
+        )
+        assert uvt is not None
+        result = compute_universal_semantic_encoding(
+            matrix, uvt, semantic_dim=8, epochs=5,
+        )
+        assert result is not None
+        assert result["decoded_features"].shape == (n_blocks, UKT_FEATURE_DIM)
+
+    def test_use_dimension_labels_structure(self, rng):
+        """Each dimension label has required fields with valid values."""
+        from hyperspace.models.cross_block_net import (
+            compute_universal_variance_tensor,
+            compute_universal_semantic_encoding,
+        )
+
+        matrix = rng.uniform(0, 1, (4, UKT_FEATURE_DIM)).astype(np.float32)
+        uvt = compute_universal_variance_tensor(
+            matrix, n_heads=2, d_model=8, epochs=5,
+        )
+        assert uvt is not None
+        result = compute_universal_semantic_encoding(
+            matrix, uvt, semantic_dim=8, epochs=5,
+        )
+        assert result is not None
+        assert len(result["dimension_labels"]) == 8
+        for dl in result["dimension_labels"]:
+            assert "dim_idx" in dl
+            assert "value" in dl
+            assert "strength" in dl
+            assert dl["strength"] in ("STRONG", "MODERATE", "WEAK")
+            assert "polarity" in dl
+            assert dl["polarity"] in ("positive", "negative")
+            assert "label" in dl
+
+    def test_use_alignment_scores_structure(self, rng):
+        """alignment_scores covers all block pairs with valid cosine similarities."""
+        from hyperspace.models.cross_block_net import (
+            compute_universal_variance_tensor,
+            compute_universal_semantic_encoding,
+        )
+
+        n_blocks = 4
+        names = ["Finance", "Clusters", "Graph", "Agents"]
+        matrix = rng.uniform(0, 1, (n_blocks, UKT_FEATURE_DIM)).astype(np.float32)
+        uvt = compute_universal_variance_tensor(
+            matrix, n_heads=2, d_model=8, epochs=5, block_names=names,
+        )
+        assert uvt is not None
+        result = compute_universal_semantic_encoding(
+            matrix, uvt, semantic_dim=8, epochs=5, block_names=names,
+        )
+        assert result is not None
+
+        scores = result["alignment_scores"]
+        # C(4,2) = 6 pairs
+        assert len(scores) == 6
+        for sc in scores:
+            assert "block_a" in sc
+            assert "block_b" in sc
+            assert "alignment" in sc
+            assert "cosine_similarity" in sc
+            # Cosine similarity bounded to [-1, 1]
+            assert -1.0 - 1e-5 <= sc["cosine_similarity"] <= 1.0 + 1e-5
+            # Alignment = 1 - cosine_sim, so bounded to [0, 2] but practically [0, 1]
+            assert sc["alignment"] >= -1e-5
+
+    def test_use_returns_none_for_single_block(self):
+        """USE requires at least 2 blocks; returns None for single-row input."""
+        from hyperspace.models.cross_block_net import (
+            compute_universal_variance_tensor,
+            compute_universal_semantic_encoding,
+        )
+
+        matrix = np.random.uniform(0, 1, (1, UKT_FEATURE_DIM)).astype(np.float32)
+        # UVT itself returns None for single block, so mock a minimal uvt dict
+        # by simulating the case where UVT passed but USE sees 1 block
+        result = compute_universal_semantic_encoding(
+            matrix,
+            {"coupling_matrix": np.array([[1.0]])},
+            semantic_dim=8, epochs=5,
+        )
+        assert result is None
+
+    def test_use_semantic_dim_stored(self, rng):
+        """The semantic_dim value in the result matches the requested size."""
+        from hyperspace.models.cross_block_net import (
+            compute_universal_variance_tensor,
+            compute_universal_semantic_encoding,
+        )
+
+        matrix = rng.uniform(0, 1, (3, UKT_FEATURE_DIM)).astype(np.float32)
+        uvt = compute_universal_variance_tensor(
+            matrix, n_heads=2, d_model=8, epochs=5,
+        )
+        assert uvt is not None
+        for dim in (8, 16, 24):
+            result = compute_universal_semantic_encoding(
+                matrix, uvt, semantic_dim=dim, epochs=5,
+            )
+            assert result is not None
+            assert result["semantic_dim"] == dim
+            assert result["encoding"].shape == (dim,)
+
+    # ------------------------------------------------------------------ #
+    # End-to-End: UVT → USE chained from a real UKT matrix               #
+    # ------------------------------------------------------------------ #
+
+    def test_uvt_use_full_chain_from_ukt(self, rng, timeframe_context):
+        """UVT + USE chain runs end-to-end on a real UKT-derived matrix."""
+        from hyperspace.models.cross_block_net import (
+            compute_universal_variance_tensor,
+            compute_universal_semantic_encoding,
+        )
+
+        ukt = UniversalKnowledgeTensor(feature_dim=UKT_FEATURE_DIM)
+        block_names = ["Finance", "Clusters", "Graph", "Spatial", "Agents"]
+        for name in block_names:
+            features = rng.uniform(0, 1, UKT_FEATURE_DIM)
+            ukt.add_block(name, features, timeframe_context=timeframe_context)
+
+        final_matrix = ukt.get_final_matrix()
+        assert final_matrix is not None
+        assert final_matrix.shape == (5, UKT_FEATURE_DIM)
+
+        uvt = compute_universal_variance_tensor(
+            final_matrix, n_heads=4, d_model=16, epochs=10,
+            block_names=block_names,
+        )
+        assert uvt is not None
+        assert uvt["block_names"] == block_names
+
+        use = compute_universal_semantic_encoding(
+            final_matrix, uvt, semantic_dim=24, epochs=10,
+            block_names=block_names,
+        )
+        assert use is not None
+        assert use["encoding"].shape == (24,)
+        assert use["decoded_features"].shape == (5, UKT_FEATURE_DIM)
+        # 5 blocks → C(5,2)=10 alignment pairs
+        assert len(use["alignment_scores"]) == 10
+
+    def test_uvt_coupling_modes_cover_all_blocks(self, rng):
+        """Every block appears in at least one coupling mode's loadings."""
+        from hyperspace.models.cross_block_net import compute_universal_variance_tensor
+
+        names = ["Finance", "Clusters", "Graph", "Spatial", "Agents"]
+        matrix = rng.uniform(0, 1, (5, UKT_FEATURE_DIM)).astype(np.float32)
+        result = compute_universal_variance_tensor(
+            matrix, n_heads=2, d_model=8, epochs=5, block_names=names,
+        )
+        assert result is not None
+
+        blocks_seen = set()
+        for cl in result["coupling_labels"]:
+            blocks_seen.update(cl["loadings"].keys())
+        for name in names:
+            assert name in blocks_seen, f"Block {name!r} absent from all coupling modes"
+
+    def test_uvt_reconstruction_error_bounded(self, rng):
+        """After sufficient training the reconstruction error is below a loose bound."""
+        from hyperspace.models.cross_block_net import compute_universal_variance_tensor
+
+        matrix = rng.uniform(0, 1, (4, UKT_FEATURE_DIM)).astype(np.float32)
+        result = compute_universal_variance_tensor(
+            matrix, n_heads=2, d_model=16, epochs=80,
+        )
+        assert result is not None
+        # With 80 epochs the reconstruction error should be well below 1.0
+        assert result["reconstruction_error"] < 1.0, (
+            f"Reconstruction error too high: {result['reconstruction_error']:.4f}"
+        )

@@ -133,8 +133,53 @@ def render() -> None:
             reality_narrative = st.session_state.get("reality_narrative")
             if canvas_narrative:
                 st.success(f"**System Summary:** {canvas_narrative}")
+                # Provenance: surface the concrete features behind the narrative
+                all_evidence = []
+                for entry in canvas_state.get("entries", []):
+                    for ev in getattr(entry, "feature_evidence", []):
+                        all_evidence.append(dict(ev, block=entry.block_name))
+                if all_evidence:
+                    with st.expander(
+                        "Evidence: features driving this summary", expanded=False
+                    ):
+                        st.caption(
+                            "Top features (by absolute loading) from each pipeline block, "
+                            "linked to the canvas dimensions they influence. "
+                            "Use feature indices to trace back to kernel labels below."
+                        )
+                        for ev in all_evidence:
+                            dim_list = ", ".join(f"`{d}`" for d in ev.get("canvas_dims", []))
+                            st.markdown(
+                                f"- **{ev['name']}** (idx {ev['index']}, "
+                                f"`{ev['region']}`, source: `{ev['source']}`) — "
+                                f"loading {ev['loading']:+.4f} · block: {ev['block']} "
+                                f"· dims: {dim_list}"
+                            )
             if reality_narrative:
                 st.info(f"**Reality Assessment:** {reality_narrative}")
+                # Reuse same evidence block for reality narrative
+                all_evidence_r = []
+                for entry in canvas_state.get("entries", []):
+                    for ev in getattr(entry, "feature_evidence", []):
+                        all_evidence_r.append(dict(ev, block=entry.block_name))
+                if all_evidence_r:
+                    with st.expander(
+                        "Evidence: features driving the reality assessment",
+                        expanded=False,
+                    ):
+                        st.caption(
+                            "Same feature provenance as system summary. "
+                            "Cross-reference with 'Feature Importance by Domain Region' "
+                            "chart below for full 80-feature detail."
+                        )
+                        for ev in all_evidence_r:
+                            dim_list = ", ".join(f"`{d}`" for d in ev.get("canvas_dims", []))
+                            st.markdown(
+                                f"- **{ev['name']}** (idx {ev['index']}, "
+                                f"`{ev['region']}`, source: `{ev['source']}`) — "
+                                f"loading {ev['loading']:+.4f} · block: {ev['block']} "
+                                f"· dims: {dim_list}"
+                            )
 
         st.markdown("---")
 
@@ -145,12 +190,16 @@ def render() -> None:
         if sae_result:
             act = sae_result.get("concept_activations")
             if act is not None and act.shape[0] > 1:
-                st.markdown("### Concept Activation per Data Domain")
+                st.markdown("### Structural Feature Patterns")
                 st.caption(
                     "Each row is a pipeline block (Finance, Clusters, Graph, etc.). "
-                    "Each column is a named concept discovered by the Sparse Autoencoder. "
-                    "Bright cells = that concept is strongly active in that block. "
-                    "Concepts active across multiple blocks indicate cross-domain patterns."
+                    "Each column is a structural pattern identified by the Sparse Autoencoder "
+                    "across the full 80-dimensional feature space. "
+                    "Bright cells = that pattern is strongly active in that block. "
+                    "Patterns active across multiple blocks indicate cross-domain structure. "
+                    f"**Note:** Computed from N={act.shape[0]} blocks (single-run, augmented training). "
+                    "Treat as a structural decomposition of the current run, "
+                    "not a statistically robust concept discovery."
                 )
 
                 # Use concept labels where available
@@ -180,12 +229,12 @@ def render() -> None:
                 st.plotly_chart(fig_act, use_container_width=True,
                                 key="interp_concept_activations")
 
-            # Active concept summaries (plain-English)
+            # Active pattern summaries (plain-English)
             active_concepts = [
                 cl for cl in sae_result.get("concept_labels", []) if cl["active"]
             ]
             if active_concepts:
-                st.markdown("**Active concepts — plain-language summaries:**")
+                st.markdown("**Active structural patterns — plain-language summaries:**")
                 from hyperspace.pages.governance import render_annotation_widget
                 for cl in active_concepts:
                     with st.expander(cl.get("label", cl["concept_id"])):
@@ -223,7 +272,7 @@ def render() -> None:
         else:
             # Standard kernel view with contest/annotate widgets
             st.markdown("---")
-            st.markdown("### Discovered Kernels — Cross-Domain Patterns")
+            st.markdown("### SVD Kernels — Cross-Domain Covariance Patterns")
             stability = st.session_state.get("ukt_multirun_stability")
             from hyperspace.pages.governance import (
                 render_contest_popover,

@@ -52,6 +52,16 @@ CANVAS_DIMENSIONS: list[dict[str, str]] = [
      "desc": "Net positive alignment and cooperative dynamics between agents."},
     {"key": "competition_signal",    "label": "Competition Signal",
      "desc": "Net negative alignment, rivalry, and zero-sum dynamics."},
+    # Cross-domain dimensions — receive contributions from multiple regions
+    {"key": "finance_geopolitical_coupling", "label": "Finance–Geopolitical Coupling",
+     "desc": "Co-activation of market momentum and geopolitical network structure — "
+             "indicates whether financial stress and political instability move together."},
+    {"key": "information_power_dynamics",    "label": "Information–Power Dynamics",
+     "desc": "Interaction between narrative diversity and agent power concentration — "
+             "reveals whether information fragmentation tracks with power shifts."},
+    {"key": "spatial_systemic_risk",         "label": "Spatial–Systemic Risk",
+     "desc": "Joint signal from geospatial stress indicators and structural network "
+             "centrality — captures geographically-grounded systemic risk."},
 ]
 
 CANVAS_DIM = len(CANVAS_DIMENSIONS)
@@ -62,24 +72,30 @@ REGION_TO_CANVAS: dict[str, list[tuple[int, float]]] = {
         (0, 1.0),   # market_momentum
         (1, 1.0),   # temporal_memory
         (2, 0.8),   # volatility_regime
+        (12, 0.7),  # finance_geopolitical_coupling (cross-domain)
     ],
     "semantic-embedding": [
         (3, 1.0),   # information_focus
         (4, 1.0),   # narrative_diversity
+        (13, 0.8),  # information_power_dynamics (cross-domain)
     ],
     "structural-centrality": [
         (5, 1.0),   # alliance_polarity
         (6, 1.0),   # network_cohesion
         (7, 0.5),   # power_concentration
+        (12, 0.7),  # finance_geopolitical_coupling (cross-domain)
+        (14, 0.5),  # spatial_systemic_risk (cross-domain)
     ],
     "dynamic-agent": [
         (7, 0.5),   # power_concentration (shared with structural)
         (10, 1.0),  # cooperation_signal
         (11, 1.0),  # competition_signal
+        (13, 0.6),  # information_power_dynamics (cross-domain)
     ],
     "geospatial-kernel": [
         (8, 1.0),   # geographic_coupling
         (9, 1.0),   # systemic_stress
+        (14, 0.9),  # spatial_systemic_risk (cross-domain)
     ],
 }
 

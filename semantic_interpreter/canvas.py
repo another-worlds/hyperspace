@@ -43,6 +43,7 @@ class CanvasEntry:
     active_concepts: int
     dominant_dimensions: list[str]   # top-2 canvas dimension keys
     interpretation: str              # short algorithmic interpretation
+    feature_evidence: list[dict] = field(default_factory=list)  # provenance trace
 
 
 @dataclass
@@ -98,19 +99,15 @@ class SemanticCanvas:
         coords = np.zeros(self.n_dims)
         canvas_targets = self.region_mapping.get(region_name, [])
 
-        if sae_result is not None:
-            mean_act = sae_result["mean_activation"]
-            concept_energy = float(mean_act.sum()) + 1e-8
-            feature_energy = float(np.abs(features).sum()) + 1e-8
-            for canvas_idx, weight in canvas_targets:
-                if canvas_idx < self.n_dims:
-                    coords[canvas_idx] += weight * concept_energy / feature_energy
-        else:
-            feature_energy = float(np.abs(features).sum()) + 1e-8
-            dim = max(len(features), 1)
-            for canvas_idx, weight in canvas_targets:
-                if canvas_idx < self.n_dims:
-                    coords[canvas_idx] += weight * (feature_energy / dim)
+        # Always use feature-energy projection for canvas coordinates.
+        # SAE mean_activation is trained on augmented single-run samples (N≈4)
+        # and is not statistically reliable for coordinate computation.
+        # SAE result is retained only for concept_activations (heatmap visualization).
+        feature_energy = float(np.abs(features).sum()) + 1e-8
+        dim = max(len(features), 1)
+        for canvas_idx, weight in canvas_targets:
+            if canvas_idx < self.n_dims:
+                coords[canvas_idx] += weight * (feature_energy / dim)
 
         # Normalize to [0, 1]
         max_val = coords.max()
