@@ -56,6 +56,14 @@ def init_session_state() -> None:
         # Keys: feature_traceability, kernel_stability, concept_activation_rate,
         #       data_source_diversity, governance_flags_count
         interpretability_scorecard={},
+        # Interpretability contract reports
+        interpretability_contract={},
+        interpretability_contract_summary={
+            "total_modules": 0,
+            "compliant_modules": 0,
+            "noncompliant_modules": 0,
+            "compliance_rate": 0.0,
+        },
         # B1: Policy language mode toggle
         policy_language_mode=False,
         # A1: Per-kernel contest annotations dict[kernel_id -> str]
@@ -130,6 +138,13 @@ def reset_pipeline() -> None:
     st.session_state.run_timestamp = None
     st.session_state.governance_flags = []
     st.session_state.interpretability_scorecard = {}
+    st.session_state.interpretability_contract = {}
+    st.session_state.interpretability_contract_summary = {
+        "total_modules": 0,
+        "compliant_modules": 0,
+        "noncompliant_modules": 0,
+        "compliance_rate": 0.0,
+    }
     st.session_state.kernel_annotations = {}
     st.session_state.stakeholder_annotations = []
     st.session_state.counterfactual_result = None

@@ -1128,6 +1128,36 @@ class TestPipelineRunner:
         assert canvas is not None
         assert len(canvas.entries) == 5
 
+    def test_pipeline_runner_reports_interpretability_contract(
+        self, rng, synthetic_spatial_data, synthetic_agreement_matrix, timeframe_context,
+    ):
+        runner = PipelineRunner()
+        result = runner.run(
+            finance_result=self._make_synthetic_finance(rng),
+            cluster_result=self._make_synthetic_clusters(rng),
+            agreement_matrix=synthetic_agreement_matrix,
+            spatial_data=synthetic_spatial_data,
+            timeframe_context=timeframe_context,
+            sim_steps=10,
+            sae_epochs=20,
+            stability_runs=2,
+        )
+        contract = result["interpretability_contract"]
+        assert "UniversalKnowledgeTensor" in contract
+        assert contract["UniversalKnowledgeTensor"]["compliant"] is True
+        assert contract["UniversalKnowledgeTensor"]["interface_issues"] == []
+        assert contract["UniversalKnowledgeTensor"]["payload_issues"] == []
+        assert "SemanticCanvas" in contract
+        assert contract["SemanticCanvas"]["compliant"] is True
+        assert contract["SemanticCanvas"]["interface_issues"] == []
+        assert contract["SemanticCanvas"]["payload_issues"] == []
+
+        summary = result["interpretability_contract_summary"]
+        assert summary["total_modules"] == 2
+        assert summary["compliant_modules"] == 2
+        assert summary["noncompliant_modules"] == 0
+        assert summary["compliance_rate"] == 1.0
+
     def test_pipeline_runner_progress_callback(
         self, rng, synthetic_spatial_data, synthetic_agreement_matrix, timeframe_context,
     ):
