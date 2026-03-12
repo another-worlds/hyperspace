@@ -120,3 +120,86 @@ class SemanticCanvas(_StandaloneCanvas):
             dimensions=_build_hyperspace_dimensions(),
             region_mapping=REGION_TO_CANVAS,
         )
+
+    # ------------------------------------------------------------------ #
+    # Interpretability contract methods                                    #
+    # ------------------------------------------------------------------ #
+
+    def export_latent_units(self) -> dict[str, object]:
+        """Export per-layer semantic coordinates as latent units."""
+        return {
+            "dimensions": [d.key for d in self.dimensions],
+            "entries": [
+                {
+                    "step": int(e.step),
+                    "block_name": e.block_name,
+                    "dominant_dimensions": list(e.dominant_dimensions),
+                    "coordinates": np.asarray(e.coordinates).tolist(),
+                }
+                for e in self.entries
+            ],
+        }
+
+    def export_feature_attributions(
+        self,
+        input_batch: object | None = None,
+    ) -> dict[str, object]:
+        """Export canvas-level attributions from cumulative semantic state."""
+        del input_batch  # Canvas attribution is state-based.
+        state = self.get_accumulated_state()
+        coords = np.asarray(state.get("coordinates", []), dtype=float)
+        if coords.size == 0:
+            return {"attributions": []}
+
+        top_idx = np.argsort(np.abs(coords))[-5:][::-1]
+        attributions = []
+        for idx in top_idx:
+            i = int(idx)
+            dim = self.dimensions[i]
+            attributions.append({
+                "index": i,
+                "key": dim.key,
+                "label": dim.label,
+                "value": float(coords[i]),
+            })
+        return {"attributions": attributions}
+
+    def export_alignment_report(
+        self,
+        reference_modalities: list[str] | None = None,
+    ) -> dict[str, object]:
+        """Export modality→dimension mapping as an alignment report."""
+        del reference_modalities  # Not used for canvas-level mapping.
+        mapping: dict[str, list[dict[str, object]]] = {}
+        for region, links in self.region_mapping.items():
+            mapping[region] = [
+                {
+                    "dimension_key": self.dimensions[idx].key,
+                    "weight": float(weight),
+                }
+                for idx, weight in links
+                if idx < self.n_dims
+            ]
+
+        return {
+            "region_to_dimensions": mapping,
+            "n_entries": len(self.entries),
+        }
+
+    def explain_prediction(
+        self,
+        context: dict[str, object] | None = None,
+    ) -> dict[str, object]:
+        """Return a structured explanation for current canvas state."""
+        state = self.get_accumulated_state()
+        dom = state.get("dominant_narrative", [])
+        summary = "No semantic narrative available."
+        if dom:
+            summary = "Dominant semantic dimensions: " + ", ".join(
+                f"{d['label']} ({d['value']:.2f})" for d in dom[:3]
+            )
+        return {
+            "summary": summary,
+            "dominant_narrative": dom,
+            "context": context or {},
+        }

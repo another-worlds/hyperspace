@@ -254,12 +254,96 @@ class TestModuleAPIs:
         assert hasattr(types, "BlockResult")
         assert hasattr(types, "SnapshotResult")
         assert hasattr(types, "PipelineResult")
+        assert hasattr(types, "InterpretableModule")
         assert hasattr(types, "GovernanceFlag")
         assert hasattr(types, "ScorecardEntry")
+        assert hasattr(types, "InterpretabilityContractReport")
+        assert hasattr(types, "InterpretabilityContractSummary")
         assert hasattr(types, "StabilityResult")
         assert hasattr(types, "validate_block_result")
         assert hasattr(types, "validate_snapshot")
+        assert hasattr(types, "validate_interpretable_module")
+        assert hasattr(types, "validate_interpretable_payload")
+        assert hasattr(types, "build_interpretable_report")
+        assert hasattr(types, "summarize_interpretable_reports")
 
+    def test_ukt_implements_interpretable_contract(self):
+        from hyperspace.core.types import validate_interpretable_module
+        from hyperspace.models.knowledge_matrix import UniversalKnowledgeTensor
+
+        ukt = UniversalKnowledgeTensor()
+        warnings = validate_interpretable_module(ukt, "UniversalKnowledgeTensor")
+        assert warnings == []
+
+    def test_canvas_implements_interpretable_contract(self):
+        from hyperspace.core.types import validate_interpretable_module
+        from hyperspace.models.semantic_canvas import SemanticCanvas
+
+        canvas = SemanticCanvas()
+        warnings = validate_interpretable_module(canvas, "SemanticCanvas")
+        assert warnings == []
+
+
+
+    def test_ukt_interpretable_payload_valid(self):
+        from hyperspace.core.types import validate_interpretable_payload
+        from hyperspace.models.knowledge_matrix import UniversalKnowledgeTensor
+
+        issues = validate_interpretable_payload(
+            UniversalKnowledgeTensor(), "UniversalKnowledgeTensor",
+        )
+        assert issues == []
+
+    def test_canvas_interpretable_payload_valid(self):
+        from hyperspace.core.types import validate_interpretable_payload
+        from hyperspace.models.semantic_canvas import SemanticCanvas
+
+        issues = validate_interpretable_payload(SemanticCanvas(), "SemanticCanvas")
+        assert issues == []
+
+    def test_build_interpretable_report_structure(self):
+        from hyperspace.core.types import build_interpretable_report
+        from hyperspace.models.knowledge_matrix import UniversalKnowledgeTensor
+
+        report = build_interpretable_report(
+            UniversalKnowledgeTensor(), "UniversalKnowledgeTensor",
+        )
+        assert report["compliant"] is True
+        assert report["interface_issues"] == []
+        assert report["payload_issues"] == []
+
+    def test_summarize_interpretable_reports(self):
+        from hyperspace.core.types import summarize_interpretable_reports
+
+        summary = summarize_interpretable_reports({
+            "A": {"compliant": True, "interface_issues": [], "payload_issues": []},
+            "B": {"compliant": False, "interface_issues": ["x"], "payload_issues": []},
+        })
+        assert summary["total_modules"] == 2
+        assert summary["compliant_modules"] == 1
+        assert summary["noncompliant_modules"] == 1
+        assert summary["compliance_rate"] == 0.5
+    def test_validate_interpretable_payload_catches_bad_shapes(self):
+        from hyperspace.core.types import validate_interpretable_payload
+
+        class _BadModule:
+            def export_latent_units(self):
+                return []
+
+            def export_feature_attributions(self, input_batch=None):
+                del input_batch
+                return {"attributions": "not_a_list"}
+
+            def export_alignment_report(self, reference_modalities=None):
+                del reference_modalities
+                return "bad"
+
+            def explain_prediction(self, context=None):
+                del context
+                return {"not_summary": "missing"}
+
+        issues = validate_interpretable_payload(_BadModule(), "BadModule")
+        assert len(issues) >= 3
     def test_core_pipeline_api(self):
         from hyperspace.core import pipeline
         assert hasattr(pipeline, "PipelineRunner")

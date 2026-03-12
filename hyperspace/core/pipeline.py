@@ -31,6 +31,8 @@ from hyperspace.core.types import (
     PipelineResult,
     ScorecardEntry,
     validate_block_result,
+    build_interpretable_report,
+    summarize_interpretable_reports,
 )
 from hyperspace.models.knowledge_matrix import (
     UniversalKnowledgeTensor,
@@ -307,6 +309,18 @@ class PipelineRunner:
             snapshots, sae_result, data_sources, stability, governance_flags,
         )
 
+        interpretability_contract = {
+            "UniversalKnowledgeTensor": build_interpretable_report(
+                ukt, "UniversalKnowledgeTensor",
+            ),
+            "SemanticCanvas": build_interpretable_report(
+                ukt.canvas, "SemanticCanvas",
+            ),
+        }
+        interpretability_contract_summary = summarize_interpretable_reports(
+            interpretability_contract,
+        )
+
         return PipelineResult(
             snapshots=snapshots,
             final_matrix=final_matrix,
@@ -327,6 +341,8 @@ class PipelineRunner:
             stability=stability,
             governance_flags=governance_flags,
             interpretability_scorecard=scorecard,
+            interpretability_contract=interpretability_contract,
+            interpretability_contract_summary=interpretability_contract_summary,
             run_id=run_id,
             run_timestamp=run_timestamp,
         )

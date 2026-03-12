@@ -365,3 +365,107 @@ class UniversalKnowledgeTensor:
 
     def get_latest_snapshot(self) -> dict | None:
         return self.snapshots[-1] if self.snapshots else None
+
+    def export_latent_units(self) -> dict[str, object]:
+        """Return a machine-readable export of the latest latent units."""
+        latest = self.get_latest_snapshot()
+        if latest is None:
+            return {"kernel_count": 0, "kernels": [], "canvas": None}
+
+        canvas_state = self.canvas.get_accumulated_state()
+        kernels = [
+            {
+                "kernel_id": k.get("kernel_id"),
+                "importance": float(k.get("importance", 0.0)),
+                "dominant_block": k.get("dominant_block"),
+                "dominant_region": k.get("dominant_region"),
+                "top_feature_indices": k.get("top_feature_indices", []),
+            }
+            for k in latest.get("kernel_labels", [])
+        ]
+        return {
+            "kernel_count": len(kernels),
+            "kernels": kernels,
+            "canvas": {
+                "coordinates": np.asarray(canvas_state.get("coordinates", [])).tolist(),
+                "dominant_narrative": canvas_state.get("dominant_narrative", []),
+            },
+        }
+
+    def export_feature_attributions(
+        self,
+        input_batch: object | None = None,
+    ) -> dict[str, object]:
+        """Return top feature attributions from reality regression."""
+        del input_batch  # UKT attribution is snapshot-level, not per-input.
+        latest = self.get_latest_snapshot()
+        if latest is None:
+            return {"attributions": []}
+
+        rr = latest.get("reality_regression")
+        if rr is None:
+            return {"attributions": []}
+
+        rr = np.asarray(rr)
+        top_idx = np.argsort(np.abs(rr))[-10:][::-1]
+        feature_meta = latest.get("feature_meta", {})
+        attributions = []
+        for idx in top_idx:
+            i = int(idx)
+            attributions.append({
+                "index": i,
+                "name": _feature_name(i, feature_meta),
+                "region": _region_for_index(i),
+                "value": float(rr[i]),
+                "abs_value": float(abs(rr[i])),
+            })
+        return {"attributions": attributions}
+
+    def export_alignment_report(
+        self,
+        reference_modalities: list[str] | None = None,
+    ) -> dict[str, object]:
+        """Return a modality alignment summary from latest kernel structure."""
+        latest = self.get_latest_snapshot()
+        if latest is None:
+            return {"modalities": [], "kernel_region_coverage": {}, "n_kernels": 0}
+
+        labels = latest.get("kernel_labels", [])
+        modalities = sorted({k.get("dominant_block", "unknown") for k in labels})
+        if reference_modalities:
+            allowed = set(reference_modalities)
+            modalities = [m for m in modalities if m in allowed]
+
+        region_coverage: dict[str, float] = {}
+        for k in labels:
+            region = k.get("dominant_region", "unknown")
+            region_coverage[region] = region_coverage.get(region, 0.0) + float(
+                k.get("importance", 0.0),
+            )
+
+        return {
+            "modalities": modalities,
+            "kernel_region_coverage": region_coverage,
+            "n_kernels": int(latest.get("n_kernels", 0)),
+        }
+
+    def explain_prediction(
+        self,
+        context: dict[str, object] | None = None,
+    ) -> dict[str, object]:
+        """Return structured explanations for the latest UKT state."""
+        latest = self.get_latest_snapshot()
+        if latest is None:
+            return {"summary": "No UKT snapshots available.", "context": context or {}}
+
+        labels = latest.get("kernel_labels", [])
+        top_kernel = max(labels, key=lambda x: x.get("importance", 0.0)) if labels else None
+        return {
+            "summary": latest.get("report", ""),
+            "top_kernel": {
+                "kernel_id": top_kernel.get("kernel_id") if top_kernel else None,
+                "label": top_kernel.get("label") if top_kernel else None,
+                "narrative": top_kernel.get("narrative") if top_kernel else None,
+            },
+            "context": context or {},
+        }

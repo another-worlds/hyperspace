@@ -19,6 +19,10 @@ from hyperspace.models.knowledge_matrix import (
 )
 from hyperspace.viz.charts import source_badge
 from hyperspace.core.pipeline import PipelineRunner
+from hyperspace.core.types import (
+    build_interpretable_report,
+    summarize_interpretable_reports,
+)
 
 
 # --------------------------------------------------------------------------- #
@@ -615,6 +619,20 @@ def run_pipeline() -> None:
             governance_flags=gov_flags,
         )
         st.session_state.interpretability_scorecard = scorecard
+
+        # ---- Interpretability contract reports (UI parity with PipelineRunner) ----
+        interpretability_contract = {
+            "UniversalKnowledgeTensor": build_interpretable_report(
+                ukt, "UniversalKnowledgeTensor",
+            ),
+            "SemanticCanvas": build_interpretable_report(
+                ukt.canvas, "SemanticCanvas",
+            ),
+        }
+        st.session_state.interpretability_contract = interpretability_contract
+        st.session_state.interpretability_contract_summary = summarize_interpretable_reports(
+            interpretability_contract,
+        )
 
         status.update(label="Pipeline complete!", state="complete")
         st.session_state.pipeline_complete = True

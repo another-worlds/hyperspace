@@ -25,6 +25,7 @@ def render() -> None:
     sae_result = st.session_state.get("sae_result")
     gov_flags = st.session_state.get("governance_flags", [])
     scorecard = st.session_state.get("interpretability_scorecard", {})
+    contract_summary = st.session_state.get("interpretability_contract_summary", {})
 
     if not snapshots:
         st.info(
@@ -42,7 +43,7 @@ def render() -> None:
 
     # ── Key metrics row ───────────────────────────────────────────────
     st.markdown("### System Status")
-    m1, m2, m3, m4 = st.columns(4)
+    m1, m2, m3, m4, m5 = st.columns(5)
     m1.metric("Pipeline Blocks", str(len(snapshots)),
               help="Number of data domains successfully processed")
 
@@ -68,6 +69,16 @@ def render() -> None:
         "Accountability Score",
         f"{pass_count}/{total_sc} PASS" if total_sc else "—",
         help="Number of interpretability criteria passing the minimum governance threshold",
+    )
+
+    contract_rate = float(contract_summary.get("compliance_rate", 0.0))
+    contract_label = "—"
+    if contract_summary:
+        contract_label = f"{contract_rate:.0%}"
+    m5.metric(
+        "Contract Compliance",
+        contract_label,
+        help="Share of core modules passing interpretability contract interface + payload checks",
     )
 
     st.caption(
@@ -157,5 +168,18 @@ def render() -> None:
             "guarantee by quantifying feature coverage, kernel stability, concept "
             "activation, and data diversity."
         )
+
+    contract = st.session_state.get("interpretability_contract", {})
+    if contract:
+        st.markdown("### Interpretability Contract Compliance")
+        rows = []
+        for module_name, report in contract.items():
+            rows.append({
+                "Module": module_name,
+                "Compliant": "YES" if report.get("compliant") else "NO",
+                "Interface Issues": len(report.get("interface_issues", [])),
+                "Payload Issues": len(report.get("payload_issues", [])),
+            })
+        st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
 
 
