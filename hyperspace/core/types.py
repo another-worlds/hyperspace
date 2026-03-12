@@ -210,7 +210,13 @@ def validate_snapshot(snapshot: dict) -> list[str]:
 def build_interpretable_report(module: Any, module_name: str) -> InterpretabilityContractReport:
     """Return a structured interpretability compliance report."""
     interface_issues = validate_interpretable_module(module, module_name)
-    payload_issues = validate_interpretable_payload(module, module_name)
+    # Only run payload validation if the interface is compliant. Otherwise,
+    # payload checks may raise or record confusing errors that are actually
+    # caused by interface issues (e.g., missing or uncallable methods).
+    if interface_issues:
+        payload_issues: list[str] = []
+    else:
+        payload_issues = validate_interpretable_payload(module, module_name)
     return InterpretabilityContractReport(
         compliant=(len(interface_issues) == 0 and len(payload_issues) == 0),
         interface_issues=interface_issues,
