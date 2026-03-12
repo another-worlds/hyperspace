@@ -5,7 +5,7 @@ across all pipeline blocks, data fetchers, and model outputs.
 """
 from __future__ import annotations
 
-from typing import Any, Protocol, TypedDict, runtime_checkable
+from typing import Any, Literal, Protocol, TypedDict, runtime_checkable
 
 import numpy as np
 
@@ -80,17 +80,29 @@ class ScorecardEntry(TypedDict):
 
 class InterpretabilityContractReport(TypedDict):
     """Validation report for one InterpretableModule implementation."""
+    status: Literal["compliant", "noncompliant", "not_applicable"]
     compliant: bool
     interface_issues: list[str]
     payload_issues: list[str]
+    na_reason: str | None
+    na_owner: str | None
 
 
 class InterpretabilityContractSummary(TypedDict):
     """Aggregated compliance summary across reported modules."""
     total_modules: int
     compliant_modules: int
+    na_modules: int
     noncompliant_modules: int
     compliance_rate: float
+
+
+class AlphaScopeModulePolicy(TypedDict):
+    """Interpretability policy metadata for one alpha-scope module."""
+    module_name: str
+    owner: str
+    status: Literal["contract", "not_applicable"]
+    rationale: str
 
 
 class PipelineResult(TypedDict, total=False):
@@ -218,9 +230,26 @@ def build_interpretable_report(module: Any, module_name: str) -> Interpretabilit
     else:
         payload_issues = validate_interpretable_payload(module, module_name)
     return InterpretabilityContractReport(
+        status=("compliant" if len(interface_issues) == 0 and len(payload_issues) == 0 else "noncompliant"),
         compliant=(len(interface_issues) == 0 and len(payload_issues) == 0),
         interface_issues=interface_issues,
         payload_issues=payload_issues,
+        na_reason=None,
+        na_owner=None,
+    )
+
+
+def build_not_applicable_report(
+    *, module_name: str, rationale: str, owner: str,
+) -> InterpretabilityContractReport:
+    """Return an explicit N/A report for alpha-scope modules."""
+    return InterpretabilityContractReport(
+        status="not_applicable",
+        compliant=False,
+        interface_issues=[],
+        payload_issues=[],
+        na_reason=f"{module_name}: {rationale}",
+        na_owner=owner,
     )
 
 
@@ -229,15 +258,55 @@ def summarize_interpretable_reports(
 ) -> InterpretabilityContractSummary:
     """Summarize module-level interpretability compliance reports."""
     total = len(reports)
-    compliant = sum(1 for r in reports.values() if r.get("compliant", False))
-    noncompliant = total - compliant
+    compliant = sum(1 for r in reports.values() if r.get("status") == "compliant")
+    na_modules = sum(1 for r in reports.values() if r.get("status") == "not_applicable")
+    noncompliant = total - compliant - na_modules
     rate = (compliant / total) if total > 0 else 0.0
     return InterpretabilityContractSummary(
         total_modules=total,
         compliant_modules=compliant,
+        na_modules=na_modules,
         noncompliant_modules=noncompliant,
         compliance_rate=round(float(rate), 4),
     )
+
+
+def validate_alpha_scope_contract_coverage(
+    reports: dict[str, InterpretabilityContractReport],
+    alpha_scope_modules: list[AlphaScopeModulePolicy],
+) -> list[str]:
+    """Ensure every alpha-scope module is compliant or explicit N/A."""
+    issues: list[str] = []
+    expected = {m["module_name"]: m for m in alpha_scope_modules}
+
+    for module_name, module_policy in expected.items():
+        report = reports.get(module_name)
+        if report is None:
+            issues.append(f"{module_name}: missing interpretability contract report")
+            continue
+
+        status = report.get("status")
+        if status not in {"compliant", "noncompliant", "not_applicable"}:
+            issues.append(f"{module_name}: invalid status '{status}'")
+            continue
+
+        if status == "not_applicable":
+            if not report.get("na_reason"):
+                issues.append(f"{module_name}: N/A status missing rationale")
+            if not report.get("na_owner"):
+                issues.append(f"{module_name}: N/A status missing owner")
+
+        if module_policy["status"] == "contract" and status == "not_applicable":
+            issues.append(f"{module_name}: expected contract compliance, got N/A")
+
+        if module_policy["status"] == "not_applicable" and status != "not_applicable":
+            issues.append(f"{module_name}: expected explicit N/A policy")
+
+    extra_modules = set(reports) - set(expected)
+    if extra_modules:
+        issues.append(f"Unexpected modules in interpretability contract: {sorted(extra_modules)}")
+
+    return issues
 
 
 def validate_interpretable_payload(module: Any, module_name: str) -> list[str]:

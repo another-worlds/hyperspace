@@ -12,16 +12,9 @@ import streamlit as st
 from hyperspace.config import (
     DEFAULT_TICKERS, GEOPOLITICAL_NODES, PIPELINE_STEPS, UKT_FEATURE_DIM,
 )
-from hyperspace.models.knowledge_matrix import (
-    UniversalKnowledgeTensor,
-    estimate_reality_regression_stability,
-)
+from hyperspace.models.knowledge_matrix import estimate_reality_regression_stability
 from hyperspace.viz.charts import source_badge
 from hyperspace.core.pipeline import PipelineRunner
-from hyperspace.core.types import (
-    build_interpretable_report,
-    summarize_interpretable_reports,
-)
 
 
 # --------------------------------------------------------------------------- #
@@ -226,20 +219,6 @@ def run_pipeline() -> None:
             "interpretability_contract_summary"
         ]
 
-        # ---- Interpretability contract reports (UI parity with PipelineRunner) ----
-        interpretability_contract = {
-            "UniversalKnowledgeTensor": build_interpretable_report(
-                ukt, "UniversalKnowledgeTensor",
-            ),
-            "SemanticCanvas": build_interpretable_report(
-                ukt.canvas, "SemanticCanvas",
-            ),
-        }
-        st.session_state.interpretability_contract = interpretability_contract
-        st.session_state.interpretability_contract_summary = summarize_interpretable_reports(
-            interpretability_contract,
-        )
-
         status.update(label="Pipeline complete!", state="complete")
         st.session_state.pipeline_complete = True
 
@@ -278,17 +257,22 @@ def _build_governance_report_markdown(
     if interpretability_contract_summary:
         report_lines.append(
             "- Summary: "
-            f"{interpretability_contract_summary.get('compliant_modules', 0)}/"
-            f"{interpretability_contract_summary.get('total_modules', 0)} compliant "
+            f"{interpretability_contract_summary.get('compliant_modules', 0)} compliant, "
+            f"{interpretability_contract_summary.get('na_modules', 0)} N/A, "
+            f"{interpretability_contract_summary.get('noncompliant_modules', 0)} non-compliant "
+            f"out of {interpretability_contract_summary.get('total_modules', 0)} "
             f"(rate={interpretability_contract_summary.get('compliance_rate', 0.0):.2f})"
         )
 
     if interpretability_contract:
         for module_name, module_report in interpretability_contract.items():
             report_lines.append(
-                f"- {module_name}: compliant={module_report.get('compliant', False)}; "
+                f"- {module_name}: status={module_report.get('status', 'unknown')}; "
+                f"compliant={module_report.get('compliant', False)}; "
                 f"interface_issues={len(module_report.get('interface_issues', []))}; "
-                f"payload_issues={len(module_report.get('payload_issues', []))}"
+                f"payload_issues={len(module_report.get('payload_issues', []))}; "
+                f"na_owner={module_report.get('na_owner')}; "
+                f"na_reason={module_report.get('na_reason')}"
             )
 
     if governance_flags:
@@ -336,13 +320,17 @@ def _build_contract_export_rows(
             "RunID": run_id,
             "Timestamp": run_ts,
             "Module": module_name,
+            "Status": module_report.get("status", "unknown"),
             "Compliant": module_report.get("compliant", False),
             "InterfaceIssueCount": len(module_report.get("interface_issues", [])),
             "PayloadIssueCount": len(module_report.get("payload_issues", [])),
             "InterfaceIssues": " | ".join(module_report.get("interface_issues", [])),
             "PayloadIssues": " | ".join(module_report.get("payload_issues", [])),
+            "NAOwner": module_report.get("na_owner"),
+            "NAReason": module_report.get("na_reason"),
             "TotalModules": interpretability_contract_summary.get("total_modules", 0),
             "CompliantModules": interpretability_contract_summary.get("compliant_modules", 0),
+            "NAModules": interpretability_contract_summary.get("na_modules", 0),
             "NoncompliantModules": interpretability_contract_summary.get("noncompliant_modules", 0),
             "ComplianceRate": interpretability_contract_summary.get("compliance_rate", 0.0),
         })
@@ -517,16 +505,46 @@ def render_results() -> None:
         "reports, see the **Semantic Interpreter** tab."
     )
 
+    interpretability_contract = st.session_state.get("interpretability_contract", {})
+    interpretability_contract_summary = st.session_state.get(
+        "interpretability_contract_summary", {},
+    )
+
+    if interpretability_contract:
+        st.markdown("### Interpretability Contract Governance View")
+        st.caption(
+            "Alpha-scope modules must be either contract-compliant or explicitly "
+            "marked N/A with owner + rationale."
+        )
+        st.write(
+            "Summary:",
+            {
+                "total": interpretability_contract_summary.get("total_modules", 0),
+                "compliant": interpretability_contract_summary.get("compliant_modules", 0),
+                "na": interpretability_contract_summary.get("na_modules", 0),
+                "noncompliant": interpretability_contract_summary.get("noncompliant_modules", 0),
+                "rate": interpretability_contract_summary.get("compliance_rate", 0.0),
+            },
+        )
+
+        rows = []
+        for module_name, module_report in interpretability_contract.items():
+            rows.append({
+                "Module": module_name,
+                "Status": module_report.get("status", "unknown"),
+                "Compliant": module_report.get("compliant", False),
+                "NAOwner": module_report.get("na_owner"),
+                "NAReason": module_report.get("na_reason"),
+                "InterfaceIssues": len(module_report.get("interface_issues", [])),
+                "PayloadIssues": len(module_report.get("payload_issues", [])),
+            })
+        st.dataframe(pd.DataFrame(rows), use_container_width=True)
+
     # Export — D1: stamped with run ID
     st.markdown("### Export")
     run_id = st.session_state.get("run_id", "UNKNOWN")
     run_ts = st.session_state.get("run_timestamp", "")
     exp1, exp2, exp3, exp4 = st.columns(4)
-
-    interpretability_contract = st.session_state.get("interpretability_contract", {})
-    interpretability_contract_summary = st.session_state.get(
-        "interpretability_contract_summary", {},
-    )
 
     report_md = _build_governance_report_markdown(
         run_id=run_id,

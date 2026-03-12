@@ -316,13 +316,62 @@ class TestModuleAPIs:
         from hyperspace.core.types import summarize_interpretable_reports
 
         summary = summarize_interpretable_reports({
-            "A": {"compliant": True, "interface_issues": [], "payload_issues": []},
-            "B": {"compliant": False, "interface_issues": ["x"], "payload_issues": []},
+            "A": {
+                "status": "compliant",
+                "compliant": True,
+                "interface_issues": [],
+                "payload_issues": [],
+                "na_reason": None,
+                "na_owner": None,
+            },
+            "B": {
+                "status": "not_applicable",
+                "compliant": False,
+                "interface_issues": [],
+                "payload_issues": [],
+                "na_reason": "B: function-only",
+                "na_owner": "Team B",
+            },
+            "C": {
+                "status": "noncompliant",
+                "compliant": False,
+                "interface_issues": ["x"],
+                "payload_issues": [],
+                "na_reason": None,
+                "na_owner": None,
+            },
         })
-        assert summary["total_modules"] == 2
+        assert summary["total_modules"] == 3
         assert summary["compliant_modules"] == 1
+        assert summary["na_modules"] == 1
         assert summary["noncompliant_modules"] == 1
-        assert summary["compliance_rate"] == 0.5
+        assert summary["compliance_rate"] == 0.3333
+
+    def test_validate_alpha_scope_contract_coverage_requires_na_rationale(self):
+        from hyperspace.core.types import validate_alpha_scope_contract_coverage
+
+        issues = validate_alpha_scope_contract_coverage(
+            reports={
+                "A": {
+                    "status": "not_applicable",
+                    "compliant": False,
+                    "interface_issues": [],
+                    "payload_issues": [],
+                    "na_reason": None,
+                    "na_owner": "Owner",
+                },
+            },
+            alpha_scope_modules=[
+                {
+                    "module_name": "A",
+                    "owner": "Owner",
+                    "status": "not_applicable",
+                    "rationale": "Function-only",
+                },
+            ],
+        )
+        assert "A: N/A status missing rationale" in issues
+
     def test_validate_interpretable_payload_catches_bad_shapes(self):
         from hyperspace.core.types import validate_interpretable_payload
 
@@ -391,14 +440,18 @@ class TestModuleAPIs:
             reality_narrative=None,
             interpretability_contract={
                 "UniversalKnowledgeTensor": {
+                    "status": "compliant",
                     "compliant": True,
                     "interface_issues": [],
                     "payload_issues": [],
+                    "na_reason": None,
+                    "na_owner": None,
                 },
             },
             interpretability_contract_summary={
                 "total_modules": 1,
                 "compliant_modules": 1,
+                "na_modules": 0,
                 "noncompliant_modules": 0,
                 "compliance_rate": 1.0,
             },
@@ -416,14 +469,18 @@ class TestModuleAPIs:
             run_ts="2026-01-01 00:00 UTC",
             interpretability_contract={
                 "SemanticCanvas": {
+                    "status": "noncompliant",
                     "compliant": False,
                     "interface_issues": ["missing method"],
                     "payload_issues": ["bad payload"],
+                    "na_reason": None,
+                    "na_owner": None,
                 },
             },
             interpretability_contract_summary={
                 "total_modules": 2,
                 "compliant_modules": 1,
+                "na_modules": 0,
                 "noncompliant_modules": 1,
                 "compliance_rate": 0.5,
             },
@@ -431,6 +488,7 @@ class TestModuleAPIs:
 
         assert len(rows) == 1
         assert rows[0]["Module"] == "SemanticCanvas"
+        assert rows[0]["Status"] == "noncompliant"
         assert rows[0]["Compliant"] is False
         assert rows[0]["InterfaceIssueCount"] == 1
         assert rows[0]["PayloadIssueCount"] == 1
@@ -555,6 +613,7 @@ class TestStateSessionDefaults:
         assert mock_st.session_state["interpretability_contract_summary"] == {
             "total_modules": 0,
             "compliant_modules": 0,
+            "na_modules": 0,
             "noncompliant_modules": 0,
             "compliance_rate": 0.0,
         }
@@ -568,6 +627,7 @@ class TestStateSessionDefaults:
         ss.interpretability_contract_summary = {
             "total_modules": 1,
             "compliant_modules": 0,
+            "na_modules": 0,
             "noncompliant_modules": 1,
             "compliance_rate": 0.0,
         }
@@ -580,6 +640,7 @@ class TestStateSessionDefaults:
         assert mock_st.session_state["interpretability_contract_summary"] == {
             "total_modules": 0,
             "compliant_modules": 0,
+            "na_modules": 0,
             "noncompliant_modules": 0,
             "compliance_rate": 0.0,
         }

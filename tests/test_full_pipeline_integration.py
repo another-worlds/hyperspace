@@ -1189,12 +1189,16 @@ class TestPipelineRunner:
         assert contract["SemanticCanvas"]["compliant"] is True
         assert contract["SemanticCanvas"]["interface_issues"] == []
         assert contract["SemanticCanvas"]["payload_issues"] == []
+        assert "GraphEngine" in contract
+        assert contract["GraphEngine"]["status"] == "not_applicable"
+        assert contract["GraphEngine"]["na_owner"] == "Geopolitics Modeling"
 
         summary = result["interpretability_contract_summary"]
-        assert summary["total_modules"] == 2
+        assert summary["total_modules"] == 8
         assert summary["compliant_modules"] == 2
+        assert summary["na_modules"] == 6
         assert summary["noncompliant_modules"] == 0
-        assert summary["compliance_rate"] == 1.0
+        assert summary["compliance_rate"] == 0.25
 
     def test_pipeline_runner_progress_callback(
         self, rng, synthetic_spatial_data, synthetic_agreement_matrix, timeframe_context,
