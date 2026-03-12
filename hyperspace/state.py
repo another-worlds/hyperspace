@@ -61,6 +61,7 @@ def init_session_state() -> None:
         interpretability_contract_summary={
             "total_modules": 0,
             "compliant_modules": 0,
+            "na_modules": 0,
             "noncompliant_modules": 0,
             "compliance_rate": 0.0,
         },
@@ -142,6 +143,7 @@ def reset_pipeline() -> None:
     st.session_state.interpretability_contract_summary = {
         "total_modules": 0,
         "compliant_modules": 0,
+        "na_modules": 0,
         "noncompliant_modules": 0,
         "compliance_rate": 0.0,
     }
