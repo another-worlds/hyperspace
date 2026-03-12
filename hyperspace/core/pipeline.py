@@ -25,6 +25,7 @@ from hyperspace.config import (
     GOVERNANCE_FLAG_CODES,
     SCORECARD_THRESHOLDS,
     UKT_FEATURE_DIM,
+    FEATURE_FLAGS,
 )
 from hyperspace.core.types import (
     GovernanceFlag,
@@ -76,6 +77,7 @@ class PipelineRunner:
         compute_cross_block: bool = False,
         cross_block_epochs_uvt: int = 120,
         cross_block_epochs_use: int = 150,
+        enable_shared_latent_shadow: bool | None = None,
     ) -> PipelineResult:
         """Execute the full pipeline.
 
@@ -96,6 +98,9 @@ class PipelineRunner:
                 enable explicitly in UI contexts or when cross-block analysis is needed.
             cross_block_epochs_uvt: Training epochs for the UVT network.
             cross_block_epochs_use: Training epochs for the USE network.
+            enable_shared_latent_shadow: Optional override for shared-latent
+                prototype feature flag. When enabled, computes shadow-only
+                paired-window contrastive alignment metrics.
 
         Returns:
             PipelineResult with all outputs.
@@ -236,6 +241,21 @@ class PipelineRunner:
         sae_result = None
         concept_kernel_map: list[dict] = []
 
+        alignment_metrics: dict[str, Any] = {
+            "legacy": {},
+            "shared_latent": {
+                "enabled": False,
+                "shadow_only": True,
+                "reason": "feature_flag_disabled",
+            },
+            "parity_delta": {},
+        }
+        shared_latent_enabled = (
+            FEATURE_FLAGS.get("shared_latent_shadow", False)
+            if enable_shared_latent_shadow is None
+            else enable_shared_latent_shadow
+        )
+
         if final_matrix is not None:
             sae_result = train_sparse_ae(
                 final_matrix, hidden_dim=sae_hidden_dim, epochs=sae_epochs,
@@ -300,6 +320,30 @@ class PipelineRunner:
                 final_matrix, n_runs=stability_runs, noise_std=0.01, seed=42,
             )
 
+
+        # ---- Shared-latent shadow alignment MVP ----
+        if shared_latent_enabled and final_matrix is not None and final_matrix.shape[0] >= 2:
+            self._report("shared_latent", "Computing shared-latent shadow alignment metrics...")
+            from hyperspace.models.shared_latent import compute_alignment_metrics
+
+            alignment_metrics = compute_alignment_metrics(
+                final_matrix, [s["block_name"] for s in snapshots],
+            )
+        elif final_matrix is not None and final_matrix.shape[0] >= 2:
+            # Always emit legacy metrics section for side-by-side governance reporting.
+            from hyperspace.models.shared_latent import compute_alignment_metrics
+
+            alignment_metrics = compute_alignment_metrics(
+                final_matrix, [s["block_name"] for s in snapshots], epochs=1,
+            )
+            alignment_metrics["shared_latent"] = {
+                "enabled": False,
+                "shadow_only": True,
+                "reason": "feature_flag_disabled",
+                "retrieval_at_1": alignment_metrics.get("shared_latent", {}).get("retrieval_at_1", 0.0),
+                "probe_cosine": alignment_metrics.get("shared_latent", {}).get("probe_cosine", 0.0),
+            }
+
         # ---- Governance ----
         governance_flags = self._compute_governance_flags(
             data_sources, snapshots, sae_result, graph_result_full,
@@ -307,6 +351,7 @@ class PipelineRunner:
         )
         scorecard = self._compute_scorecard(
             snapshots, sae_result, data_sources, stability, governance_flags,
+            alignment_metrics,
         )
 
         interpretability_contract = {
@@ -341,6 +386,7 @@ class PipelineRunner:
             stability=stability,
             governance_flags=governance_flags,
             interpretability_scorecard=scorecard,
+            alignment_metrics=alignment_metrics,
             interpretability_contract=interpretability_contract,
             interpretability_contract_summary=interpretability_contract_summary,
             run_id=run_id,
@@ -468,6 +514,7 @@ class PipelineRunner:
         data_sources: dict[str, str],
         stability: dict | None,
         governance_flags: list[dict],
+        alignment_metrics: dict[str, Any] | None = None,
     ) -> dict[str, ScorecardEntry]:
         """Compute the interpretability scorecard."""
         scorecard: dict[str, ScorecardEntry] = {}
@@ -530,6 +577,45 @@ class PipelineRunner:
             threshold=float(thresh["threshold"]),
             unit=thresh["unit"],
             passed=live_count >= thresh["threshold"],
+            description=thresh["description"],
+        )
+
+
+        # Alignment comparison (legacy vs shared latent shadow path)
+        alignment_metrics = alignment_metrics or {}
+        legacy_metrics = alignment_metrics.get("legacy", {})
+        shared_metrics = alignment_metrics.get("shared_latent", {})
+
+        legacy_r1 = float(legacy_metrics.get("retrieval_at_1", 0.0))
+        thresh = SCORECARD_THRESHOLDS["legacy_retrieval_at_1"]
+        scorecard["legacy_retrieval_at_1"] = ScorecardEntry(
+            label=thresh["label"],
+            value=round(legacy_r1, 4),
+            threshold=float(thresh["threshold"]),
+            unit=thresh["unit"],
+            passed=legacy_r1 >= thresh["threshold"],
+            description=thresh["description"],
+        )
+
+        shared_r1 = float(shared_metrics.get("retrieval_at_1", 0.0))
+        thresh = SCORECARD_THRESHOLDS["shared_latent_retrieval_at_1"]
+        scorecard["shared_latent_retrieval_at_1"] = ScorecardEntry(
+            label=thresh["label"],
+            value=round(shared_r1, 4),
+            threshold=float(thresh["threshold"]),
+            unit=thresh["unit"],
+            passed=shared_r1 >= thresh["threshold"],
+            description=thresh["description"],
+        )
+
+        shared_probe = float(shared_metrics.get("probe_cosine", 0.0))
+        thresh = SCORECARD_THRESHOLDS["shared_latent_probe_cosine"]
+        scorecard["shared_latent_probe_cosine"] = ScorecardEntry(
+            label=thresh["label"],
+            value=round(shared_probe, 4),
+            threshold=float(thresh["threshold"]),
+            unit=thresh["unit"],
+            passed=shared_probe >= thresh["threshold"],
             description=thresh["description"],
         )
 

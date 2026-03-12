@@ -55,6 +55,7 @@ def _compute_scorecard(
     data_sources: dict,
     stability: dict | None,
     governance_flags: list,
+    alignment_metrics: dict | None = None,
 ) -> dict:
     """Compute interpretability scorecard via canonical PipelineRunner logic.
 
@@ -67,6 +68,7 @@ def _compute_scorecard(
         data_sources=data_sources,
         stability=stability,
         governance_flags=governance_flags,
+        alignment_metrics=alignment_metrics,
     )
 
 
@@ -221,6 +223,7 @@ def run_pipeline() -> None:
         st.session_state.ukt_multirun_stability = result["stability"]
         st.session_state.governance_flags = result["governance_flags"]
         st.session_state.interpretability_scorecard = result["interpretability_scorecard"]
+        st.session_state.alignment_metrics = result.get("alignment_metrics", {})
         st.session_state.interpretability_contract = result["interpretability_contract"]
         st.session_state.interpretability_contract_summary = result[
             "interpretability_contract_summary"
@@ -256,6 +259,7 @@ def _build_governance_report_markdown(
     reality_narrative: str | None,
     interpretability_contract: dict,
     interpretability_contract_summary: dict,
+    alignment_metrics: dict | None = None,
 ) -> str:
     """Build exportable markdown governance report with compliance artifacts."""
     report_lines = [
@@ -290,6 +294,23 @@ def _build_governance_report_markdown(
                 f"interface_issues={len(module_report.get('interface_issues', []))}; "
                 f"payload_issues={len(module_report.get('payload_issues', []))}"
             )
+
+
+    alignment_metrics = alignment_metrics or {}
+    if alignment_metrics:
+        legacy = alignment_metrics.get("legacy", {})
+        shared = alignment_metrics.get("shared_latent", {})
+        report_lines.append("")
+        report_lines.append("## Alignment Metrics (Legacy vs Shared-Latent Shadow)")
+        report_lines.append(
+            f"- Legacy retrieval@1: {legacy.get('retrieval_at_1', 0.0)} | "
+            f"probe cosine: {legacy.get('probe_cosine', 0.0)}"
+        )
+        report_lines.append(
+            f"- Shared-latent retrieval@1: {shared.get('retrieval_at_1', 0.0)} | "
+            f"probe cosine: {shared.get('probe_cosine', 0.0)} | "
+            f"shadow_only: {shared.get('shadow_only', True)}"
+        )
 
     if governance_flags:
         report_lines.append("")
@@ -459,6 +480,18 @@ def render_results() -> None:
     st.markdown("---")
 
     # ---- B3: Interpretability Score Card ----
+    alignment_metrics = st.session_state.get("alignment_metrics", {})
+    if alignment_metrics:
+        st.markdown("### Alignment Comparison (Legacy vs Shared-Latent)")
+        legacy = alignment_metrics.get("legacy", {})
+        shared = alignment_metrics.get("shared_latent", {})
+        parity = alignment_metrics.get("parity_delta", {})
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Legacy Retrieval@1", f"{legacy.get('retrieval_at_1', 0.0):.3f}")
+        c2.metric("Shared Retrieval@1 (shadow)", f"{shared.get('retrieval_at_1', 0.0):.3f}")
+        c3.metric("Delta (shared-legacy)", f"{parity.get('retrieval_at_1', 0.0):+.3f}")
+        st.caption("Shared-latent path is feature-flagged and shadow-only. Default decisions remain on legacy UKT outputs.")
+
     scorecard = st.session_state.get("interpretability_scorecard", {})
     if scorecard:
         st.markdown("### 📊 Interpretability Accountability Score Card")
@@ -538,6 +571,7 @@ def render_results() -> None:
         reality_narrative=reality_narrative,
         interpretability_contract=interpretability_contract,
         interpretability_contract_summary=interpretability_contract_summary,
+        alignment_metrics=alignment_metrics,
     )
 
     exp1.download_button(
@@ -587,6 +621,7 @@ def render_results() -> None:
         run_ts=run_ts,
         interpretability_contract=interpretability_contract,
         interpretability_contract_summary=interpretability_contract_summary,
+        alignment_metrics=alignment_metrics,
     )
     if contract_export_rows:
         exp4.download_button(

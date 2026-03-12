@@ -56,6 +56,7 @@ def init_session_state() -> None:
         # Keys: feature_traceability, kernel_stability, concept_activation_rate,
         #       data_source_diversity, governance_flags_count
         interpretability_scorecard={},
+        alignment_metrics={},
         # Interpretability contract reports
         interpretability_contract={},
         interpretability_contract_summary={
@@ -138,6 +139,7 @@ def reset_pipeline() -> None:
     st.session_state.run_timestamp = None
     st.session_state.governance_flags = []
     st.session_state.interpretability_scorecard = {}
+    st.session_state.alignment_metrics = {}
     st.session_state.interpretability_contract = {}
     st.session_state.interpretability_contract_summary = {
         "total_modules": 0,
