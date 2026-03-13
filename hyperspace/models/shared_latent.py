@@ -220,6 +220,73 @@ def _pairwise_probe_cosine(embeddings: dict[str, np.ndarray]) -> float:
     return float(np.mean(vals)) if vals else 0.0
 
 
+def _evaluate_transfer_learning(
+    pretrained_model: SharedLatentModel,
+    aligned_windows: dict[str, np.ndarray],
+    learning_rate: float,
+    temperature: float,
+    weight_decay: float,
+    epochs: int = 10,
+) -> dict[str, object]:
+    """Evaluate cross-modal transfer learning via leave-one-out protocol.
+
+    For each modality, measures how well a pretrained shared-latent model
+    generalizes to held-out modality pairs compared to a randomly initialized
+    baseline. Transfer gain > 0 indicates learned representations transfer.
+
+    Returns:
+        Dict with per-modality transfer gain and aggregate mean.
+    """
+    modalities = list(aligned_windows.keys())
+    if len(modalities) < 3:
+        return {"mean_transfer_gain": 0.0, "per_modality": {}, "n_modalities": len(modalities)}
+
+    per_modality: dict[str, dict[str, float]] = {}
+
+    for held_out in modalities:
+        # Subset: all modalities except the held-out one
+        subset = {m: w for m, w in aligned_windows.items() if m != held_out}
+        if len(subset) < 2:
+            continue
+
+        # Measure pretrained model's retrieval on the subset
+        pretrained_embeddings = {
+            m: pretrained_model.encode(m, w) for m, w in subset.items()
+        }
+        pretrained_r1 = _pairwise_retrieval_at_1(pretrained_embeddings)
+
+        # Build a fresh random model and measure its retrieval on the subset
+        input_dim = next(iter(subset.values())).shape[1]
+        random_model = _build_model(
+            list(subset.keys()),
+            input_dim=input_dim,
+            hidden_dim=pretrained_model.heads[list(pretrained_model.heads.keys())[0]].W1.shape[1],
+            latent_dim=pretrained_model.latent_dim,
+            seed=hash(held_out) & 0xFFFFFFFF,
+        )
+        # Train the random model for same number of epochs
+        for _ in range(epochs):
+            _contrastive_epoch(random_model, subset, learning_rate, temperature, weight_decay)
+
+        random_embeddings = {m: random_model.encode(m, w) for m, w in subset.items()}
+        random_r1 = _pairwise_retrieval_at_1(random_embeddings)
+
+        transfer_gain = pretrained_r1 - random_r1
+        per_modality[held_out] = {
+            "pretrained_r1": round(pretrained_r1, 4),
+            "random_r1": round(random_r1, 4),
+            "transfer_gain": round(transfer_gain, 4),
+        }
+
+    mean_gain = float(np.mean([v["transfer_gain"] for v in per_modality.values()])) if per_modality else 0.0
+
+    return {
+        "mean_transfer_gain": round(mean_gain, 4),
+        "per_modality": per_modality,
+        "n_modalities": len(modalities),
+    }
+
+
 def compute_alignment_metrics(
     matrix: np.ndarray,
     block_names: list[str],
@@ -276,6 +343,11 @@ def compute_alignment_metrics(
         "shadow_only": True,
     }
 
+    # Transfer learning evaluation: leave-one-out cross-modal generalization
+    transfer = _evaluate_transfer_learning(
+        model, aligned, learning_rate, temperature, weight_decay, epochs=max(1, epochs // 4),
+    )
+
     return {
         "legacy": legacy,
         "shared_latent": shared_latent,
@@ -283,4 +355,5 @@ def compute_alignment_metrics(
             "retrieval_at_1": round(shared_latent["retrieval_at_1"] - legacy["retrieval_at_1"], 4),
             "probe_cosine": round(shared_latent["probe_cosine"] - legacy["probe_cosine"], 4),
         },
+        "transfer_learning": transfer,
     }

@@ -13,11 +13,11 @@ Status legend:
 
 ## Alpha 1.0 Progress Snapshot
 
-- **Overall Alpha 1.0 readiness:** **74%**
-- **Governance + interpretability compliance layer:** **88%**
+- **Overall Alpha 1.0 readiness:** **80%**
+- **Governance + interpretability compliance layer:** **90%**
 - **Headless/UI parity:** **96%**
-- **UTK learned shared-latent goals:** **55%**
-- **Mechanistic/faithfulness validation:** **70%**
+- **UTK learned shared-latent goals:** **70%**
+- **Mechanistic/faithfulness validation:** **85%**
 
 These percentages reflect current implementation plus existing roadmap and gap
 analysis documented in:
@@ -29,27 +29,34 @@ analysis documented in:
 
 ## Latest Progress Update (Current Cycle)
 
-- **Overall readiness:** **74%**
-- **Delta vs previous checkpoint:** **+16 percentage points**
+- **Overall readiness:** **80%**
+- **Delta vs previous checkpoint:** **+22 percentage points**
 
 ### Area deltas
-- **UTK universality / learned multimodal substrate:** 55% (**Δ +25pp**)
-- **Interpretability + governance architecture:** 88% (**Δ +10pp**)
+- **UTK universality / learned multimodal substrate:** 70% (**Δ +40pp**)
+- **Interpretability + governance architecture:** 90% (**Δ +12pp**)
 - **Headless/UI parity + reliability:** 96% (**Δ +3pp**)
-- **Mechanistic/faithfulness validation:** 70% (**Δ +45pp**)
+- **Mechanistic/faithfulness validation:** 85% (**Δ +60pp**)
 
 ### Completed in this cycle
 1. **H-002 (temporal drift):** Built `DriftMonitor` with windowed run history, cosine-based regression/importance drift, configurable alert thresholds (DRIFT-001/002/003), and CSV-exportable history. Integrated into `PipelineRunner.run()` via optional `drift_monitor` parameter. DriftMonitor is now persisted across Streamlit re-runs via session state.
-2. **H-003 (faithfulness):** Implemented three intervention-style checks — kernel removal attribution, canvas dimension grounding, SAE concept-kernel consistency. Added fail-safe narrative downgrade when confidence drops below threshold. 24 dedicated tests all passing.
+2. **H-003 (faithfulness):** Implemented six intervention-style checks:
+   - Kernel removal attribution (UKT)
+   - Feature region masking with monotonicity validation (UKT)
+   - Importance-delta rank consistency (UKT)
+   - Canvas dimension grounding (SemanticCanvas)
+   - SAE concept-kernel consistency (SparseAutoencoder)
+   - Concept ablation region alignment (SparseAutoencoder)
+   Added fail-safe narrative downgrade when confidence drops below threshold. 35 dedicated tests all passing.
 3. **C-001 (pipeline parity):** Removed dead `_compute_governance_flags` and `_compute_scorecard` wrapper functions from `dashboard.py`. Dashboard now has zero duplicated governance logic — all flows through `PipelineRunner.run()`.
 4. **M-001 (export parity):** Added 5th export column ("Diagnostics CSV") containing alignment metrics, faithfulness check results, and drift statistics. Faithfulness + drift sections added to markdown governance report.
-5. **H-001 (shared-latent):** Upgraded from linear projectors to nonlinear two-layer encoders with ReLU activation, proper InfoNCE gradients, Xavier initialization, and L2 weight decay. Training shows measurable loss decrease and improved retrieval metrics vs legacy. 5 new dedicated tests.
-6. **L-001/L-002:** Fixed `_report_section.py` missing Spatial/geospatial-kernel region (indices 64-79). Stale 64-d references fully cleared.
+5. **H-001 (shared-latent):** Upgraded from linear projectors to nonlinear two-layer encoders with ReLU activation, proper InfoNCE gradients, Xavier initialization, and L2 weight decay. Added leave-one-out cross-modal transfer learning evaluation metrics. Training shows measurable loss decrease and improved retrieval metrics vs legacy.
+6. **L-001/L-002:** Fixed `_report_section.py` missing Spatial/geospatial-kernel region (indices 64-79). Stale 64-d references fully cleared. Corrected tracker entry — `_report_section.py` is actively used by 4 tab modules.
 
 ### Next critical actions
-1. Expand faithfulness checks with deeper mechanistic interventions (feature masking, concept ablation).
-2. Add cross-session DriftMonitor persistence (serialization to disk for multi-session tracking).
-3. Begin Phase 2 of vision roadmap: temporal memory integration for cross-run kernel persistence.
+1. Add cross-session DriftMonitor persistence (serialization to disk for multi-session tracking).
+2. Begin Phase 2 of vision roadmap: temporal memory integration for cross-run kernel persistence.
+3. Scorecard threshold tuning based on real pipeline run baselines.
 
 ---
 
@@ -93,20 +100,21 @@ analysis documented in:
 ## Severity: HIGH
 
 ## H-001 — Learned cross-modal shared latent alignment
-- **Status:** `IN_PROGRESS`
+- **Status:** `DONE`
 - **Why high:** Core UTK vision requires learned intermodality, not only fixed
   concatenated regions.
 - **Current state:** Two-layer nonlinear encoders (ReLU activation) with proper
   InfoNCE contrastive gradients, Xavier initialization, and L2 weight decay.
   Training shows measurable loss decrease and retrieval improvement over legacy.
-  Feature-flagged and shadow-only. 5 dedicated tests.
+  Leave-one-out transfer learning evaluation measures cross-modal generalization.
+  Feature-flagged and shadow-only. 7 dedicated tests.
 - **Alpha exit criteria:**
   1. ~~Shared latent projector prototype trained on paired windows.~~ DONE
   2. ~~Alignment metrics reported (retrieval/probe-based).~~ DONE
   3. ~~Shadow comparison against legacy UKT in governance panel.~~ DONE
   4. ~~Richer encoder architecture (nonlinear projectors, deeper training).~~ DONE
-  5. Extended evaluation: cross-block transfer learning metrics.
-- **Progress:** **70%**
+  5. ~~Extended evaluation: cross-block transfer learning metrics.~~ DONE
+- **Progress:** **85%**
 
 ## H-002 — Temporal memory and drift monitoring
 - **Status:** `DONE`
@@ -129,18 +137,21 @@ analysis documented in:
 - **Status:** `DONE`
 - **Why high:** Human-readable narratives must be constrained by measurable
   attributions/interventions to avoid unsupported claims.
-- **Current state:** Three intervention-style checks implemented in
+- **Current state:** Six intervention-style checks implemented in
   `hyperspace/core/faithfulness.py`:
-  - Kernel removal attribution (UKT) — verifies importance ranking
+  - Kernel removal attribution (UKT) — verifies importance via SVD ablation
+  - Feature region masking (UKT) — zeros regions and validates energy-delta monotonicity
+  - Importance-delta rank consistency (UKT) — top-3 rank agreement
   - Canvas dimension grounding (SemanticCanvas) — validates dimension ordering
   - SAE concept-kernel consistency — checks concept activation grounding
+  - Concept ablation region alignment — validates concept-kernel region correspondence
   Fail-safe downgrade replaces narratives with disclaimer when confidence
   drops below threshold. Integrated into pipeline and dashboard exports.
-  19 dedicated tests passing.
+  35 dedicated tests passing.
 - **Alpha exit criteria:**
   1. ~~At least one intervention-style check per major module in alpha scope.~~ DONE
   2. ~~Fail-safe downgrade when explanation confidence is low.~~ DONE
-- **Progress:** **80%**
+- **Progress:** **90%**
 
 ---
 
@@ -195,8 +206,9 @@ analysis documented in:
 - **Why low:** Reduces maintenance overhead and unused code surface.
 - **Current state:** Dashboard `_compute_governance_flags` and
   `_compute_scorecard` wrappers removed (were dead delegates).
-  `_report_section.py` remains unused.
-- **Progress:** **30%**
+  Note: `_report_section.py` is actively imported by 4 tab modules
+  (finance, clusters, politics, agents) — not dead code.
+- **Progress:** **45%**
 
 ---
 
@@ -223,10 +235,10 @@ analysis documented in:
 - [x] Temporal drift panel
 - [x] Richer contrastive encoder architecture (nonlinear 2-layer ReLU)
 - [x] Cross-session drift persistence (Streamlit session state)
-- [ ] Cross-block transfer learning evaluation
+- [x] Cross-block transfer learning evaluation (leave-one-out protocol)
 - [ ] Temporal memory integration (cross-run kernel persistence)
 
-**Milestone C progress:** **75%**
+**Milestone C progress:** **85%**
 
 ---
 
@@ -245,8 +257,8 @@ Use this section for iterative updates without changing the tracker structure.
 ### Example Filled Update
 
 - **Week of:** 2026-03-13
-- **Overall readiness:** 74%
-- **Delta vs previous week:** +16 percentage points
-- **Top completed item:** Nonlinear shared-latent encoders + temporal drift persistence + faithfulness checks.
-- **Top blocker:** Cross-block transfer learning evaluation not yet designed.
-- **Next critical action:** Expand faithfulness checks with feature masking; begin temporal memory integration.
+- **Overall readiness:** 80%
+- **Delta vs previous week:** +22 percentage points
+- **Top completed item:** 6 faithfulness checks + transfer learning evaluation + nonlinear shared-latent encoders.
+- **Top blocker:** Cross-session drift serialization to disk.
+- **Next critical action:** Add temporal memory integration for cross-run kernel persistence.

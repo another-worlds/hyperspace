@@ -12,8 +12,11 @@ from hyperspace.core.drift_monitor import (
 from hyperspace.core.faithfulness import (
     LOW_CONFIDENCE_DISCLAIMER,
     check_kernel_attribution_faithfulness,
+    check_feature_region_masking,
+    check_importance_delta_monotonicity,
     check_canvas_narrative_grounding,
     check_sae_concept_activation_consistency,
+    check_concept_ablation,
     run_faithfulness_checks,
 )
 
@@ -154,6 +157,7 @@ def _make_snapshot(n_kernels: int = 3) -> dict:
     matrix = rng.normal(size=(5, 80))
     U, S, Vt = np.linalg.svd(matrix, full_matrices=False)
     importance = S / S.sum()
+    reality_regression = matrix.mean(axis=0)  # Proxy reality regression vector
     return {
         "step": 5,
         "block_name": "Final",
@@ -163,6 +167,7 @@ def _make_snapshot(n_kernels: int = 3) -> dict:
         "Vt": Vt,
         "n_kernels": len(S),
         "importance": importance,
+        "reality_regression": reality_regression,
         "kernel_labels": [
             {"kernel_id": f"K{i}", "importance": float(importance[i]),
              "dominant_region": "temporal-pattern", "dominant_block": "Finance"}
@@ -256,6 +261,88 @@ class TestRunFaithfulnessChecks:
 
 
 # --------------------------------------------------------------------------- #
+# Feature region masking tests                                                 #
+# --------------------------------------------------------------------------- #
+
+
+class TestFeatureRegionMasking:
+    def test_produces_results_for_valid_snapshot(self):
+        snap = _make_snapshot()
+        results = check_feature_region_masking([snap])
+        # 5 regions + 1 monotonicity check = 6
+        assert len(results) == 6
+        region_checks = [r for r in results if r.check_name.startswith("region_masking_") and r.check_name != "region_masking_monotonicity"]
+        assert len(region_checks) == 5
+
+    def test_empty_snapshots_returns_empty(self):
+        assert check_feature_region_masking([]) == []
+
+    def test_monotonicity_check_present(self):
+        snap = _make_snapshot()
+        results = check_feature_region_masking([snap])
+        mono = [r for r in results if r.check_name == "region_masking_monotonicity"]
+        assert len(mono) == 1
+
+
+class TestImportanceDeltaMonotonicity:
+    def test_produces_result_for_valid_snapshot(self):
+        snap = _make_snapshot()
+        results = check_importance_delta_monotonicity([snap])
+        assert len(results) == 1
+        assert results[0].check_name == "importance_delta_monotonicity"
+
+    def test_empty_snapshots_returns_empty(self):
+        assert check_importance_delta_monotonicity([]) == []
+
+
+class TestConceptAblation:
+    def test_with_concept_labels(self):
+        snap = _make_snapshot()
+        sae = {
+            "concept_labels": [
+                {"id": 0, "dominant_region": "temporal-pattern", "active": True},
+                {"id": 1, "dominant_region": "semantic-embedding", "active": True},
+            ],
+            "active_concepts": 2,
+            "total_concepts": 4,
+        }
+        results = check_concept_ablation(sae, [snap])
+        assert len(results) == 1
+        assert results[0].check_name == "concept_ablation_region_alignment"
+
+    def test_none_sae_returns_empty(self):
+        assert check_concept_ablation(None, [_make_snapshot()]) == []
+
+    def test_no_concept_labels_returns_empty(self):
+        assert check_concept_ablation({"concept_labels": []}, [_make_snapshot()]) == []
+
+
+class TestRunFaithfulnessChecksExpanded:
+    """Tests that the expanded check suite produces more results."""
+
+    def test_full_report_includes_new_checks(self):
+        snap = _make_snapshot()
+        sae = {
+            "active_concepts": 3,
+            "total_concepts": 8,
+            "concept_labels": [
+                {"id": 0, "dominant_region": "temporal-pattern", "active": True},
+            ],
+        }
+        report = run_faithfulness_checks(
+            snapshots=[snap],
+            sae_result=sae,
+        )
+        check_names = {c.check_name for c in report.checks}
+        # Should include kernel removal, region masking, monotonicity, concept checks
+        assert any("kernel_removal" in n for n in check_names)
+        assert any("region_masking" in n for n in check_names)
+        assert "importance_delta_monotonicity" in check_names
+        assert "concept_kernel_grounding" in check_names
+        assert "concept_ablation_region_alignment" in check_names
+
+
+# --------------------------------------------------------------------------- #
 # Shared-latent nonlinear encoder tests                                        #
 # --------------------------------------------------------------------------- #
 
@@ -332,3 +419,36 @@ class TestSharedLatentNonlinear:
         # Trained should have same or better metrics
         assert trained["shared_latent"]["contrastive_loss_final"] <= \
             untrained["shared_latent"]["contrastive_loss_final"] + 0.5
+
+    def test_transfer_learning_evaluation(self):
+        from hyperspace.models.shared_latent import compute_alignment_metrics
+
+        rng = np.random.default_rng(42)
+        matrix = rng.normal(size=(4, 80))
+        metrics = compute_alignment_metrics(
+            matrix, ["A", "B", "C", "D"], epochs=10,
+        )
+        transfer = metrics.get("transfer_learning")
+        assert transfer is not None
+        assert "mean_transfer_gain" in transfer
+        assert "per_modality" in transfer
+        assert "n_modalities" in transfer
+        assert transfer["n_modalities"] == 4
+        # With 4 modalities, leave-one-out should produce 4 entries
+        assert len(transfer["per_modality"]) == 4
+        for held_out, data in transfer["per_modality"].items():
+            assert "pretrained_r1" in data
+            assert "random_r1" in data
+            assert "transfer_gain" in data
+
+    def test_transfer_learning_skipped_with_two_modalities(self):
+        from hyperspace.models.shared_latent import compute_alignment_metrics
+
+        rng = np.random.default_rng(42)
+        matrix = rng.normal(size=(2, 80))
+        metrics = compute_alignment_metrics(
+            matrix, ["A", "B"], epochs=3,
+        )
+        transfer = metrics.get("transfer_learning", {})
+        # With only 2 modalities, leave-one-out can't work (need >= 2 remaining)
+        assert transfer.get("n_modalities") == 2
