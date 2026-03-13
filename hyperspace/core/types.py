@@ -105,6 +105,38 @@ class AlphaScopeModulePolicy(TypedDict):
     rationale: str
 
 
+class FaithfulnessCheckResult(TypedDict):
+    """Result of a single intervention-style faithfulness check."""
+    module_name: str
+    check_name: str
+    passed: bool
+    original_value: float
+    intervened_value: float
+    delta: float
+    detail: str
+
+
+class FaithfulnessReportDict(TypedDict, total=False):
+    """Serializable faithfulness report for pipeline output."""
+    checks: list[FaithfulnessCheckResult]
+    overall_confidence: float
+    low_confidence: bool
+    downgraded_narrative: str | None
+
+
+class DriftResultDict(TypedDict, total=False):
+    """Serializable drift result for pipeline output."""
+    regression_cosine: float
+    regression_l2: float
+    importance_cosine: float
+    importance_l2: float
+    stability_delta: float
+    n_kernel_delta: int
+    window_size: int
+    n_records: int
+    alerts: list[dict]
+
+
 class PipelineResult(TypedDict, total=False):
     """Full pipeline output — everything needed to render the UI.
 
@@ -147,6 +179,15 @@ class PipelineResult(TypedDict, total=False):
     # Interpretability contract coverage
     interpretability_contract: dict[str, InterpretabilityContractReport]
     interpretability_contract_summary: InterpretabilityContractSummary
+
+    # Faithfulness checks (H-003)
+    faithfulness_report: FaithfulnessReportDict | None
+
+    # Temporal drift (H-002)
+    drift_result: DriftResultDict | None
+
+    # Kernel evolution (temporal memory)
+    kernel_evolution: dict[str, Any] | None
 
 
 @runtime_checkable
