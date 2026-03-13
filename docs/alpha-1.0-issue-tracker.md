@@ -13,11 +13,11 @@ Status legend:
 
 ## Alpha 1.0 Progress Snapshot
 
-- **Overall Alpha 1.0 readiness:** **80%**
-- **Governance + interpretability compliance layer:** **90%**
+- **Overall Alpha 1.0 readiness:** **87%**
+- **Governance + interpretability compliance layer:** **92%**
 - **Headless/UI parity:** **96%**
-- **UTK learned shared-latent goals:** **70%**
-- **Mechanistic/faithfulness validation:** **85%**
+- **UTK learned shared-latent goals:** **85%**
+- **Mechanistic/faithfulness validation:** **90%**
 
 These percentages reflect current implementation plus existing roadmap and gap
 analysis documented in:
@@ -29,16 +29,21 @@ analysis documented in:
 
 ## Latest Progress Update (Current Cycle)
 
-- **Overall readiness:** **80%**
-- **Delta vs previous checkpoint:** **+22 percentage points**
+- **Overall readiness:** **87%**
+- **Delta vs previous checkpoint:** **+7 percentage points**
 
 ### Area deltas
-- **UTK universality / learned multimodal substrate:** 70% (**Δ +40pp**)
-- **Interpretability + governance architecture:** 90% (**Δ +12pp**)
-- **Headless/UI parity + reliability:** 96% (**Δ +3pp**)
-- **Mechanistic/faithfulness validation:** 85% (**Δ +60pp**)
+- **UTK universality / learned multimodal substrate:** 85% (**Δ +15pp**)
+- **Interpretability + governance architecture:** 92% (**Δ +2pp**)
+- **Headless/UI parity + reliability:** 96% (**Δ +0pp**)
+- **Mechanistic/faithfulness validation:** 90% (**Δ +5pp**)
 
 ### Completed in this cycle
+1. **H-002 (cross-session persistence):** DriftMonitor now serializes to disk via JSON (`save_to_disk` / `load_from_disk`). Dashboard loads persisted drift history on startup and saves after each pipeline run. History survives across separate Streamlit sessions. 3 new tests (round-trip, missing file, max_history cap).
+2. **Temporal memory (Milestone C):** Built `KernelMemory` class in `hyperspace/core/temporal_memory.py` — stores per-block kernel snapshots (importance, reality regression, reconstruction error, activation rows) across runs. Provides `get_block_history()`, `compute_kernel_evolution()` (consecutive cosines, importance stability, reconstruction trends), and `get_evolution_summary()` for governance export. Full disk serialization via JSON. Integrated into `PipelineRunner` and dashboard with session-state + disk persistence. 9 new tests.
+3. **L-002 (dead code cleanup):** Removed unused `bar_chart()` and `heatmap_chart()` from `charts.py`. Removed unused `plotly.express` and `numpy` imports from charts module.
+
+### Previous cycle completed
 1. **H-002 (temporal drift):** Built `DriftMonitor` with windowed run history, cosine-based regression/importance drift, configurable alert thresholds (DRIFT-001/002/003), and CSV-exportable history. Integrated into `PipelineRunner.run()` via optional `drift_monitor` parameter. DriftMonitor is now persisted across Streamlit re-runs via session state.
 2. **H-003 (faithfulness):** Implemented six intervention-style checks:
    - Kernel removal attribution (UKT)
@@ -54,9 +59,9 @@ analysis documented in:
 6. **L-001/L-002:** Fixed `_report_section.py` missing Spatial/geospatial-kernel region (indices 64-79). Stale 64-d references fully cleared. Corrected tracker entry — `_report_section.py` is actively used by 4 tab modules.
 
 ### Next critical actions
-1. Add cross-session DriftMonitor persistence (serialization to disk for multi-session tracking).
-2. Begin Phase 2 of vision roadmap: temporal memory integration for cross-run kernel persistence.
-3. Scorecard threshold tuning based on real pipeline run baselines.
+1. Scorecard threshold tuning based on real pipeline run baselines.
+2. Kernel evolution dashboard panel (visualize importance trends across runs).
+3. Final alpha contract coverage enforcement pass.
 
 ---
 
@@ -126,12 +131,15 @@ analysis documented in:
   drift, L2 distance, and stability deltas. Three configurable alert
   thresholds (DRIFT-001/002/003). Exportable history rows for CSV.
   Integrated into `PipelineRunner.run()` and dashboard rendering.
-  DriftMonitor persisted in Streamlit session state across re-runs.
+  DriftMonitor persisted in Streamlit session state and on disk via JSON
+  serialization (`save_to_disk` / `load_from_disk`). Cross-session
+  persistence survives Streamlit restarts.
 - **Alpha exit criteria:**
   1. ~~Windowed run history for kernel/regression drift.~~ DONE
   2. ~~Alerting thresholds for significant drift.~~ DONE
   3. ~~Session persistence across Streamlit re-runs.~~ DONE
-- **Progress:** **90%**
+  4. ~~Cross-session disk serialization.~~ DONE
+- **Progress:** **100%**
 
 ## H-003 — Narrative faithfulness / mechanistic checks
 - **Status:** `DONE`
@@ -202,13 +210,16 @@ analysis documented in:
 - **Progress:** **90%**
 
 ## L-002 — Dead/underused UI helper consolidation
-- **Status:** `IN_PROGRESS`
+- **Status:** `DONE`
 - **Why low:** Reduces maintenance overhead and unused code surface.
 - **Current state:** Dashboard `_compute_governance_flags` and
   `_compute_scorecard` wrappers removed (were dead delegates).
+  `bar_chart()` and `heatmap_chart()` removed from `charts.py` (never
+  imported). Unused `plotly.express` and `numpy` imports cleaned.
   Note: `_report_section.py` is actively imported by 4 tab modules
   (finance, clusters, politics, agents) — not dead code.
-- **Progress:** **45%**
+  `_flatten_yf_columns()` is used internally in `finance.py` — not dead.
+- **Progress:** **90%**
 
 ---
 
@@ -234,11 +245,11 @@ analysis documented in:
 - [x] Alignment metrics dashboard
 - [x] Temporal drift panel
 - [x] Richer contrastive encoder architecture (nonlinear 2-layer ReLU)
-- [x] Cross-session drift persistence (Streamlit session state)
+- [x] Cross-session drift persistence (Streamlit session state + disk)
 - [x] Cross-block transfer learning evaluation (leave-one-out protocol)
-- [ ] Temporal memory integration (cross-run kernel persistence)
+- [x] Temporal memory integration (cross-run kernel persistence)
 
-**Milestone C progress:** **85%**
+**Milestone C progress:** **95%**
 
 ---
 

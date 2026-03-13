@@ -186,6 +186,9 @@ class PipelineResult(TypedDict, total=False):
     # Temporal drift (H-002)
     drift_result: DriftResultDict | None
 
+    # Kernel evolution (temporal memory)
+    kernel_evolution: dict[str, Any] | None
+
 
 @runtime_checkable
 class InterpretableModule(Protocol):

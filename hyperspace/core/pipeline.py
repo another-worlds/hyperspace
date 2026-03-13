@@ -36,6 +36,7 @@ from hyperspace.core.types import (
 )
 from hyperspace.core.faithfulness import run_faithfulness_checks
 from hyperspace.core.drift_monitor import DriftMonitor
+from hyperspace.core.temporal_memory import KernelMemory
 from hyperspace.core.interpretability_registry import (
     build_alpha_scope_contract_reports,
     enforce_alpha_scope_contract_coverage,
@@ -57,16 +58,20 @@ class PipelineRunner:
         self,
         on_step: Callable[[str, str], None] | None = None,
         drift_monitor: DriftMonitor | None = None,
+        kernel_memory: KernelMemory | None = None,
     ):
         """
         Args:
             on_step: Optional callback(step_name, message) for progress reporting.
             drift_monitor: Optional DriftMonitor for temporal drift tracking.
                 When provided, each run is recorded and drift is computed.
+            kernel_memory: Optional KernelMemory for cross-run kernel persistence.
+                When provided, kernel snapshots are stored and evolution is tracked.
         """
         self._on_step = on_step or (lambda s, m: None)
         self._warnings: list[str] = []
         self._drift_monitor = drift_monitor
+        self._kernel_memory = kernel_memory
 
     def _report(self, step: str, msg: str) -> None:
         self._on_step(step, msg)
@@ -403,6 +408,12 @@ class PipelineRunner:
             canvas_narrative = faithfulness.downgraded_narrative
             reality_narrative = faithfulness.downgraded_narrative
 
+        # ---- Kernel memory persistence (Milestone C) ----
+        kernel_evolution = None
+        if self._kernel_memory is not None and snapshots:
+            self._kernel_memory.store_run(run_id, run_timestamp, snapshots)
+            kernel_evolution = self._kernel_memory.get_evolution_summary()
+
         # ---- Temporal drift (H-002) ----
         drift_result = None
         if self._drift_monitor is not None and snapshots:
@@ -471,6 +482,7 @@ class PipelineRunner:
             interpretability_contract_summary=interpretability_contract_summary,
             faithfulness_report=faithfulness_report,
             drift_result=drift_result,
+            kernel_evolution=kernel_evolution,
             run_id=run_id,
             run_timestamp=run_timestamp,
         )

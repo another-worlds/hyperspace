@@ -1,8 +1,6 @@
 """Reusable Plotly chart builders with dark theme defaults."""
 from __future__ import annotations
 
-import numpy as np
-import plotly.express as px
 import plotly.graph_objects as go
 
 from hyperspace.config import PLOTLY_LAYOUT
@@ -60,33 +58,6 @@ def forecast_chart(x_axis, q10, q50, q90, title: str = "Forecast") -> go.Figure:
         legend=dict(orientation="h", y=-0.15, x=0.5, xanchor="center",
                     font=dict(size=11)),
     ))
-    return fig
-
-
-def bar_chart(names, values, title: str = "", colors=None) -> go.Figure:
-    """Simple bar chart."""
-    fig = go.Figure(go.Bar(
-        x=names, y=values,
-        marker_color=colors if colors else "#64ffda",
-        marker_line_width=0,
-    ))
-    fig.update_layout(**dark_layout(
-        title=title, height=310,
-        margin=dict(l=24, r=24, t=44, b=24),
-    ))
-    return fig
-
-
-def heatmap_chart(matrix: np.ndarray, x_labels: list[str],
-                  y_labels: list[str], title: str = "") -> go.Figure:
-    """Create a heatmap."""
-    fig = px.imshow(
-        matrix,
-        x=x_labels, y=y_labels,
-        color_continuous_scale="RdBu_r",
-        text_auto=".2f",
-    )
-    fig.update_layout(**PLOTLY_LAYOUT, title=title, height=360)
     return fig
 
 

@@ -12,7 +12,9 @@ Usage:
 """
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -244,6 +246,43 @@ class DriftMonitor:
 
         return alerts
 
+    # ── Disk serialization ─────────────────────────────────────────────── #
+
+    def save_to_disk(self, path: str | Path) -> None:
+        """Persist drift history to a JSON file for cross-session tracking.
+
+        The file contains a JSON object with ``max_history`` and a ``records``
+        array.  Numpy arrays are stored as nested lists for portability.
+        """
+        path = Path(path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        payload = {
+            "max_history": self._max_history,
+            "records": [_record_to_dict(r) for r in self._history],
+        }
+        path.write_text(json.dumps(payload, indent=2))
+
+    @classmethod
+    def load_from_disk(cls, path: str | Path) -> "DriftMonitor":
+        """Restore a DriftMonitor from a previously saved JSON file.
+
+        Returns:
+            A new DriftMonitor populated with the persisted history.
+
+        Raises:
+            FileNotFoundError: if *path* does not exist.
+            json.JSONDecodeError / KeyError: if the file is corrupt.
+        """
+        path = Path(path)
+        payload = json.loads(path.read_text())
+        monitor = cls(max_history=payload.get("max_history", 50))
+        for rec_dict in payload.get("records", []):
+            monitor._history.append(_record_from_dict(rec_dict))
+        # Enforce max_history cap
+        if len(monitor._history) > monitor._max_history:
+            monitor._history = monitor._history[-monitor._max_history :]
+        return monitor
+
     def export_history_rows(self) -> list[dict[str, object]]:
         """Export drift history as flat dicts for CSV/DataFrame export."""
         rows: list[dict[str, object]] = []
@@ -270,6 +309,30 @@ class DriftMonitor:
                 row["importance_cosine_vs_prev"] = None
             rows.append(row)
         return rows
+
+
+def _record_to_dict(rec: DriftRecord) -> dict[str, Any]:
+    """Serialize a DriftRecord to a JSON-safe dict."""
+    return {
+        "run_id": rec.run_id,
+        "timestamp": rec.timestamp,
+        "reality_regression": rec.reality_regression.tolist(),
+        "kernel_importances": rec.kernel_importances.tolist(),
+        "mean_cosine_stability": rec.mean_cosine_stability,
+        "n_kernels": rec.n_kernels,
+    }
+
+
+def _record_from_dict(d: dict[str, Any]) -> DriftRecord:
+    """Deserialize a DriftRecord from a JSON-safe dict."""
+    return DriftRecord(
+        run_id=d["run_id"],
+        timestamp=d["timestamp"],
+        reality_regression=np.asarray(d["reality_regression"], dtype=np.float64),
+        kernel_importances=np.asarray(d["kernel_importances"], dtype=np.float64),
+        mean_cosine_stability=float(d["mean_cosine_stability"]),
+        n_kernels=int(d["n_kernels"]),
+    )
 
 
 def _cosine_sim(a: np.ndarray, b: np.ndarray) -> float:

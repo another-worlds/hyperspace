@@ -16,17 +16,63 @@ from hyperspace.models.knowledge_matrix import estimate_reality_regression_stabi
 from hyperspace.viz.charts import source_badge
 from hyperspace.core.pipeline import PipelineRunner
 from hyperspace.core.drift_monitor import DriftMonitor
+from hyperspace.core.temporal_memory import KernelMemory
+
+
+_DRIFT_PERSIST_PATH = ".hyperspace/drift_history.json"
 
 
 def _get_drift_monitor() -> DriftMonitor:
     """Get or create a session-scoped DriftMonitor instance.
 
-    Persists across pipeline re-runs within the same Streamlit session,
-    allowing drift tracking across consecutive runs.
+    On first access, attempts to load persisted drift history from disk
+    (``_DRIFT_PERSIST_PATH``).  This allows drift tracking to survive
+    across separate Streamlit sessions, not just re-runs within a session.
     """
     if "drift_monitor" not in st.session_state:
-        st.session_state.drift_monitor = DriftMonitor(max_history=50)
+        try:
+            monitor = DriftMonitor.load_from_disk(_DRIFT_PERSIST_PATH)
+        except (FileNotFoundError, Exception):
+            monitor = DriftMonitor(max_history=50)
+        st.session_state.drift_monitor = monitor
     return st.session_state.drift_monitor
+
+
+def _save_drift_monitor() -> None:
+    """Persist the current DriftMonitor to disk after a pipeline run."""
+    monitor = st.session_state.get("drift_monitor")
+    if monitor is not None:
+        try:
+            monitor.save_to_disk(_DRIFT_PERSIST_PATH)
+        except Exception:
+            pass  # Non-critical — session state still has the data
+
+
+_KERNEL_MEMORY_PATH = ".hyperspace/kernel_memory.json"
+
+
+def _get_kernel_memory() -> KernelMemory:
+    """Get or create a session-scoped KernelMemory instance.
+
+    Loads persisted kernel history from disk on first access.
+    """
+    if "kernel_memory" not in st.session_state:
+        try:
+            memory = KernelMemory.load(_KERNEL_MEMORY_PATH)
+        except (FileNotFoundError, Exception):
+            memory = KernelMemory(max_runs=100)
+        st.session_state.kernel_memory = memory
+    return st.session_state.kernel_memory
+
+
+def _save_kernel_memory() -> None:
+    """Persist kernel memory to disk after a pipeline run."""
+    memory = st.session_state.get("kernel_memory")
+    if memory is not None:
+        try:
+            memory.save(_KERNEL_MEMORY_PATH)
+        except Exception:
+            pass
 
 
 
@@ -151,7 +197,10 @@ def run_pipeline() -> None:
 
         # ---- Step 3: Canonical orchestration (single path) ----
         st.write("Running canonical pipeline runner for graph/spatial/agents/interpreter...")
-        runner = PipelineRunner(drift_monitor=_get_drift_monitor())
+        runner = PipelineRunner(
+            drift_monitor=_get_drift_monitor(),
+            kernel_memory=_get_kernel_memory(),
+        )
         result = runner.run(
             finance_result=tft_result,
             cluster_result=cluster_result,
@@ -187,6 +236,11 @@ def run_pipeline() -> None:
         ]
         st.session_state.faithfulness_report = result.get("faithfulness_report")
         st.session_state.drift_result = result.get("drift_result")
+        st.session_state.kernel_evolution = result.get("kernel_evolution")
+
+        # Persist drift history and kernel memory to disk for cross-session tracking
+        _save_drift_monitor()
+        _save_kernel_memory()
 
         status.update(label="Pipeline complete!", state="complete")
         st.session_state.pipeline_complete = True

@@ -29,6 +29,7 @@ EXPECTED_RUNNER_PAYLOAD_KEYS: tuple[str, ...] = (
     "interpretability_contract_summary",
     "faithfulness_report",
     "drift_result",
+    "kernel_evolution",
 )
 
 
@@ -55,6 +56,7 @@ SESSION_TO_PAYLOAD_KEY_MAP: dict[str, str] = {
     "alignment_metrics": "alignment_metrics",
     "faithfulness_report": "faithfulness_report",
     "drift_result": "drift_result",
+    "kernel_evolution": "kernel_evolution",
 }
 
 
@@ -94,4 +96,5 @@ def build_runner_payload() -> dict[str, Any]:
             "downgraded_narrative": None,
         },
         "drift_result": None,
+        "kernel_evolution": None,
     }

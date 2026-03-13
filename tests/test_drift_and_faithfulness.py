@@ -145,6 +145,46 @@ class TestDriftMonitor:
         assert rows[0]["regression_cosine_vs_prev"] is None
         assert rows[1]["regression_cosine_vs_prev"] is not None
 
+    def test_save_and_load_from_disk(self, tmp_path):
+        """Round-trip serialization preserves history and drift results."""
+        monitor = self._make_monitor_with_runs(n=4, seed=7)
+        path = tmp_path / "drift.json"
+        monitor.save_to_disk(path)
+
+        loaded = DriftMonitor.load_from_disk(path)
+        assert loaded.n_records == 4
+        # Verify drift computation matches
+        orig_drift = monitor.compute_drift()
+        load_drift = loaded.compute_drift()
+        assert orig_drift.regression_cosine == pytest.approx(
+            load_drift.regression_cosine, abs=1e-8
+        )
+        assert orig_drift.importance_cosine == pytest.approx(
+            load_drift.importance_cosine, abs=1e-8
+        )
+
+    def test_load_from_disk_missing_file(self, tmp_path):
+        """Loading from a nonexistent path raises FileNotFoundError."""
+        with pytest.raises(FileNotFoundError):
+            DriftMonitor.load_from_disk(tmp_path / "nope.json")
+
+    def test_save_respects_max_history(self, tmp_path):
+        """Loaded monitor enforces max_history cap."""
+        monitor = DriftMonitor(max_history=3)
+        rng = np.random.default_rng(0)
+        for i in range(5):
+            monitor.record_run(
+                run_id=f"R{i}", timestamp="T",
+                reality_regression=rng.normal(size=80),
+                kernel_importances=np.abs(rng.normal(size=5)),
+                mean_cosine_stability=0.9, n_kernels=5,
+            )
+        assert monitor.n_records == 3
+        path = tmp_path / "drift.json"
+        monitor.save_to_disk(path)
+        loaded = DriftMonitor.load_from_disk(path)
+        assert loaded.n_records == 3
+
 
 # --------------------------------------------------------------------------- #
 # Faithfulness checks tests                                                    #
@@ -452,3 +492,112 @@ class TestSharedLatentNonlinear:
         transfer = metrics.get("transfer_learning", {})
         # With only 2 modalities, leave-one-out can't work (need >= 2 remaining)
         assert transfer.get("n_modalities") == 2
+
+
+# --------------------------------------------------------------------------- #
+# Temporal memory (KernelMemory) tests                                         #
+# --------------------------------------------------------------------------- #
+
+from hyperspace.core.temporal_memory import KernelMemory, KernelEvolution
+
+
+class TestKernelMemory:
+    """Tests for KernelMemory cross-run kernel persistence."""
+
+    def _make_snapshots(self, n_blocks: int = 3, seed: int = 0) -> list[dict]:
+        rng = np.random.default_rng(seed)
+        snapshots = []
+        for i in range(n_blocks):
+            snapshots.append({
+                "block_name": f"Block{i}",
+                "step": i + 1,
+                "n_kernels": 4,
+                "importance": rng.random(4),
+                "reality_regression": rng.normal(size=80),
+                "reconstruction_error": rng.random(),
+                "kernel_activation": rng.normal(size=(n_blocks, 4)),
+            })
+        return snapshots
+
+    def test_store_and_retrieve(self):
+        mem = KernelMemory()
+        snaps = self._make_snapshots()
+        stored = mem.store_run("R1", "T1", snaps)
+        assert stored == 3
+        assert mem.n_snapshots == 3
+        assert mem.n_runs == 1
+
+    def test_block_history(self):
+        mem = KernelMemory()
+        for i in range(3):
+            mem.store_run(f"R{i}", f"T{i}", self._make_snapshots(seed=i))
+        history = mem.get_block_history("Block0")
+        assert len(history) == 3
+        assert all(s.block_name == "Block0" for s in history)
+
+    def test_block_history_last_n(self):
+        mem = KernelMemory()
+        for i in range(5):
+            mem.store_run(f"R{i}", f"T{i}", self._make_snapshots(seed=i))
+        history = mem.get_block_history("Block0", last_n=2)
+        assert len(history) == 2
+
+    def test_kernel_evolution(self):
+        mem = KernelMemory()
+        for i in range(4):
+            mem.store_run(f"R{i}", f"T{i}", self._make_snapshots(seed=i))
+        evolutions = mem.compute_kernel_evolution()
+        assert "Block0" in evolutions
+        evo = evolutions["Block0"]
+        assert isinstance(evo, KernelEvolution)
+        assert evo.n_runs == 4
+        assert len(evo.regression_cosines) == 3  # n-1 pairwise
+        assert len(evo.reconstruction_trend) == 4
+
+    def test_kernel_evolution_single_block(self):
+        mem = KernelMemory()
+        for i in range(3):
+            mem.store_run(f"R{i}", f"T{i}", self._make_snapshots(seed=i))
+        evolutions = mem.compute_kernel_evolution(block_name="Block1")
+        assert len(evolutions) == 1
+        assert "Block1" in evolutions
+
+    def test_max_runs_limit(self):
+        mem = KernelMemory(max_runs=3)
+        for i in range(5):
+            mem.store_run(f"R{i}", f"T{i}", self._make_snapshots(seed=i))
+        assert mem.n_runs == 3
+        assert mem.run_ids == ["R2", "R3", "R4"]
+
+    def test_save_and_load(self, tmp_path):
+        mem = KernelMemory()
+        for i in range(3):
+            mem.store_run(f"R{i}", f"T{i}", self._make_snapshots(seed=i))
+        path = tmp_path / "kernel_memory.json"
+        mem.save(path)
+        loaded = KernelMemory.load(path)
+        assert loaded.n_snapshots == mem.n_snapshots
+        assert loaded.n_runs == mem.n_runs
+        # Verify evolution matches
+        orig = mem.compute_kernel_evolution()
+        load = loaded.compute_kernel_evolution()
+        for bn in orig:
+            assert orig[bn].mean_importance_stability == pytest.approx(
+                load[bn].mean_importance_stability, abs=1e-8
+            )
+
+    def test_evolution_summary(self):
+        mem = KernelMemory()
+        for i in range(3):
+            mem.store_run(f"R{i}", f"T{i}", self._make_snapshots(seed=i))
+        summary = mem.get_evolution_summary()
+        assert summary["n_runs"] == 3
+        assert "Block0" in summary["blocks"]
+        assert "mean_importance_stability" in summary["blocks"]["Block0"]
+
+    def test_store_skips_incomplete_snapshots(self):
+        mem = KernelMemory()
+        # Snapshot missing importance → should be skipped
+        stored = mem.store_run("R0", "T0", [{"block_name": "X", "step": 1}])
+        assert stored == 0
+        assert mem.n_snapshots == 0
