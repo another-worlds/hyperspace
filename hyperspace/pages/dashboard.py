@@ -17,54 +17,6 @@ from hyperspace.viz.charts import source_badge
 from hyperspace.core.pipeline import PipelineRunner
 
 
-# --------------------------------------------------------------------------- #
-# Internal helpers: governance flag computation                                #
-# --------------------------------------------------------------------------- #
-
-def _compute_governance_flags(
-    data_sources: dict,
-    ukt_snapshots: list,
-    sae_result: dict | None,
-    graph_result: dict | None,
-    timeframe_context: dict,
-) -> list[dict]:
-    """Auto-detect governance flags from pipeline results.
-
-    Delegates to PipelineRunner._compute_governance_flags to ensure
-    consistent flag detection logic across headless and UI pipelines.
-    """
-    return PipelineRunner._compute_governance_flags(
-        data_sources=data_sources,
-        snapshots=ukt_snapshots,
-        sae_result=sae_result,
-        graph_result=graph_result,
-        timeframe_context=timeframe_context,
-    )
-
-
-def _compute_scorecard(
-    ukt_snapshots: list,
-    sae_result: dict | None,
-    data_sources: dict,
-    stability: dict | None,
-    governance_flags: list,
-    alignment_metrics: dict | None = None,
-) -> dict:
-    """Compute interpretability scorecard via canonical PipelineRunner logic.
-
-    Delegates to PipelineRunner._compute_scorecard to guarantee parity between
-    headless pipeline runs and Streamlit dashboard execution.
-    """
-    return PipelineRunner._compute_scorecard(
-        snapshots=ukt_snapshots,
-        sae_result=sae_result,
-        data_sources=data_sources,
-        stability=stability,
-        governance_flags=governance_flags,
-        alignment_metrics=alignment_metrics,
-    )
-
-
 
 # --------------------------------------------------------------------------- #
 # Landing page                                                                  #
@@ -221,6 +173,8 @@ def run_pipeline() -> None:
         st.session_state.interpretability_contract_summary = result[
             "interpretability_contract_summary"
         ]
+        st.session_state.faithfulness_report = result.get("faithfulness_report")
+        st.session_state.drift_result = result.get("drift_result")
 
         status.update(label="Pipeline complete!", state="complete")
         st.session_state.pipeline_complete = True
@@ -239,6 +193,8 @@ def _build_governance_report_markdown(
     interpretability_contract: dict,
     interpretability_contract_summary: dict,
     alignment_metrics: dict | None = None,
+    faithfulness_report: dict | None = None,
+    drift_result: dict | None = None,
 ) -> str:
     """Build exportable markdown governance report with compliance artifacts."""
     report_lines = [
@@ -319,12 +275,143 @@ def _build_governance_report_markdown(
                     f"{snap['layer_narrative']}"
                 )
 
+    # Faithfulness checks (H-003)
+    faithfulness_report = faithfulness_report or {}
+    if faithfulness_report:
+        report_lines.append("")
+        report_lines.append("## Narrative Faithfulness Assessment")
+        report_lines.append(
+            f"- Overall confidence: {faithfulness_report.get('overall_confidence', 0.0):.2%}"
+        )
+        report_lines.append(
+            f"- Low confidence flag: {faithfulness_report.get('low_confidence', False)}"
+        )
+        checks = faithfulness_report.get("checks", [])
+        passed = sum(1 for c in checks if c.get("passed"))
+        report_lines.append(f"- Checks: {passed}/{len(checks)} passed")
+        for c in checks:
+            status_str = "PASS" if c.get("passed") else "FAIL"
+            report_lines.append(
+                f"  - [{status_str}] {c.get('module_name')}/{c.get('check_name')}: {c.get('detail', '')}"
+            )
+
+    # Temporal drift (H-002)
+    drift_result = drift_result or {}
+    if drift_result:
+        report_lines.append("")
+        report_lines.append("## Temporal Drift Analysis")
+        report_lines.append(
+            f"- Regression cosine: {drift_result.get('regression_cosine', 0.0):.4f}"
+        )
+        report_lines.append(
+            f"- Importance cosine: {drift_result.get('importance_cosine', 0.0):.4f}"
+        )
+        report_lines.append(
+            f"- Stability delta: {drift_result.get('stability_delta', 0.0):+.4f}"
+        )
+        alerts = drift_result.get("alerts", [])
+        if alerts:
+            for a in alerts:
+                report_lines.append(
+                    f"  - [{a.get('code')}] {a.get('label')}: {a.get('detail', '')}"
+                )
+
     report_lines.append("")
     report_lines.append("## Pipeline Reports")
     for snap in snapshots:
         report_lines.append(snap["report"])
 
     return "\n".join(report_lines)
+
+
+def _build_diagnostics_export_rows(
+    *,
+    run_id: str,
+    run_ts: str,
+    alignment_metrics: dict | None,
+    faithfulness_report: dict | None,
+    drift_result: dict | None,
+) -> list[dict[str, object]]:
+    """Flatten alignment, faithfulness, and drift data for CSV export."""
+    rows: list[dict[str, object]] = []
+    alignment_metrics = alignment_metrics or {}
+    legacy = alignment_metrics.get("legacy", {})
+    shared = alignment_metrics.get("shared_latent", {})
+    parity = alignment_metrics.get("parity_delta", {})
+
+    rows.append({
+        "RunID": run_id,
+        "Timestamp": run_ts,
+        "Category": "alignment",
+        "Metric": "legacy_retrieval_at_1",
+        "Value": legacy.get("retrieval_at_1", 0.0),
+    })
+    rows.append({
+        "RunID": run_id,
+        "Timestamp": run_ts,
+        "Category": "alignment",
+        "Metric": "legacy_probe_cosine",
+        "Value": legacy.get("probe_cosine", 0.0),
+    })
+    rows.append({
+        "RunID": run_id,
+        "Timestamp": run_ts,
+        "Category": "alignment",
+        "Metric": "shared_retrieval_at_1",
+        "Value": shared.get("retrieval_at_1", 0.0),
+    })
+    rows.append({
+        "RunID": run_id,
+        "Timestamp": run_ts,
+        "Category": "alignment",
+        "Metric": "shared_probe_cosine",
+        "Value": shared.get("probe_cosine", 0.0),
+    })
+    rows.append({
+        "RunID": run_id,
+        "Timestamp": run_ts,
+        "Category": "alignment",
+        "Metric": "parity_delta_retrieval",
+        "Value": parity.get("retrieval_at_1", 0.0),
+    })
+
+    faithfulness_report = faithfulness_report or {}
+    if faithfulness_report:
+        rows.append({
+            "RunID": run_id,
+            "Timestamp": run_ts,
+            "Category": "faithfulness",
+            "Metric": "overall_confidence",
+            "Value": faithfulness_report.get("overall_confidence", 0.0),
+        })
+        rows.append({
+            "RunID": run_id,
+            "Timestamp": run_ts,
+            "Category": "faithfulness",
+            "Metric": "low_confidence",
+            "Value": 1.0 if faithfulness_report.get("low_confidence") else 0.0,
+        })
+        for c in faithfulness_report.get("checks", []):
+            rows.append({
+                "RunID": run_id,
+                "Timestamp": run_ts,
+                "Category": "faithfulness_check",
+                "Metric": f"{c.get('module_name')}/{c.get('check_name')}",
+                "Value": 1.0 if c.get("passed") else 0.0,
+            })
+
+    drift_result = drift_result or {}
+    if drift_result:
+        for key in ("regression_cosine", "importance_cosine", "stability_delta"):
+            rows.append({
+                "RunID": run_id,
+                "Timestamp": run_ts,
+                "Category": "drift",
+                "Metric": key,
+                "Value": drift_result.get(key, 0.0),
+            })
+
+    return rows
 
 
 def _build_contract_export_rows(
@@ -538,6 +625,69 @@ def render_results() -> None:
         "reports, see the **Semantic Interpreter** tab."
     )
 
+    # ---- Faithfulness Report (H-003) ----
+    faithfulness_report = st.session_state.get("faithfulness_report")
+    if faithfulness_report:
+        st.markdown("### Narrative Faithfulness Checks")
+        confidence = faithfulness_report.get("overall_confidence", 1.0)
+        low_conf = faithfulness_report.get("low_confidence", False)
+        checks = faithfulness_report.get("checks", [])
+
+        if low_conf:
+            st.warning(
+                f"Explanation confidence is **{confidence:.0%}** — below minimum threshold. "
+                "Narratives have been downgraded to avoid unsupported claims."
+            )
+        else:
+            st.success(
+                f"Explanation confidence: **{confidence:.0%}** — "
+                f"{sum(1 for c in checks if c.get('passed'))}/{len(checks)} checks passed."
+            )
+
+        if checks:
+            with st.expander("Intervention check details", expanded=False):
+                fc_rows = []
+                for c in checks:
+                    fc_rows.append({
+                        "Module": c.get("module_name", ""),
+                        "Check": c.get("check_name", ""),
+                        "Passed": "PASS" if c.get("passed") else "FAIL",
+                        "Delta": f"{c.get('delta', 0.0):+.6f}",
+                        "Detail": c.get("detail", ""),
+                    })
+                st.dataframe(pd.DataFrame(fc_rows), use_container_width=True, hide_index=True)
+
+    # ---- Temporal Drift Panel (H-002) ----
+    drift_result = st.session_state.get("drift_result")
+    if drift_result:
+        st.markdown("### Temporal Drift Monitor")
+        dc1, dc2, dc3 = st.columns(3)
+        dc1.metric(
+            "Regression Cosine",
+            f"{drift_result.get('regression_cosine', 0.0):.4f}",
+        )
+        dc2.metric(
+            "Importance Cosine",
+            f"{drift_result.get('importance_cosine', 0.0):.4f}",
+        )
+        dc3.metric(
+            "Stability Delta",
+            f"{drift_result.get('stability_delta', 0.0):+.4f}",
+        )
+        st.caption(
+            f"Window size: {drift_result.get('window_size', 0)} | "
+            f"Total records: {drift_result.get('n_records', 0)}"
+        )
+
+        drift_alerts = drift_result.get("alerts", [])
+        if drift_alerts:
+            st.markdown("#### Drift Alerts")
+            for alert in drift_alerts:
+                st.warning(
+                    f"[{alert.get('code')}] {alert.get('label')}: "
+                    f"{alert.get('detail', '')}"
+                )
+
     interpretability_contract = st.session_state.get("interpretability_contract", {})
     interpretability_contract_summary = st.session_state.get(
         "interpretability_contract_summary", {},
@@ -577,7 +727,7 @@ def render_results() -> None:
     st.markdown("### Export")
     run_id = st.session_state.get("run_id", "UNKNOWN")
     run_ts = st.session_state.get("run_timestamp", "")
-    exp1, exp2, exp3, exp4 = st.columns(4)
+    exp1, exp2, exp3, exp4, exp5 = st.columns(5)
 
     report_md = _build_governance_report_markdown(
         run_id=run_id,
@@ -590,6 +740,8 @@ def render_results() -> None:
         interpretability_contract=interpretability_contract,
         interpretability_contract_summary=interpretability_contract_summary,
         alignment_metrics=alignment_metrics,
+        faithfulness_report=faithfulness_report,
+        drift_result=drift_result,
     )
 
     exp1.download_button(
@@ -639,7 +791,6 @@ def render_results() -> None:
         run_ts=run_ts,
         interpretability_contract=interpretability_contract,
         interpretability_contract_summary=interpretability_contract_summary,
-        alignment_metrics=alignment_metrics,
     )
     if contract_export_rows:
         exp4.download_button(
@@ -647,4 +798,20 @@ def render_results() -> None:
             pd.DataFrame(contract_export_rows).to_csv(index=False),
             f"hyperspace_contract_{run_id}.csv", "text/csv",
             key="dashboard_download_interpretability_contract",
+        )
+
+    # Governance diagnostics CSV: alignment metrics + faithfulness + drift
+    diag_rows = _build_diagnostics_export_rows(
+        run_id=run_id,
+        run_ts=run_ts,
+        alignment_metrics=alignment_metrics,
+        faithfulness_report=faithfulness_report,
+        drift_result=drift_result,
+    )
+    if diag_rows:
+        exp5.download_button(
+            "Download Diagnostics (CSV)",
+            pd.DataFrame(diag_rows).to_csv(index=False),
+            f"hyperspace_diagnostics_{run_id}.csv", "text/csv",
+            key="dashboard_download_diagnostics",
         )

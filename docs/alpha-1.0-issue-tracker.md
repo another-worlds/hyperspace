@@ -13,11 +13,11 @@ Status legend:
 
 ## Alpha 1.0 Progress Snapshot
 
-- **Overall Alpha 1.0 readiness:** **56%**
-- **Governance + interpretability compliance layer:** **78%**
-- **Headless/UI parity:** **82%**
-- **UTK learned shared-latent goals:** **30%**
-- **Mechanistic/faithfulness validation:** **25%**
+- **Overall Alpha 1.0 readiness:** **68%**
+- **Governance + interpretability compliance layer:** **85%**
+- **Headless/UI parity:** **96%**
+- **UTK learned shared-latent goals:** **35%**
+- **Mechanistic/faithfulness validation:** **65%**
 
 These percentages reflect current implementation plus existing roadmap and gap
 analysis documented in:
@@ -29,42 +29,46 @@ analysis documented in:
 
 ## Latest Progress Update (Current Cycle)
 
-- **Overall readiness:** **58%**
-- **Delta vs previous checkpoint:** **+4 percentage points**
+- **Overall readiness:** **68%**
+- **Delta vs previous checkpoint:** **+10 percentage points**
 
 ### Area deltas
-- **UTK universality / learned multimodal substrate:** 30% (**Δ +0pp**)
-- **Interpretability + governance architecture:** 78% (**Δ +3pp**)
-- **Headless/UI parity + reliability:** 93% (**Δ +4pp**)
+- **UTK universality / learned multimodal substrate:** 35% (**Δ +5pp**)
+- **Interpretability + governance architecture:** 85% (**Δ +7pp**)
+- **Headless/UI parity + reliability:** 96% (**Δ +3pp**)
+- **Mechanistic/faithfulness validation:** 65% (**Δ +40pp**)
 
 ### Completed in this cycle
-1. Dashboard orchestration now delegates graph/spatial/agents/interpretability/governance phases to canonical `PipelineRunner.run()` after data fetching and preprocessing.
-2. Session-state outputs are hydrated from runner output payload to preserve headless/UI parity for governance + interpretability artifacts.
-3. Governance exports now include interpretability contract markdown/CSV artifacts with dedicated regression tests.
+1. **H-002 (temporal drift):** Built `DriftMonitor` with windowed run history, cosine-based regression/importance drift, configurable alert thresholds (DRIFT-001/002/003), and CSV-exportable history. Integrated into `PipelineRunner.run()` via optional `drift_monitor` parameter.
+2. **H-003 (faithfulness):** Implemented three intervention-style checks — kernel removal attribution, canvas dimension grounding, SAE concept-kernel consistency. Added fail-safe narrative downgrade when confidence drops below threshold. 19 dedicated tests all passing.
+3. **C-001 (pipeline parity):** Removed dead `_compute_governance_flags` and `_compute_scorecard` wrapper functions from `dashboard.py`. Dashboard now has zero duplicated governance logic — all flows through `PipelineRunner.run()`.
+4. **M-001 (export parity):** Added 5th export column ("Diagnostics CSV") containing alignment metrics, faithfulness check results, and drift statistics. Faithfulness + drift sections added to markdown governance report.
+5. **Types/state:** Extended `PipelineResult` with `faithfulness_report` and `drift_result` TypedDicts. Updated session state init/reset to include new keys. Updated dashboard fixture contract for parity tests.
 
 ### Next critical actions
-1. Add an integration regression test that stubs `PipelineRunner.run()` and verifies dashboard `run_pipeline()` maps the complete payload contract into session state.
-2. Extend contract enrollment to additional upstream modules (or explicit N/A policy) for alpha-scope compliance completeness.
-3. Begin shared latent projector prototype for UTK alpha milestone C.
+1. Complete H-001 shared-latent alignment with richer contrastive training (current MVP uses basic linear projectors).
+2. Expand faithfulness checks with deeper mechanistic interventions (feature masking, concept ablation).
+3. Wire `DriftMonitor` persistence across Streamlit sessions (currently per-runner instance).
 
 ---
 
 ## Severity: CRITICAL
 
 ## C-001 — Single canonical pipeline path in production
-- **Status:** `IN_PROGRESS`
+- **Status:** `DONE`
 - **Why critical:** If dashboard and headless runner diverge, tests cannot
   guarantee production correctness.
 - **Root cause:** Historical duplication between UI orchestration and
   `PipelineRunner` logic.
-- **Current state:** Governance scorecard logic has been unified via dashboard
-  delegation to runner scorecard helpers; full orchestration parity still needs
-  completion and simplification.
+- **Current state:** Dashboard delegates fully to `PipelineRunner.run()`.
+  Dead governance/scorecard wrapper functions removed from dashboard.
+  Parity test fixture covers all payload keys including new faithfulness
+  and drift fields.
 - **Alpha exit criteria:**
-  1. Dashboard orchestration delegates fully to `PipelineRunner.run()`.
-  2. No duplicated governance/scorecard implementations remain in dashboard.
-  3. Parity tests cover headless vs UI outputs for all governance artifacts.
-- **Progress:** **65%**
+  1. ~~Dashboard orchestration delegates fully to `PipelineRunner.run()`.~~ DONE
+  2. ~~No duplicated governance/scorecard implementations remain in dashboard.~~ DONE
+  3. ~~Parity tests cover headless vs UI outputs for all governance artifacts.~~ DONE
+- **Progress:** **95%**
 
 ## C-002 — Enforced interpretability contract across core modules
 - **Status:** `IN_PROGRESS`
@@ -74,63 +78,83 @@ analysis documented in:
   - `InterpretableModule` protocol exists.
   - Structured module reports + summary are produced.
   - UKT + SemanticCanvas are compliant and surfaced in headless and UI paths.
-- **Remaining risk:** Upstream model blocks beyond UKT/canvas are not yet
-  universally enrolled in the same contract.
+  - All remaining alpha-scope modules have explicit N/A policies with
+    owner and rationale.
+- **Remaining risk:** If future modules are added without policy enrollment,
+  `enforce_alpha_scope_contract_coverage()` will raise.
 - **Alpha exit criteria:**
-  1. All major model blocks implement contract (or explicit N/A policy).
+  1. ~~All major model blocks implement contract (or explicit N/A policy).~~ DONE
   2. Pipeline summary reaches 100% compliant modules for alpha scope.
-- **Progress:** **72%**
+- **Progress:** **85%**
 
 ---
 
 ## Severity: HIGH
 
 ## H-001 — Learned cross-modal shared latent alignment
-- **Status:** `OPEN`
+- **Status:** `IN_PROGRESS`
 - **Why high:** Core UTK vision requires learned intermodality, not only fixed
   concatenated regions.
-- **Current state:** Existing UKT remains SVD over fixed 80-d regioned vectors.
+- **Current state:** Shadow MVP exists with linear per-modality encoders,
+  contrastive training over paired windows, and retrieval@1 / probe cosine
+  metrics. Feature-flagged and shadow-only.
 - **Alpha exit criteria:**
-  1. Shared latent projector prototype trained on paired windows.
-  2. Alignment metrics reported (retrieval/probe-based).
-  3. Shadow comparison against legacy UKT in governance panel.
-- **Progress:** **20%**
+  1. ~~Shared latent projector prototype trained on paired windows.~~ DONE
+  2. ~~Alignment metrics reported (retrieval/probe-based).~~ DONE
+  3. ~~Shadow comparison against legacy UKT in governance panel.~~ DONE
+  4. Richer encoder architecture (nonlinear projectors, deeper training).
+- **Progress:** **55%**
 
 ## H-002 — Temporal memory and drift monitoring
-- **Status:** `OPEN`
+- **Status:** `DONE`
 - **Why high:** Alpha reliability requires observing representation drift and
   transition behavior, not single-run snapshots only.
-- **Current state:** Stability estimate exists; no temporal UTK memory backend.
+- **Current state:** `DriftMonitor` class implemented in
+  `hyperspace/core/drift_monitor.py`. Tracks reality regression vectors,
+  kernel importances, and stability across runs. Computes windowed cosine
+  drift, L2 distance, and stability deltas. Three configurable alert
+  thresholds (DRIFT-001/002/003). Exportable history rows for CSV.
+  Integrated into `PipelineRunner.run()` and dashboard rendering.
 - **Alpha exit criteria:**
-  1. Windowed run history for kernel/regression drift.
-  2. Alerting thresholds for significant drift.
-- **Progress:** **25%**
+  1. ~~Windowed run history for kernel/regression drift.~~ DONE
+  2. ~~Alerting thresholds for significant drift.~~ DONE
+- **Progress:** **80%**
 
 ## H-003 — Narrative faithfulness / mechanistic checks
-- **Status:** `IN_PROGRESS`
+- **Status:** `DONE`
 - **Why high:** Human-readable narratives must be constrained by measurable
   attributions/interventions to avoid unsupported claims.
-- **Current state:** Payload-shape checks are in place; mechanistic
-  intervention/faithfulness tests are limited.
+- **Current state:** Three intervention-style checks implemented in
+  `hyperspace/core/faithfulness.py`:
+  - Kernel removal attribution (UKT) — verifies importance ranking
+  - Canvas dimension grounding (SemanticCanvas) — validates dimension ordering
+  - SAE concept-kernel consistency — checks concept activation grounding
+  Fail-safe downgrade replaces narratives with disclaimer when confidence
+  drops below threshold. Integrated into pipeline and dashboard exports.
+  19 dedicated tests passing.
 - **Alpha exit criteria:**
-  1. At least one intervention-style check per major module in alpha scope.
-  2. Fail-safe downgrade when explanation confidence is low.
-- **Progress:** **30%**
+  1. ~~At least one intervention-style check per major module in alpha scope.~~ DONE
+  2. ~~Fail-safe downgrade when explanation confidence is low.~~ DONE
+- **Progress:** **80%**
 
 ---
 
 ## Severity: MEDIUM
 
 ## M-001 — Governance artifact consistency in UI exports
-- **Status:** `IN_PROGRESS`
+- **Status:** `DONE`
 - **Why medium:** Downloaded reports/CSVs should include contract compliance
   artifacts consistently for auditability.
-- **Current state:** Mission Control surfaces compliance; export parity is
-  partial.
+- **Current state:** All five export buttons present:
+  1. Report (Markdown) — includes scorecard, contract, alignment, faithfulness, drift
+  2. Metrics (CSV) — kernel importances per run
+  3. Score Card (CSV) — pass/fail dimensions
+  4. Contract Compliance (CSV) — per-module compliance status
+  5. Diagnostics (CSV) — alignment metrics, faithfulness checks, drift stats
 - **Alpha exit criteria:**
-  1. Contract report + summary included in all governance exports.
-  2. Report template references compliance status per module.
-- **Progress:** **55%**
+  1. ~~Contract report + summary included in all governance exports.~~ DONE
+  2. ~~Report template references compliance status per module.~~ DONE
+- **Progress:** **90%**
 
 ## M-002 — Counterfactual/regional mapping maintainability
 - **Status:** `DONE`
@@ -145,7 +169,8 @@ analysis documented in:
 - **Why medium:** Missing defaults/reset logic causes stale governance data in
   UI runs.
 - **Current state:** Dedicated tests validate init/reset behavior for
-  interpretability contract keys.
+  interpretability contract keys. New `faithfulness_report` and `drift_result`
+  keys added to both init and reset paths.
 - **Progress:** **100%**
 
 ---
@@ -157,12 +182,15 @@ analysis documented in:
 - **Why low:** Developer clarity/maintenance, minimal runtime risk.
 - **Current state:** Multiple stale references already fixed; continue sweep in
   tabs/docs where dimensionality or legacy naming may remain.
-- **Progress:** **70%**
+- **Progress:** **75%**
 
 ## L-002 — Dead/underused UI helper consolidation
-- **Status:** `OPEN`
+- **Status:** `IN_PROGRESS`
 - **Why low:** Reduces maintenance overhead and unused code surface.
-- **Progress:** **15%**
+- **Current state:** Dashboard `_compute_governance_flags` and
+  `_compute_scorecard` wrappers removed (were dead delegates).
+  `_report_section.py` remains unused.
+- **Progress:** **30%**
 
 ---
 
@@ -172,23 +200,25 @@ analysis documented in:
 - [x] Structured interpretability contract reports
 - [x] Contract summary aggregation
 - [x] UI visibility in Mission Control
-- [ ] Export/report parity for all governance artifacts
+- [x] Export/report parity for all governance artifacts
 
-**Milestone A progress:** **82%**
+**Milestone A progress:** **95%**
 
 ## Milestone B — Pipeline parity lock (target: 100% complete)
 - [x] Scorecard parity (dashboard delegates to pipeline logic)
-- [ ] Full orchestration parity (single path via runner)
-- [ ] End-to-end parity tests for key outputs
+- [x] Full orchestration parity (single path via runner)
+- [x] End-to-end parity tests for key outputs
 
-**Milestone B progress:** **82%**
+**Milestone B progress:** **95%**
 
 ## Milestone C — UTK vision alpha prototype (target: >=50% complete)
-- [ ] Shared latent projector prototype
-- [ ] Alignment metrics dashboard
-- [ ] Temporal drift panel
+- [x] Shared latent projector prototype
+- [x] Alignment metrics dashboard
+- [x] Temporal drift panel
+- [ ] Richer contrastive encoder architecture
+- [ ] Cross-session drift persistence
 
-**Milestone C progress:** **25%**
+**Milestone C progress:** **60%**
 
 ---
 
@@ -206,9 +236,9 @@ Use this section for iterative updates without changing the tracker structure.
 
 ### Example Filled Update
 
-- **Week of:** 2026-03-12
-- **Overall readiness:** 54%
-- **Delta vs previous week:** +1 percentage point
-- **Top completed item:** Counterfactual region mapping made config-driven.
-- **Top blocker:** Full UI orchestration still not fully delegated to runner.
-- **Next critical action:** Complete runner delegation and export parity checks.
+- **Week of:** 2026-03-13
+- **Overall readiness:** 68%
+- **Delta vs previous week:** +10 percentage points
+- **Top completed item:** Temporal drift monitor + narrative faithfulness checks with fail-safe downgrade.
+- **Top blocker:** Shared-latent encoder needs deeper architecture for production-grade alignment.
+- **Next critical action:** Enrich shared-latent projector with nonlinear encoders and extended contrastive training.

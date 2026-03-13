@@ -1,0 +1,255 @@
+"""Tests for temporal drift monitoring and narrative faithfulness checks."""
+from __future__ import annotations
+
+import numpy as np
+import pytest
+
+from hyperspace.core.drift_monitor import (
+    DriftMonitor,
+    DriftResult,
+    DRIFT_THRESHOLDS,
+)
+from hyperspace.core.faithfulness import (
+    LOW_CONFIDENCE_DISCLAIMER,
+    check_kernel_attribution_faithfulness,
+    check_canvas_narrative_grounding,
+    check_sae_concept_activation_consistency,
+    run_faithfulness_checks,
+)
+
+
+# --------------------------------------------------------------------------- #
+# DriftMonitor tests                                                           #
+# --------------------------------------------------------------------------- #
+
+
+class TestDriftMonitor:
+    """Tests for DriftMonitor class."""
+
+    def _make_monitor_with_runs(self, n: int = 3, seed: int = 0) -> DriftMonitor:
+        rng = np.random.default_rng(seed)
+        monitor = DriftMonitor(max_history=50)
+        for i in range(n):
+            monitor.record_run(
+                run_id=f"RUN-{i:03d}",
+                timestamp=f"2026-01-{i + 1:02d} 00:00 UTC",
+                reality_regression=rng.normal(size=80),
+                kernel_importances=np.abs(rng.normal(size=5)),
+                mean_cosine_stability=0.85 + rng.normal() * 0.02,
+                n_kernels=5,
+            )
+        return monitor
+
+    def test_record_run_increments_history(self):
+        monitor = DriftMonitor()
+        assert monitor.n_records == 0
+        monitor.record_run(
+            run_id="A", timestamp="T", reality_regression=np.zeros(80),
+            kernel_importances=np.zeros(5), mean_cosine_stability=0.9,
+            n_kernels=5,
+        )
+        assert monitor.n_records == 1
+
+    def test_compute_drift_returns_none_with_insufficient_history(self):
+        monitor = DriftMonitor()
+        assert monitor.compute_drift() is None
+
+        monitor.record_run(
+            run_id="A", timestamp="T", reality_regression=np.zeros(80),
+            kernel_importances=np.zeros(5), mean_cosine_stability=0.9,
+            n_kernels=5,
+        )
+        assert monitor.compute_drift() is None
+
+    def test_compute_drift_returns_result_with_two_runs(self):
+        monitor = self._make_monitor_with_runs(n=2)
+        drift = monitor.compute_drift()
+        assert drift is not None
+        assert isinstance(drift, DriftResult)
+        assert drift.n_records == 2
+        assert drift.window_size == 1
+
+    def test_drift_cosines_bounded(self):
+        monitor = self._make_monitor_with_runs(n=5)
+        drift = monitor.compute_drift(window=3)
+        assert -1.0 <= drift.regression_cosine <= 1.0
+        assert -1.0 <= drift.importance_cosine <= 1.0
+
+    def test_identical_runs_produce_perfect_cosine(self):
+        monitor = DriftMonitor()
+        reg = np.ones(80)
+        imp = np.array([0.5, 0.3, 0.1, 0.05, 0.05])
+        for i in range(3):
+            monitor.record_run(
+                run_id=f"R{i}", timestamp="T",
+                reality_regression=reg, kernel_importances=imp,
+                mean_cosine_stability=0.9, n_kernels=5,
+            )
+        drift = monitor.compute_drift()
+        assert drift.regression_cosine == pytest.approx(1.0, abs=1e-6)
+        assert drift.importance_cosine == pytest.approx(1.0, abs=1e-6)
+        assert drift.stability_delta == pytest.approx(0.0, abs=1e-6)
+
+    def test_max_history_limit_enforced(self):
+        monitor = DriftMonitor(max_history=5)
+        for i in range(10):
+            monitor.record_run(
+                run_id=f"R{i}", timestamp="T",
+                reality_regression=np.zeros(80),
+                kernel_importances=np.zeros(3),
+                mean_cosine_stability=0.9, n_kernels=3,
+            )
+        assert monitor.n_records == 5
+
+    def test_check_alert_thresholds_no_alerts_for_stable_runs(self):
+        monitor = self._make_monitor_with_runs(n=2, seed=0)
+        # Identical runs won't trigger alerts
+        reg = np.ones(80)
+        monitor2 = DriftMonitor()
+        for i in range(3):
+            monitor2.record_run(
+                run_id=f"R{i}", timestamp="T",
+                reality_regression=reg,
+                kernel_importances=np.array([0.5, 0.3, 0.2]),
+                mean_cosine_stability=0.9, n_kernels=3,
+            )
+        alerts = monitor2.check_alert_thresholds()
+        assert len(alerts) == 0
+
+    def test_check_alert_thresholds_fires_on_major_drift(self):
+        monitor = DriftMonitor()
+        monitor.record_run(
+            run_id="A", timestamp="T",
+            reality_regression=np.ones(80),
+            kernel_importances=np.array([0.8, 0.1, 0.1]),
+            mean_cosine_stability=0.95, n_kernels=3,
+        )
+        monitor.record_run(
+            run_id="B", timestamp="T",
+            reality_regression=-np.ones(80),  # Opposite direction
+            kernel_importances=np.array([0.1, 0.1, 0.8]),  # Reversed
+            mean_cosine_stability=0.50, n_kernels=3,
+        )
+        alerts = monitor.check_alert_thresholds()
+        codes = {a.code for a in alerts}
+        assert "DRIFT-001" in codes  # regression cosine far below 0.85
+        assert "DRIFT-003" in codes  # stability dropped significantly
+
+    def test_export_history_rows(self):
+        monitor = self._make_monitor_with_runs(n=3)
+        rows = monitor.export_history_rows()
+        assert len(rows) == 3
+        assert rows[0]["regression_cosine_vs_prev"] is None
+        assert rows[1]["regression_cosine_vs_prev"] is not None
+
+
+# --------------------------------------------------------------------------- #
+# Faithfulness checks tests                                                    #
+# --------------------------------------------------------------------------- #
+
+
+def _make_snapshot(n_kernels: int = 3) -> dict:
+    """Build a minimal valid snapshot for faithfulness testing."""
+    rng = np.random.default_rng(42)
+    matrix = rng.normal(size=(5, 80))
+    U, S, Vt = np.linalg.svd(matrix, full_matrices=False)
+    importance = S / S.sum()
+    return {
+        "step": 5,
+        "block_name": "Final",
+        "matrix": matrix,
+        "U": U,
+        "S": S,
+        "Vt": Vt,
+        "n_kernels": len(S),
+        "importance": importance,
+        "kernel_labels": [
+            {"kernel_id": f"K{i}", "importance": float(importance[i]),
+             "dominant_region": "temporal-pattern", "dominant_block": "Finance"}
+            for i in range(len(S))
+        ],
+        "reconstruction_error": 0.0,
+        "report": "Test snapshot",
+        "feature_meta": {},
+    }
+
+
+class TestKernelAttributionFaithfulness:
+    def test_returns_results_for_valid_snapshot(self):
+        snap = _make_snapshot()
+        results = check_kernel_attribution_faithfulness([snap])
+        assert len(results) > 0
+        for r in results:
+            assert r.module_name == "UKT"
+            assert r.check_name.startswith("kernel_removal_K")
+
+    def test_kernel_removal_increases_error(self):
+        snap = _make_snapshot()
+        results = check_kernel_attribution_faithfulness([snap])
+        # Removing a kernel should not decrease reconstruction error
+        for r in results:
+            assert r.delta >= -1e-10, f"{r.check_name}: delta={r.delta}"
+
+    def test_empty_snapshots_returns_empty(self):
+        assert check_kernel_attribution_faithfulness([]) == []
+
+
+class TestCanvasNarrativeGrounding:
+    def test_with_canvas_entries(self):
+        class MockEntry:
+            def __init__(self, coords):
+                self.coordinates = coords
+
+        class MockCanvas:
+            def __init__(self):
+                self.entries = [
+                    MockEntry({"market_momentum": 0.9, "volatility_regime": 0.1}),
+                    MockEntry({"market_momentum": 0.7, "cooperation_signal": 0.3}),
+                ]
+
+        results = check_canvas_narrative_grounding(MockCanvas(), "test narrative")
+        assert len(results) == 1
+        assert results[0].passed is True
+        assert results[0].module_name == "SemanticCanvas"
+
+    def test_none_canvas_returns_empty(self):
+        assert check_canvas_narrative_grounding(None, None) == []
+
+
+class TestSAEConceptConsistency:
+    def test_grounded_concepts(self):
+        snap = _make_snapshot()
+        sae = {"active_concepts": 3, "total_concepts": 8}
+        results = check_sae_concept_activation_consistency(sae, [snap])
+        assert len(results) == 1
+        assert results[0].passed is True
+
+    def test_none_sae_returns_empty(self):
+        assert check_sae_concept_activation_consistency(None, [_make_snapshot()]) == []
+
+
+class TestRunFaithfulnessChecks:
+    def test_full_report_with_high_confidence(self):
+        snap = _make_snapshot()
+        report = run_faithfulness_checks(
+            snapshots=[snap],
+            sae_result={"active_concepts": 3, "total_concepts": 8},
+        )
+        assert report.overall_confidence > 0
+        assert report.low_confidence is False
+        assert report.downgraded_narrative is None
+
+    def test_failsafe_downgrade_with_low_threshold(self):
+        # Use impossibly high threshold to force downgrade
+        snap = _make_snapshot()
+        report = run_faithfulness_checks(
+            snapshots=[snap],
+            confidence_threshold=1.1,  # nothing can pass 110%
+        )
+        assert report.low_confidence is True
+        assert report.downgraded_narrative == LOW_CONFIDENCE_DISCLAIMER
+
+    def test_empty_inputs_returns_high_confidence(self):
+        report = run_faithfulness_checks(snapshots=[])
+        assert report.overall_confidence == 1.0
+        assert report.low_confidence is False

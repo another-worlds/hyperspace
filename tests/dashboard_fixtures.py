@@ -24,8 +24,11 @@ EXPECTED_RUNNER_PAYLOAD_KEYS: tuple[str, ...] = (
     "stability",
     "governance_flags",
     "interpretability_scorecard",
+    "alignment_metrics",
     "interpretability_contract",
     "interpretability_contract_summary",
+    "faithfulness_report",
+    "drift_result",
 )
 
 
@@ -49,6 +52,9 @@ SESSION_TO_PAYLOAD_KEY_MAP: dict[str, str] = {
     "ukt_multirun_stability": "stability",
     "governance_flags": "governance_flags",
     "interpretability_scorecard": "interpretability_scorecard",
+    "alignment_metrics": "alignment_metrics",
+    "faithfulness_report": "faithfulness_report",
+    "drift_result": "drift_result",
 }
 
 
@@ -74,6 +80,18 @@ def build_runner_payload() -> dict[str, Any]:
         "stability": {"stability_index": 0.93},
         "governance_flags": [{"code": "GOV-001", "severity": "medium"}],
         "interpretability_scorecard": {"traceability": 0.95, "confidence": 0.91},
+        "alignment_metrics": {
+            "legacy": {"retrieval_at_1": 0.5, "probe_cosine": 0.6},
+            "shared_latent": {"retrieval_at_1": 0.4, "probe_cosine": 0.5, "shadow_only": True},
+            "parity_delta": {"retrieval_at_1": -0.1, "probe_cosine": -0.1},
+        },
         "interpretability_contract": {"from": "runner", "unused_in_dashboard": True},
         "interpretability_contract_summary": {"from": "runner", "unused_in_dashboard": True},
+        "faithfulness_report": {
+            "checks": [{"module_name": "UKT", "check_name": "kernel_removal_K0", "passed": True, "delta": 0.01}],
+            "overall_confidence": 0.95,
+            "low_confidence": False,
+            "downgraded_narrative": None,
+        },
+        "drift_result": None,
     }

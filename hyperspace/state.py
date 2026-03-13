@@ -66,6 +66,10 @@ def init_session_state() -> None:
             "noncompliant_modules": 0,
             "compliance_rate": 0.0,
         },
+        # H-003: Narrative faithfulness report
+        faithfulness_report=None,
+        # H-002: Temporal drift result
+        drift_result=None,
         # B1: Policy language mode toggle
         policy_language_mode=False,
         # A1: Per-kernel contest annotations dict[kernel_id -> str]
@@ -141,6 +145,8 @@ def reset_pipeline() -> None:
     st.session_state.governance_flags = []
     st.session_state.interpretability_scorecard = {}
     st.session_state.alignment_metrics = {}
+    st.session_state.faithfulness_report = None
+    st.session_state.drift_result = None
     st.session_state.interpretability_contract = {}
     st.session_state.interpretability_contract_summary = {
         "total_modules": 0,

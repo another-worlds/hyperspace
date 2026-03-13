@@ -34,6 +34,8 @@ from hyperspace.core.types import (
     validate_block_result,
     summarize_interpretable_reports,
 )
+from hyperspace.core.faithfulness import run_faithfulness_checks
+from hyperspace.core.drift_monitor import DriftMonitor
 from hyperspace.core.interpretability_registry import (
     build_alpha_scope_contract_reports,
     enforce_alpha_scope_contract_coverage,
@@ -54,13 +56,17 @@ class PipelineRunner:
     def __init__(
         self,
         on_step: Callable[[str, str], None] | None = None,
+        drift_monitor: DriftMonitor | None = None,
     ):
         """
         Args:
             on_step: Optional callback(step_name, message) for progress reporting.
+            drift_monitor: Optional DriftMonitor for temporal drift tracking.
+                When provided, each run is recorded and drift is computed.
         """
         self._on_step = on_step or (lambda s, m: None)
         self._warnings: list[str] = []
+        self._drift_monitor = drift_monitor
 
     def _report(self, step: str, msg: str) -> None:
         self._on_step(step, msg)
@@ -366,6 +372,80 @@ class PipelineRunner:
             interpretability_contract,
         )
 
+        # ---- Faithfulness checks (H-003) ----
+        self._report("faithfulness", "Running narrative faithfulness checks...")
+        faithfulness = run_faithfulness_checks(
+            snapshots=snapshots,
+            canvas=ukt.canvas,
+            canvas_narrative=canvas_narrative,
+            sae_result=sae_result,
+        )
+        faithfulness_report = {
+            "checks": [
+                {
+                    "module_name": c.module_name,
+                    "check_name": c.check_name,
+                    "passed": c.passed,
+                    "original_value": c.original_value,
+                    "intervened_value": c.intervened_value,
+                    "delta": c.delta,
+                    "detail": c.detail,
+                }
+                for c in faithfulness.checks
+            ],
+            "overall_confidence": faithfulness.overall_confidence,
+            "low_confidence": faithfulness.low_confidence,
+            "downgraded_narrative": faithfulness.downgraded_narrative,
+        }
+
+        # Fail-safe downgrade: replace narratives if confidence is below threshold
+        if faithfulness.low_confidence:
+            canvas_narrative = faithfulness.downgraded_narrative
+            reality_narrative = faithfulness.downgraded_narrative
+
+        # ---- Temporal drift (H-002) ----
+        drift_result = None
+        if self._drift_monitor is not None and snapshots:
+            final_snap = snapshots[-1]
+            mean_cos = 0.0
+            if stability and stability.get("n_runs", 0) > 0:
+                mean_cos = stability["mean_cosine"]
+
+            self._drift_monitor.record_run(
+                run_id=run_id,
+                timestamp=run_timestamp,
+                reality_regression=final_snap.get(
+                    "reality_regression", np.zeros(UKT_FEATURE_DIM)
+                ),
+                kernel_importances=final_snap.get("importance", np.array([])),
+                mean_cosine_stability=mean_cos,
+                n_kernels=final_snap.get("n_kernels", 0),
+            )
+            drift = self._drift_monitor.compute_drift()
+            if drift is not None:
+                alerts = self._drift_monitor.check_alert_thresholds(drift)
+                drift_result = {
+                    "regression_cosine": drift.regression_cosine,
+                    "regression_l2": drift.regression_l2,
+                    "importance_cosine": drift.importance_cosine,
+                    "importance_l2": drift.importance_l2,
+                    "stability_delta": drift.stability_delta,
+                    "n_kernel_delta": drift.n_kernel_delta,
+                    "window_size": drift.window_size,
+                    "n_records": drift.n_records,
+                    "alerts": [
+                        {
+                            "code": a.code,
+                            "label": a.label,
+                            "severity": a.severity,
+                            "detail": a.detail,
+                            "measured": a.measured,
+                            "threshold": a.threshold,
+                        }
+                        for a in alerts
+                    ],
+                }
+
         return PipelineResult(
             snapshots=snapshots,
             final_matrix=final_matrix,
@@ -389,6 +469,8 @@ class PipelineRunner:
             alignment_metrics=alignment_metrics,
             interpretability_contract=interpretability_contract,
             interpretability_contract_summary=interpretability_contract_summary,
+            faithfulness_report=faithfulness_report,
+            drift_result=drift_result,
             run_id=run_id,
             run_timestamp=run_timestamp,
         )
