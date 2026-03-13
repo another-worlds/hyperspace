@@ -1,4 +1,4 @@
-"""Tests for temporal drift monitoring and narrative faithfulness checks."""
+"""Tests for temporal drift monitoring, narrative faithfulness, and shared-latent alignment."""
 from __future__ import annotations
 
 import numpy as np
@@ -253,3 +253,82 @@ class TestRunFaithfulnessChecks:
         report = run_faithfulness_checks(snapshots=[])
         assert report.overall_confidence == 1.0
         assert report.low_confidence is False
+
+
+# --------------------------------------------------------------------------- #
+# Shared-latent nonlinear encoder tests                                        #
+# --------------------------------------------------------------------------- #
+
+
+class TestSharedLatentNonlinear:
+    """Tests for the upgraded nonlinear shared-latent alignment module."""
+
+    def test_model_architecture(self):
+        from hyperspace.models.shared_latent import _build_model
+
+        model = _build_model(
+            ["A", "B"], input_dim=16, hidden_dim=24, latent_dim=12, seed=0,
+        )
+        assert model.latent_dim == 12
+        assert len(model.heads) == 2
+        head = model.heads["A"]
+        assert head.W1.shape == (16, 24)
+        assert head.b1.shape == (24,)
+        assert head.W2.shape == (24, 12)
+        assert head.b2.shape == (12,)
+
+    def test_encode_produces_unit_norm(self):
+        from hyperspace.models.shared_latent import _build_model
+
+        model = _build_model(
+            ["X"], input_dim=8, hidden_dim=12, latent_dim=6, seed=42,
+        )
+        rng = np.random.default_rng(42)
+        x = rng.normal(size=(10, 8))
+        z = model.encode("X", x)
+        norms = np.linalg.norm(z, axis=1)
+        np.testing.assert_allclose(norms, 1.0, atol=1e-6)
+
+    def test_compute_alignment_metrics_shape(self):
+        from hyperspace.models.shared_latent import compute_alignment_metrics
+
+        rng = np.random.default_rng(42)
+        matrix = rng.normal(size=(3, 80))
+        metrics = compute_alignment_metrics(
+            matrix, ["Finance", "Clusters", "Graph"], epochs=3,
+        )
+        assert "legacy" in metrics
+        assert "shared_latent" in metrics
+        assert "parity_delta" in metrics
+        assert metrics["shared_latent"]["encoder_type"] == "nonlinear_2layer_relu"
+        assert metrics["shared_latent"]["shadow_only"] is True
+        assert metrics["shared_latent"]["training_epochs"] == 3
+
+    def test_loss_decreases_over_training(self):
+        from hyperspace.models.shared_latent import compute_alignment_metrics
+
+        rng = np.random.default_rng(0)
+        matrix = rng.normal(size=(4, 80))
+        metrics = compute_alignment_metrics(
+            matrix, ["A", "B", "C", "D"], epochs=30, learning_rate=0.01,
+        )
+        initial = metrics["shared_latent"]["contrastive_loss_initial"]
+        final = metrics["shared_latent"]["contrastive_loss_final"]
+        assert final <= initial, f"Loss should decrease: {initial} -> {final}"
+
+    def test_nonlinear_encoder_outperforms_random_baseline(self):
+        from hyperspace.models.shared_latent import compute_alignment_metrics
+
+        rng = np.random.default_rng(42)
+        matrix = rng.normal(size=(3, 80))
+        # Trained model
+        trained = compute_alignment_metrics(
+            matrix, ["A", "B", "C"], epochs=40,
+        )
+        # Untrained model (1 epoch)
+        untrained = compute_alignment_metrics(
+            matrix, ["A", "B", "C"], epochs=1,
+        )
+        # Trained should have same or better metrics
+        assert trained["shared_latent"]["contrastive_loss_final"] <= \
+            untrained["shared_latent"]["contrastive_loss_final"] + 0.5

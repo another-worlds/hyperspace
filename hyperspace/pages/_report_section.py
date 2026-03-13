@@ -22,6 +22,7 @@ _BLOCK_REGIONS: dict[str, tuple[str, int, int, str]] = {
     "Clusters": ("semantic-embedding",    16, 32, "#e67e22"),
     "Graph":    ("structural-centrality", 32, 48, "#2ecc71"),
     "Agents":   ("dynamic-agent",         48, 64, "#e74c3c"),
+    "Spatial":  ("geospatial-kernel",     64, 80, "#9b59b6"),
 }
 
 

@@ -15,6 +15,18 @@ from hyperspace.config import (
 from hyperspace.models.knowledge_matrix import estimate_reality_regression_stability
 from hyperspace.viz.charts import source_badge
 from hyperspace.core.pipeline import PipelineRunner
+from hyperspace.core.drift_monitor import DriftMonitor
+
+
+def _get_drift_monitor() -> DriftMonitor:
+    """Get or create a session-scoped DriftMonitor instance.
+
+    Persists across pipeline re-runs within the same Streamlit session,
+    allowing drift tracking across consecutive runs.
+    """
+    if "drift_monitor" not in st.session_state:
+        st.session_state.drift_monitor = DriftMonitor(max_history=50)
+    return st.session_state.drift_monitor
 
 
 
@@ -139,7 +151,7 @@ def run_pipeline() -> None:
 
         # ---- Step 3: Canonical orchestration (single path) ----
         st.write("Running canonical pipeline runner for graph/spatial/agents/interpreter...")
-        runner = PipelineRunner()
+        runner = PipelineRunner(drift_monitor=_get_drift_monitor())
         result = runner.run(
             finance_result=tft_result,
             cluster_result=cluster_result,
