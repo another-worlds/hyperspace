@@ -54,6 +54,8 @@ SESSION_TO_PAYLOAD_KEY_MAP: dict[str, str] = {
     "governance_flags": "governance_flags",
     "interpretability_scorecard": "interpretability_scorecard",
     "alignment_metrics": "alignment_metrics",
+    "interpretability_contract": "interpretability_contract",
+    "interpretability_contract_summary": "interpretability_contract_summary",
     "faithfulness_report": "faithfulness_report",
     "drift_result": "drift_result",
     "kernel_evolution": "kernel_evolution",

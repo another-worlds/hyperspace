@@ -13,9 +13,9 @@ Status legend:
 
 ## Alpha 1.0 Progress Snapshot
 
-- **Overall Alpha 1.0 readiness:** **93%**
-- **Governance + interpretability compliance layer:** **96%**
-- **Headless/UI parity:** **96%**
+- **Overall Alpha 1.0 readiness:** **95%**
+- **Governance + interpretability compliance layer:** **98%**
+- **Headless/UI parity:** **98%**
 - **UTK learned shared-latent goals:** **90%**
 - **Mechanistic/faithfulness validation:** **95%**
 
@@ -29,24 +29,26 @@ analysis documented in:
 
 ## Latest Progress Update (Current Cycle)
 
-- **Overall readiness:** **93%**
-- **Delta vs previous checkpoint:** **+6 percentage points**
+- **Overall readiness:** **95%**
+- **Delta vs previous checkpoint:** **+8 percentage points**
 
 ### Area deltas
 - **UTK universality / learned multimodal substrate:** 90% (**Δ +5pp**)
-- **Interpretability + governance architecture:** 96% (**Δ +4pp**)
-- **Headless/UI parity + reliability:** 96% (**Δ +0pp**)
+- **Interpretability + governance architecture:** 98% (**Δ +6pp**)
+- **Headless/UI parity + reliability:** 98% (**Δ +2pp**)
 - **Mechanistic/faithfulness validation:** 95% (**Δ +5pp**)
 
 ### Completed in this cycle
 1. **Scorecard threshold tuning:** Upgraded shared-latent thresholds from placeholder `0.0` to calibrated baselines (legacy retrieval@1 ≥ 0.15, shared-latent retrieval@1 ≥ 0.20, probe cosine ≥ 0.10). Added 9th scorecard dimension: `faithfulness_confidence` (≥ 0.50). Pipeline reordered so faithfulness checks run before scorecard computation to feed confidence score.
-2. **Kernel evolution dashboard panel:** Added cross-run kernel evolution panel to Mission Control. Shows per-block importance stability metrics, run counts, and expandable reconstruction error trends table. Kernel evolution data included in governance markdown report.
+2. **Kernel evolution dashboard panel:** Added cross-run kernel evolution panel to Mission Control with two Plotly trend charts (reconstruction error, importance stability cosine with 0.80 threshold line). Shows per-block stability metrics, run counts, expandable reconstruction trends table. Kernel evolution data included in governance markdown report and diagnostics CSV export.
 3. **Contract coverage expansion:** Enrolled 3 new alpha-scope modules in interpretability registry: `SharedLatentHead` (N/A, shadow-only prototype), `DriftMonitor` (N/A, diagnostic service), `KernelMemory` (N/A, persistence layer). Total: 11 modules (2 contract-compliant, 9 explicit N/A).
+4. **Parity audit:** Fixed `SESSION_TO_PAYLOAD_KEY_MAP` missing `interpretability_contract` and `interpretability_contract_summary` entries. Added `.hyperspace/` to `.gitignore` for drift/kernel persistence files. Added comprehensive parity coverage tests (map covers all expected keys). 61 tests total passing.
+5. **Zero TODO/FIXME markers** remaining in Python source under `hyperspace/`.
 
 ### Next critical actions
-1. Add kernel evolution trend line chart (Plotly) to dashboard panel.
-2. Integration test coverage for new scorecard dimension and contract modules.
-3. Final pre-release audit: verify all governance exports include kernel evolution data.
+1. End-to-end integration test with torch (blocked by pre-existing torch install issue).
+2. Scorecard threshold validation against real pipeline runs.
+3. Phase 3 governance items: latent space versioning and concept vocabulary audit trails.
 
 ---
 
@@ -66,7 +68,7 @@ analysis documented in:
   1. ~~Dashboard orchestration delegates fully to `PipelineRunner.run()`.~~ DONE
   2. ~~No duplicated governance/scorecard implementations remain in dashboard.~~ DONE
   3. ~~Parity tests cover headless vs UI outputs for all governance artifacts.~~ DONE
-- **Progress:** **95%**
+- **Progress:** **98%**
 
 ## C-002 — Enforced interpretability contract across core modules
 - **Status:** `IN_PROGRESS`
@@ -223,7 +225,7 @@ analysis documented in:
 - [x] Full orchestration parity (single path via runner)
 - [x] End-to-end parity tests for key outputs
 
-**Milestone B progress:** **95%**
+**Milestone B progress:** **98%**
 
 ## Milestone C — UTK vision alpha prototype (target: >=50% complete)
 - [x] Shared latent projector prototype

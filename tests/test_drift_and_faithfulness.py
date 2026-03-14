@@ -718,3 +718,21 @@ class TestDashboardFixtureParity:
         from tests.dashboard_fixtures import SESSION_TO_PAYLOAD_KEY_MAP
 
         assert "kernel_evolution" in SESSION_TO_PAYLOAD_KEY_MAP
+
+    def test_session_map_covers_contract_keys(self):
+        from tests.dashboard_fixtures import SESSION_TO_PAYLOAD_KEY_MAP
+
+        assert "interpretability_contract" in SESSION_TO_PAYLOAD_KEY_MAP
+        assert "interpretability_contract_summary" in SESSION_TO_PAYLOAD_KEY_MAP
+
+    def test_session_map_covers_all_expected_keys(self):
+        from tests.dashboard_fixtures import (
+            EXPECTED_RUNNER_PAYLOAD_KEYS,
+            SESSION_TO_PAYLOAD_KEY_MAP,
+        )
+
+        payload_keys_in_map = set(SESSION_TO_PAYLOAD_KEY_MAP.values())
+        for key in EXPECTED_RUNNER_PAYLOAD_KEYS:
+            assert key in payload_keys_in_map, (
+                f"Expected payload key '{key}' not covered by SESSION_TO_PAYLOAD_KEY_MAP"
+            )
