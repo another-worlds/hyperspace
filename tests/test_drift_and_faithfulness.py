@@ -601,3 +601,120 @@ class TestKernelMemory:
         stored = mem.store_run("R0", "T0", [{"block_name": "X", "step": 1}])
         assert stored == 0
         assert mem.n_snapshots == 0
+
+
+# --------------------------------------------------------------------------- #
+# Scorecard threshold & contract integration tests                             #
+# --------------------------------------------------------------------------- #
+
+
+class TestScorecardThresholds:
+    """Validate scorecard threshold configuration and computation."""
+
+    def test_all_thresholds_have_required_keys(self):
+        from hyperspace.config import SCORECARD_THRESHOLDS
+
+        required = {"label", "unit", "threshold", "description"}
+        for key, spec in SCORECARD_THRESHOLDS.items():
+            missing = required - set(spec.keys())
+            assert not missing, f"{key} missing keys: {missing}"
+
+    def test_faithfulness_confidence_threshold_exists(self):
+        from hyperspace.config import SCORECARD_THRESHOLDS
+
+        assert "faithfulness_confidence" in SCORECARD_THRESHOLDS
+        thresh = SCORECARD_THRESHOLDS["faithfulness_confidence"]
+        assert thresh["threshold"] == 0.50
+
+    def test_shared_latent_thresholds_nonzero(self):
+        from hyperspace.config import SCORECARD_THRESHOLDS
+
+        assert SCORECARD_THRESHOLDS["shared_latent_retrieval_at_1"]["threshold"] > 0
+        assert SCORECARD_THRESHOLDS["shared_latent_probe_cosine"]["threshold"] > 0
+        assert SCORECARD_THRESHOLDS["legacy_retrieval_at_1"]["threshold"] > 0
+
+    def test_scorecard_count(self):
+        from hyperspace.config import SCORECARD_THRESHOLDS
+
+        assert len(SCORECARD_THRESHOLDS) == 9
+
+
+class TestContractRegistry:
+    """Validate alpha-scope interpretability contract registry."""
+
+    def test_all_modules_have_required_fields(self):
+        from hyperspace.core.interpretability_registry import (
+            ALPHA_SCOPE_MODULE_POLICIES,
+        )
+
+        required = {"module_name", "owner", "status", "rationale"}
+        for policy in ALPHA_SCOPE_MODULE_POLICIES:
+            missing = required - set(policy.keys())
+            assert not missing, f"{policy.get('module_name')} missing: {missing}"
+
+    def test_new_modules_enrolled(self):
+        from hyperspace.core.interpretability_registry import (
+            ALPHA_SCOPE_MODULE_POLICIES,
+        )
+
+        names = {p["module_name"] for p in ALPHA_SCOPE_MODULE_POLICIES}
+        assert "SharedLatentHead" in names
+        assert "DriftMonitor" in names
+        assert "KernelMemory" in names
+
+    def test_total_module_count(self):
+        from hyperspace.core.interpretability_registry import (
+            ALPHA_SCOPE_MODULE_POLICIES,
+        )
+
+        assert len(ALPHA_SCOPE_MODULE_POLICIES) == 11
+
+    def test_contract_modules_are_ukt_and_canvas(self):
+        from hyperspace.core.interpretability_registry import (
+            ALPHA_SCOPE_MODULE_POLICIES,
+        )
+
+        contract_modules = [
+            p["module_name"]
+            for p in ALPHA_SCOPE_MODULE_POLICIES
+            if p["status"] == "contract"
+        ]
+        assert sorted(contract_modules) == [
+            "SemanticCanvas",
+            "UniversalKnowledgeTensor",
+        ]
+
+    def test_na_modules_have_owner_and_rationale(self):
+        from hyperspace.core.interpretability_registry import (
+            ALPHA_SCOPE_MODULE_POLICIES,
+        )
+
+        for p in ALPHA_SCOPE_MODULE_POLICIES:
+            if p["status"] == "not_applicable":
+                assert p["owner"], f"{p['module_name']} missing owner"
+                assert p["rationale"], f"{p['module_name']} missing rationale"
+
+
+class TestDashboardFixtureParity:
+    """Verify dashboard fixture covers all expected payload keys."""
+
+    def test_fixture_keys_match_expected(self):
+        from tests.dashboard_fixtures import (
+            EXPECTED_RUNNER_PAYLOAD_KEYS,
+            build_runner_payload,
+        )
+
+        payload = build_runner_payload()
+        for key in EXPECTED_RUNNER_PAYLOAD_KEYS:
+            assert key in payload, f"Missing key in fixture payload: {key}"
+
+    def test_kernel_evolution_in_fixture(self):
+        from tests.dashboard_fixtures import build_runner_payload
+
+        payload = build_runner_payload()
+        assert "kernel_evolution" in payload
+
+    def test_session_map_covers_kernel_evolution(self):
+        from tests.dashboard_fixtures import SESSION_TO_PAYLOAD_KEY_MAP
+
+        assert "kernel_evolution" in SESSION_TO_PAYLOAD_KEY_MAP

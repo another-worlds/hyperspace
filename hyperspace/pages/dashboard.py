@@ -7,10 +7,12 @@ from typing import Any
 
 import numpy as np
 import pandas as pd
+import plotly.graph_objects as go
 import streamlit as st
 
 from hyperspace.config import (
-    DEFAULT_TICKERS, GEOPOLITICAL_NODES, PIPELINE_STEPS, UKT_FEATURE_DIM,
+    DEFAULT_TICKERS, GEOPOLITICAL_NODES, PIPELINE_STEPS, PLOTLY_LAYOUT,
+    UKT_FEATURE_DIM,
 )
 from hyperspace.models.knowledge_matrix import estimate_reality_regression_stability
 from hyperspace.viz.charts import source_badge
@@ -414,6 +416,7 @@ def _build_diagnostics_export_rows(
     alignment_metrics: dict | None,
     faithfulness_report: dict | None,
     drift_result: dict | None,
+    kernel_evolution: dict | None = None,
 ) -> list[dict[str, object]]:
     """Flatten alignment, faithfulness, and drift data for CSV export."""
     rows: list[dict[str, object]] = []
@@ -492,6 +495,24 @@ def _build_diagnostics_export_rows(
                 "Category": "drift",
                 "Metric": key,
                 "Value": drift_result.get(key, 0.0),
+            })
+
+    kernel_evolution = kernel_evolution or {}
+    if kernel_evolution.get("n_runs", 0) >= 1:
+        rows.append({
+            "RunID": run_id,
+            "Timestamp": run_ts,
+            "Category": "kernel_evolution",
+            "Metric": "total_runs",
+            "Value": kernel_evolution["n_runs"],
+        })
+        for bn, bd in kernel_evolution.get("blocks", {}).items():
+            rows.append({
+                "RunID": run_id,
+                "Timestamp": run_ts,
+                "Category": "kernel_evolution",
+                "Metric": f"{bn}/importance_stability",
+                "Value": bd.get("mean_importance_stability", 0.0),
             })
 
     return rows
@@ -792,6 +813,80 @@ def render_results() -> None:
                         delta=f"{n_runs} runs",
                         help="Mean cosine similarity of importance vectors across consecutive runs.",
                     )
+            # Reconstruction trend chart (Plotly)
+            _recon_traces = []
+            for block_name, block_evo in blocks_data.items():
+                recon = block_evo.get("reconstruction_trend", [])
+                if len(recon) >= 2:
+                    _recon_traces.append(go.Scatter(
+                        x=list(range(1, len(recon) + 1)),
+                        y=recon,
+                        mode="lines+markers",
+                        name=block_name,
+                        line=dict(width=2),
+                        marker=dict(size=6),
+                    ))
+            if _recon_traces:
+                _recon_fig = go.Figure(data=_recon_traces)
+                _recon_fig.update_layout(
+                    **PLOTLY_LAYOUT,
+                    title="Reconstruction Error Across Runs",
+                    xaxis_title="Run",
+                    yaxis_title="Reconstruction Error",
+                    height=320,
+                    margin=dict(l=48, r=24, t=44, b=40),
+                    legend=dict(
+                        orientation="h", y=-0.2, x=0.5, xanchor="center",
+                        font=dict(size=11),
+                    ),
+                )
+                st.plotly_chart(_recon_fig, use_container_width=True)
+
+            # Importance stability chart (per-block cosine trend)
+            _imp_traces = []
+            for block_name, block_evo in blocks_data.items():
+                imp_trend = block_evo.get("importance_trend", [])
+                if len(imp_trend) >= 2:
+                    # Compute consecutive cosine similarities
+                    cosines = []
+                    for idx in range(1, len(imp_trend)):
+                        a = np.asarray(imp_trend[idx - 1])
+                        b = np.asarray(imp_trend[idx])
+                        na, nb = np.linalg.norm(a), np.linalg.norm(b)
+                        cos = float(np.dot(a, b) / (na * nb)) if na > 1e-12 and nb > 1e-12 else 0.0
+                        cosines.append(cos)
+                    _imp_traces.append(go.Scatter(
+                        x=list(range(2, len(imp_trend) + 1)),
+                        y=cosines,
+                        mode="lines+markers",
+                        name=block_name,
+                        line=dict(width=2),
+                        marker=dict(size=6),
+                    ))
+            if _imp_traces:
+                _imp_fig = go.Figure(data=_imp_traces)
+                _imp_fig.update_layout(
+                    **PLOTLY_LAYOUT,
+                    title="Importance Vector Stability (Consecutive Cosine)",
+                    xaxis_title="Run",
+                    yaxis_title="Cosine Similarity",
+                    height=320,
+                    yaxis_range=[0, 1.05],
+                    margin=dict(l=48, r=24, t=44, b=40),
+                    legend=dict(
+                        orientation="h", y=-0.2, x=0.5, xanchor="center",
+                        font=dict(size=11),
+                    ),
+                )
+                # Add threshold reference line
+                _imp_fig.add_hline(
+                    y=0.80, line_dash="dash", line_color="rgba(248,113,113,0.5)",
+                    annotation_text="Stability threshold",
+                    annotation_position="top right",
+                    annotation_font_color="rgba(248,113,113,0.8)",
+                )
+                st.plotly_chart(_imp_fig, use_container_width=True)
+
             # Reconstruction trend table
             with st.expander("Reconstruction error trends"):
                 trend_rows = []
@@ -926,6 +1021,7 @@ def render_results() -> None:
         alignment_metrics=alignment_metrics,
         faithfulness_report=faithfulness_report,
         drift_result=drift_result,
+        kernel_evolution=st.session_state.get("kernel_evolution"),
     )
     if diag_rows:
         exp5.download_button(
