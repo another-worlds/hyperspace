@@ -537,20 +537,26 @@ SCORECARD_THRESHOLDS: dict[str, dict] = {
     "legacy_retrieval_at_1": dict(
         label="Legacy Retrieval@1",
         unit="",
-        threshold=0.0,
-        description="Baseline paired-window retrieval accuracy from the legacy normalized 80-d pathway.",
+        threshold=0.15,
+        description="Baseline paired-window retrieval accuracy from the legacy normalized 80-d pathway. ≥0.15 = above random chance.",
     ),
     "shared_latent_retrieval_at_1": dict(
         label="Shared-Latent Retrieval@1",
         unit="",
-        threshold=0.0,
-        description="Prototype paired-window retrieval accuracy in shared latent space (shadow mode).",
+        threshold=0.20,
+        description="Prototype paired-window retrieval accuracy in shared latent space (shadow mode). ≥0.20 = encoder learning signal.",
     ),
     "shared_latent_probe_cosine": dict(
         label="Shared-Latent Probe Cosine",
         unit="",
-        threshold=0.0,
-        description="Average positive-pair cosine alignment for shared-latent prototype (shadow mode).",
+        threshold=0.10,
+        description="Average positive-pair cosine alignment for shared-latent prototype (shadow mode). ≥0.10 = learned alignment.",
+    ),
+    "faithfulness_confidence": dict(
+        label="Faithfulness Confidence",
+        unit="",
+        threshold=0.50,
+        description="Overall confidence from mechanistic faithfulness checks. ≥0.50 = narratives are evidence-grounded.",
     ),
 }
 

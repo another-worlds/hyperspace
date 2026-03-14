@@ -382,6 +382,23 @@ def _build_governance_report_markdown(
                     f"  - [{a.get('code')}] {a.get('label')}: {a.get('detail', '')}"
                 )
 
+    # Kernel evolution (temporal memory)
+    kernel_evolution = st.session_state.get("kernel_evolution")
+    if kernel_evolution and kernel_evolution.get("n_runs", 0) >= 2:
+        report_lines.append("")
+        report_lines.append("## Kernel Evolution (Temporal Memory)")
+        report_lines.append(
+            f"- Total runs tracked: {kernel_evolution['n_runs']}"
+        )
+        report_lines.append(
+            f"- Total snapshots: {kernel_evolution.get('n_snapshots', 0)}"
+        )
+        for bn, bd in kernel_evolution.get("blocks", {}).items():
+            report_lines.append(
+                f"- {bn}: stability={bd.get('mean_importance_stability', 0.0):.4f}, "
+                f"runs={bd.get('n_runs', 0)}"
+            )
+
     report_lines.append("")
     report_lines.append("## Pipeline Reports")
     for snap in snapshots:
@@ -753,6 +770,42 @@ def render_results() -> None:
                     f"[{alert.get('code')}] {alert.get('label')}: "
                     f"{alert.get('detail', '')}"
                 )
+
+    # ---- Kernel Evolution Panel (Temporal Memory) ----
+    kernel_evolution = st.session_state.get("kernel_evolution")
+    if kernel_evolution and kernel_evolution.get("n_runs", 0) >= 2:
+        st.markdown("### Kernel Evolution (Cross-Run Memory)")
+        st.caption(
+            f"Tracking kernel structure across **{kernel_evolution['n_runs']}** "
+            f"pipeline runs ({kernel_evolution.get('n_snapshots', 0)} total snapshots)."
+        )
+        blocks_data = kernel_evolution.get("blocks", {})
+        if blocks_data:
+            evo_cols = st.columns(min(len(blocks_data), 4))
+            for i, (block_name, block_evo) in enumerate(blocks_data.items()):
+                with evo_cols[i % len(evo_cols)]:
+                    stability = block_evo.get("mean_importance_stability", 0.0)
+                    n_runs = block_evo.get("n_runs", 0)
+                    st.metric(
+                        label=f"{block_name}",
+                        value=f"{stability:.3f}",
+                        delta=f"{n_runs} runs",
+                        help="Mean cosine similarity of importance vectors across consecutive runs.",
+                    )
+            # Reconstruction trend table
+            with st.expander("Reconstruction error trends"):
+                trend_rows = []
+                for block_name, block_evo in blocks_data.items():
+                    recon = block_evo.get("reconstruction_trend", [])
+                    for j, val in enumerate(recon):
+                        trend_rows.append({
+                            "Block": block_name,
+                            "Run": j + 1,
+                            "Reconstruction Error": round(val, 6),
+                        })
+                if trend_rows:
+                    import pandas as _pd
+                    st.dataframe(_pd.DataFrame(trend_rows), use_container_width=True)
 
     interpretability_contract = st.session_state.get("interpretability_contract", {})
     interpretability_contract_summary = st.session_state.get(

@@ -358,25 +358,6 @@ class PipelineRunner:
                 "probe_cosine": alignment_metrics.get("shared_latent", {}).get("probe_cosine", 0.0),
             }
 
-        # ---- Governance ----
-        governance_flags = self._compute_governance_flags(
-            data_sources, snapshots, sae_result, graph_result_full,
-            timeframe_context,
-        )
-        scorecard = self._compute_scorecard(
-            snapshots, sae_result, data_sources, stability, governance_flags,
-            alignment_metrics,
-        )
-
-        interpretability_contract = build_alpha_scope_contract_reports({
-            "UniversalKnowledgeTensor": ukt,
-            "SemanticCanvas": ukt.canvas,
-        })
-        enforce_alpha_scope_contract_coverage(interpretability_contract)
-        interpretability_contract_summary = summarize_interpretable_reports(
-            interpretability_contract,
-        )
-
         # ---- Faithfulness checks (H-003) ----
         self._report("faithfulness", "Running narrative faithfulness checks...")
         faithfulness = run_faithfulness_checks(
@@ -407,6 +388,25 @@ class PipelineRunner:
         if faithfulness.low_confidence:
             canvas_narrative = faithfulness.downgraded_narrative
             reality_narrative = faithfulness.downgraded_narrative
+
+        # ---- Governance ----
+        governance_flags = self._compute_governance_flags(
+            data_sources, snapshots, sae_result, graph_result_full,
+            timeframe_context,
+        )
+        scorecard = self._compute_scorecard(
+            snapshots, sae_result, data_sources, stability, governance_flags,
+            alignment_metrics, faithfulness_report,
+        )
+
+        interpretability_contract = build_alpha_scope_contract_reports({
+            "UniversalKnowledgeTensor": ukt,
+            "SemanticCanvas": ukt.canvas,
+        })
+        enforce_alpha_scope_contract_coverage(interpretability_contract)
+        interpretability_contract_summary = summarize_interpretable_reports(
+            interpretability_contract,
+        )
 
         # ---- Kernel memory persistence (Milestone C) ----
         kernel_evolution = None
@@ -609,6 +609,7 @@ class PipelineRunner:
         stability: dict | None,
         governance_flags: list[dict],
         alignment_metrics: dict[str, Any] | None = None,
+        faithfulness_report: dict | None = None,
     ) -> dict[str, ScorecardEntry]:
         """Compute the interpretability scorecard."""
         scorecard: dict[str, ScorecardEntry] = {}
@@ -710,6 +711,22 @@ class PipelineRunner:
             threshold=float(thresh["threshold"]),
             unit=thresh["unit"],
             passed=shared_probe >= thresh["threshold"],
+            description=thresh["description"],
+        )
+
+        # Faithfulness confidence
+        faith_confidence = 0.0
+        if faithfulness_report:
+            faith_confidence = float(
+                faithfulness_report.get("overall_confidence", 0.0)
+            )
+        thresh = SCORECARD_THRESHOLDS["faithfulness_confidence"]
+        scorecard["faithfulness_confidence"] = ScorecardEntry(
+            label=thresh["label"],
+            value=round(faith_confidence, 4),
+            threshold=float(thresh["threshold"]),
+            unit=thresh["unit"],
+            passed=faith_confidence >= thresh["threshold"],
             description=thresh["description"],
         )
 
