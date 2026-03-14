@@ -21,7 +21,7 @@ def _topic_feature_meta(model, topics: list[int]) -> dict[int, dict]:
             if top_terms:
                 label = f"topic_{topic_id}_{'_'.join(top_terms)}"
         except Exception:
-            pass
+            pass  # Topic term extraction is optional metadata enrichment
         idx = 16 + rank
         meta[idx] = {
             "label": label,
@@ -69,7 +69,7 @@ def fit_topic_model(docs_key: str, docs: list[str] | None = None, data_source: s
         try:
             topic_embeddings = np.array(model.topic_embeddings_)
         except Exception:
-            pass
+            pass  # Embeddings not available in all BERTopic versions
 
         # Build UKT feature vector from topic distribution statistics.
         # Only the semantic-embedding region (indices 16-31) is populated here.

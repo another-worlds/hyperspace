@@ -34,7 +34,7 @@ def _get_narrator() -> LLMNarrator:
             import streamlit as st
             cache_fn = st.cache_resource
         except Exception:
-            pass
+            pass  # Non-Streamlit context; caching disabled
         _narrator = LLMNarrator(
             model_name="arnir0/Tiny-LLM",
             max_new_tokens=150,

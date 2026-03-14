@@ -66,7 +66,7 @@ def _run_counterfactual_ukt(
     try:
         sae_result = train_sparse_ae(sub_matrix, hidden_dim=16, epochs=60)
     except Exception:
-        pass
+        st.warning("SAE training unavailable for counterfactual; concept analysis skipped.")
 
     # Stability
     stability = estimate_reality_regression_stability(sub_matrix, n_runs=6, noise_std=0.01, seed=99)

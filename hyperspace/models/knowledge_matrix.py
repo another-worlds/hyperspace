@@ -291,7 +291,7 @@ class UniversalKnowledgeTensor:
                     if k_narr:
                         kl["semantic_narrative"] = k_narr
         except Exception:
-            pass
+            pass  # Semantic narrator is optional; narratives degrade gracefully
 
         # Build report
         report_lines = [

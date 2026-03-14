@@ -212,30 +212,30 @@ def run_pipeline() -> None:
             compute_cross_block=True,
         )
 
-        st.session_state.run_id = result["run_id"]
-        st.session_state.run_timestamp = result["run_timestamp"]
-        st.session_state.finance_result = result["finance_result"]
-        st.session_state.cluster_result = result["cluster_result"]
-        st.session_state.graph_result = result["graph_result"]
-        st.session_state.spatial_result = result["spatial_result"]
-        st.session_state.sim_result = result["sim_result"]
-        st.session_state.sae_result = result["sae_result"]
-        st.session_state.concept_kernel_map = result["concept_kernel_map"]
-        st.session_state.ukt_snapshots = result["snapshots"]
-        st.session_state.data_sources = result["data_sources"]
-        st.session_state.semantic_canvas = result["semantic_canvas"]
-        st.session_state.canvas_narrative = result["canvas_narrative"]
-        st.session_state.reality_narrative = result["reality_narrative"]
-        st.session_state.uvt_result = result["uvt_result"]
-        st.session_state.use_result = result["use_result"]
-        st.session_state.ukt_multirun_stability = result["stability"]
-        st.session_state.governance_flags = result["governance_flags"]
-        st.session_state.interpretability_scorecard = result["interpretability_scorecard"]
+        st.session_state.run_id = result.get("run_id")
+        st.session_state.run_timestamp = result.get("run_timestamp")
+        st.session_state.finance_result = result.get("finance_result")
+        st.session_state.cluster_result = result.get("cluster_result")
+        st.session_state.graph_result = result.get("graph_result")
+        st.session_state.spatial_result = result.get("spatial_result")
+        st.session_state.sim_result = result.get("sim_result")
+        st.session_state.sae_result = result.get("sae_result")
+        st.session_state.concept_kernel_map = result.get("concept_kernel_map", [])
+        st.session_state.ukt_snapshots = result.get("snapshots", [])
+        st.session_state.data_sources = result.get("data_sources", {})
+        st.session_state.semantic_canvas = result.get("semantic_canvas")
+        st.session_state.canvas_narrative = result.get("canvas_narrative")
+        st.session_state.reality_narrative = result.get("reality_narrative")
+        st.session_state.uvt_result = result.get("uvt_result")
+        st.session_state.use_result = result.get("use_result")
+        st.session_state.ukt_multirun_stability = result.get("stability")
+        st.session_state.governance_flags = result.get("governance_flags", [])
+        st.session_state.interpretability_scorecard = result.get("interpretability_scorecard", {})
         st.session_state.alignment_metrics = result.get("alignment_metrics", {})
-        st.session_state.interpretability_contract = result["interpretability_contract"]
-        st.session_state.interpretability_contract_summary = result[
-            "interpretability_contract_summary"
-        ]
+        st.session_state.interpretability_contract = result.get("interpretability_contract", {})
+        st.session_state.interpretability_contract_summary = result.get(
+            "interpretability_contract_summary", {},
+        )
         st.session_state.faithfulness_report = result.get("faithfulness_report")
         st.session_state.drift_result = result.get("drift_result")
         st.session_state.kernel_evolution = result.get("kernel_evolution")

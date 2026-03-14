@@ -324,8 +324,8 @@ class PipelineRunner:
                 )
             if sae_result is not None:
                 enrich_concepts_with_narratives(sae_result, ukt.canvas)
-        except Exception:
-            pass  # Narrator unavailable — graceful degradation
+        except Exception as exc:
+            self._warnings.append(f"Narrator unavailable: {exc}")
 
         # ---- Stability ----
         stability = None
