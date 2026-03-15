@@ -77,14 +77,22 @@ FEATURE_REGION_LABELS: dict[tuple[int, int], str] = {
 }
 
 
-def _normalize_features(arr: np.ndarray) -> np.ndarray:
-    """Normalize each region of a feature vector to [0, 1] range."""
+def _normalize_features(arr: np.ndarray, registry: FeatureRegionRegistry | None = None) -> np.ndarray:
+    """Normalize each region of a feature vector to [0, 1] range.
+
+    Uses the registry to discover region boundaries dynamically — no
+    hardcoded indices.
+    """
+    reg = registry or HYPERSPACE_REGISTRY
     out = arr.copy()
-    for (lo, hi) in FEATURE_REGION_LABELS.keys():
-        region = out[lo:hi]
-        rng = region.max() - region.min()
+    for region in reg.ordered_regions:
+        lo, hi = region.start, region.end
+        if hi > len(out):
+            continue
+        segment = out[lo:hi]
+        rng = segment.max() - segment.min()
         if rng > 1e-8:
-            out[lo:hi] = (region - region.min()) / rng
+            out[lo:hi] = (segment - segment.min()) / rng
     return out
 
 
@@ -149,9 +157,11 @@ def _label_kernel(
 ) -> dict:
     """Generate a semantic label for a single kernel."""
     region_scores = {}
-    for (lo, hi), label in FEATURE_REGION_LABELS.items():
-        region_scores[label] = float(np.abs(vt_row[lo:hi]).sum())
-    dominant_region = max(region_scores, key=region_scores.get)
+    for region in HYPERSPACE_REGISTRY.ordered_regions:
+        lo, hi = region.start, region.end
+        if hi <= len(vt_row):
+            region_scores[region.name] = float(np.abs(vt_row[lo:hi]).sum())
+    dominant_region = max(region_scores, key=region_scores.get) if region_scores else "unknown"
 
     dominant_block_idx = int(np.argmax(np.abs(u_col)))
     dominant_block = (block_names[dominant_block_idx]
@@ -182,25 +192,38 @@ def _label_kernel(
     )
 
 
-# Map block names to their UKT region keys for canvas projection
-BLOCK_REGION_MAP: dict[str, tuple[str, int, int]] = {
-    "Finance":  ("temporal-pattern",      0,  16),
-    "Clusters": ("semantic-embedding",    16, 32),
-    "Graph":    ("structural-centrality", 32, 48),
-    "Agents":   ("dynamic-agent",         48, 64),
-    "Spatial":  ("geospatial-kernel",     64, 80),
+# Block-to-region mapping — auto-derived from the registry.
+# Each block name maps to (region_name, start, end).
+# Adding a new block only requires registering its region in the registry.
+BLOCK_REGION_MAP: dict[str, tuple[str, int, int]] = {}
+
+# Default block→region assignment (configurable)
+_BLOCK_TO_REGION: dict[str, str] = {
+    "Finance":  "temporal-pattern",
+    "Clusters": "semantic-embedding",
+    "Graph":    "structural-centrality",
+    "Agents":   "dynamic-agent",
+    "Spatial":  "geospatial-kernel",
 }
+
+for _block_name, _region_name in _BLOCK_TO_REGION.items():
+    if _region_name in HYPERSPACE_REGISTRY.regions:
+        _r = HYPERSPACE_REGISTRY.regions[_region_name]
+        BLOCK_REGION_MAP[_block_name] = (_region_name, _r.start, _r.end)
 
 
 class UniversalKnowledgeTensor:
     """Hyperspace-specific UKT with Semantic Canvas integration.
 
-    Wraps the standalone ukt framework with Hyperspace's 5-block pipeline,
+    Wraps the standalone ukt framework with Hyperspace's N-block pipeline,
     semantic canvas subsystem, and Tiny-LLM narratives.
+
+    The feature dimension is derived from the registry — not hardcoded.
+    New blocks can be added by registering regions in the registry.
     """
 
-    def __init__(self, feature_dim: int = UKT_FEATURE_DIM):
-        self.feature_dim = feature_dim
+    def __init__(self, feature_dim: int | None = None):
+        self.feature_dim = feature_dim or HYPERSPACE_REGISTRY.total_dim
         self.block_names: list[str] = []
         self.rows: list[np.ndarray] = []
         self.snapshots: list[dict] = []
@@ -277,7 +300,11 @@ class UniversalKnowledgeTensor:
                 })
             canvas_entry.feature_evidence = evidence
 
-        # Generate Tiny-LLM narratives (graceful degradation)
+        # Tiny-LLM semantic translator: translates machine neuron clusters
+        # (kernels, canvas coordinates) into human-readable narratives.
+        # The LLM is the primary path; TemplateNarrator is the internal fallback.
+        # Wrapped in try/except to allow pipeline to complete even if narrator
+        # is slow (LLM generation on CPU can be significant per-kernel).
         layer_narrative = None
         try:
             from hyperspace.models.semantic_narrator import (
@@ -291,7 +318,7 @@ class UniversalKnowledgeTensor:
                     if k_narr:
                         kl["semantic_narrative"] = k_narr
         except Exception:
-            pass  # Semantic narrator is optional; narratives degrade gracefully
+            pass  # Narrator degrades gracefully; pipeline never fails
 
         # Build report
         report_lines = [

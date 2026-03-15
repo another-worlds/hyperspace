@@ -1,12 +1,26 @@
-"""Semantic Narrator: Hyperspace-specific wrapper around the standalone
-semantic_interpreter narrator framework.
+"""Semantic Narrator: embedded Tiny-LLM translator from machine neuron
+clusters to human-readable semantics.
 
-Preserves the existing API (narrate_canvas, narrate_layer, narrate_kernel,
-narrate_reality_regression, narrate_concept) while delegating to the
-standalone LLMNarrator backend.
+This module serves as the bridge between the UKT's latent space (machine
+neuron clusters, kernel decompositions, sparse autoencoder concepts) and
+human-interpretable semantic narratives. The Tiny-LLM (arnir0/Tiny-LLM,
+13M parameter Llama-based model, MIT license) acts as an embedded translator
+that unravels the latent space into natural language.
 
-Uses arnir0/Tiny-LLM (10M parameter Llama-based model, MIT license) for
-text generation. Cached via st.cache_resource for single load.
+Architecture:
+    UKT Kernels → Feature Attributions → Semantic Canvas Coordinates
+    → LLM Narrator (Tiny-LLM) → Human-Readable Narrative
+
+The LLM receives structured prompts containing:
+  - Kernel importances and dominant feature loadings
+  - Canvas coordinates (the semantic projection of latent activations)
+  - Region provenance and cross-domain coupling signals
+
+And produces continuations that translate these machine representations
+into plain-language interpretations.
+
+Falls back to deterministic TemplateNarrator when the model cannot load.
+Cached via st.cache_resource for single-load in Streamlit contexts.
 """
 from __future__ import annotations
 
@@ -18,17 +32,21 @@ if TYPE_CHECKING:
     from hyperspace.models.semantic_canvas import SemanticCanvas, CanvasEntry
 
 # --------------------------------------------------------------------------- #
-# Shared narrator instance                                                     #
+# Shared narrator instance (embedded LLM translator)                          #
 # --------------------------------------------------------------------------- #
 
 _narrator: LLMNarrator | None = None
 
 
 def _get_narrator() -> LLMNarrator:
-    """Get or create the shared LLM narrator instance."""
+    """Get or create the shared LLM narrator instance.
+
+    The narrator is the embedded translator from machine neuron clusters
+    (UKT kernels, SAE concepts, canvas coordinates) to human semantics.
+    """
     global _narrator
     if _narrator is None:
-        # Try to use Streamlit caching
+        # Try to use Streamlit caching for model persistence
         cache_fn = None
         try:
             import streamlit as st
@@ -37,29 +55,53 @@ def _get_narrator() -> LLMNarrator:
             pass  # Non-Streamlit context; caching disabled
         _narrator = LLMNarrator(
             model_name="arnir0/Tiny-LLM",
-            max_new_tokens=150,
+            max_new_tokens=60,
             temperature=0.7,
             cache_fn=cache_fn,
+            generation_timeout=10.0,
         )
     return _narrator
 
 
+def is_llm_available() -> bool:
+    """Check whether the embedded Tiny-LLM loaded successfully."""
+    narrator = _get_narrator()
+    model, tokenizer = narrator._load_model()
+    return model is not None and tokenizer is not None
+
+
 # --------------------------------------------------------------------------- #
-# Public API (backward-compatible with existing Hyperspace usage)              #
+# Public API — latent-space-to-semantics translation                          #
 # --------------------------------------------------------------------------- #
 
 def narrate_canvas(canvas: "SemanticCanvas") -> str | None:
-    """Generate a full narrative from the accumulated semantic canvas."""
+    """Translate the accumulated semantic canvas into a narrative.
+
+    The canvas contains all projected coordinates from every pipeline layer.
+    The LLM reads the structured canvas state and produces a holistic
+    interpretation of the cross-domain latent patterns.
+    """
     return _get_narrator().narrate_canvas(canvas)
 
 
 def narrate_layer(entry: "CanvasEntry", canvas: "SemanticCanvas") -> str | None:
-    """Generate a narrative for a single pipeline layer's contribution."""
+    """Translate a single pipeline layer's latent projection into narrative.
+
+    Takes the canvas entry (projected coordinates, active concepts, dominant
+    dimensions) and generates a human-readable interpretation of what this
+    layer's neuron activations mean semantically.
+    """
     return _get_narrator().narrate_layer(entry, canvas)
 
 
 def narrate_kernel(kernel_label: dict, canvas: "SemanticCanvas") -> str | None:
-    """Generate a semantic narrative for a single UKT kernel."""
+    """Translate a UKT kernel (machine neuron cluster) into semantic narrative.
+
+    A kernel is a singular vector from the SVD of the Universal Knowledge
+    Tensor — a latent pattern discovered across all data domains. This
+    function translates the kernel's feature loadings, variance explained,
+    and dominant region into natural language.
+    """
     return _get_narrator().narrate_kernel(kernel_label, canvas)
 
 
@@ -67,12 +109,21 @@ def narrate_reality_regression(
     snapshot: dict,
     canvas: "SemanticCanvas",
 ) -> str | None:
-    """Generate a narrative for the reality regression vector."""
+    """Translate the reality regression vector into semantic narrative.
+
+    The reality regression is the UKT's unified prediction vector —
+    summarizing all kernels into a single direction of maximum explained
+    variance. This function converts the vector's feature attributions
+    and region energies into an interpretable assessment.
+    """
     from hyperspace.models.knowledge_matrix import (
-        _feature_name, _region_for_index, FEATURE_REGION_LABELS,
+        _feature_name, _region_for_index, HYPERSPACE_REGISTRY,
     )
 
-    region_bounds = {label: (lo, hi) for (lo, hi), label in FEATURE_REGION_LABELS.items()}
+    region_bounds = {
+        r.name: (r.start, r.end)
+        for r in HYPERSPACE_REGISTRY.ordered_regions
+    }
 
     return _get_narrator().narrate_reality_regression(
         snapshot, canvas,
@@ -83,5 +134,11 @@ def narrate_reality_regression(
 
 
 def narrate_concept(concept_label: dict, canvas: "SemanticCanvas") -> str | None:
-    """Generate a semantic narrative for an SAE-discovered concept."""
+    """Translate an SAE-discovered sparse concept into semantic narrative.
+
+    SAE concepts are learned basis vectors in the latent space — each one
+    captures a specific pattern in the feature activations. This function
+    translates the concept's region, activation level, and feature loadings
+    into interpretable language.
+    """
     return _get_narrator().narrate_concept(concept_label, canvas)

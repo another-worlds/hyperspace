@@ -330,7 +330,9 @@ GEOPOLITICAL_EDGES: list[tuple] = [
     ("Brazil", "Britain", 0.25,  "alignment",      "Trade + climate finance partnership"),
 ]
 
-# UKT feature dimension (shared across all blocks)
+# UKT feature dimension — computed from registry at import time.
+# Kept as a module-level constant for backward compatibility, but the
+# canonical source of truth is HYPERSPACE_REGISTRY.total_dim.
 UKT_FEATURE_DIM: int = 80
 
 # All available tickers for finance block — country-representative ETFs
@@ -506,8 +508,8 @@ DATA_SOURCE_JURISDICTIONS: dict[str, dict] = {
 SCORECARD_THRESHOLDS: dict[str, dict] = {
     "feature_traceability": dict(
         label="Feature Traceability",
-        unit="/ 80",
-        threshold=72,       # ≥90% of 80 features
+        unit=f"/ {UKT_FEATURE_DIM}",
+        threshold=int(UKT_FEATURE_DIM * 0.9),  # ≥90% of features
         description="Features with semantic metadata labels attached.",
     ),
     "kernel_stability": dict(

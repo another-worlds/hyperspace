@@ -50,6 +50,7 @@ from hyperspace.models.knowledge_matrix import (
     UniversalKnowledgeTensor,
     estimate_reality_regression_stability,
     FEATURE_REGION_LABELS,
+    HYPERSPACE_REGISTRY,
 )
 
 
@@ -435,7 +436,7 @@ class PipelineRunner:
             version = compute_latent_version(
                 run_id=run_id,
                 timestamp=run_timestamp,
-                feature_dim=UKT_FEATURE_DIM,
+                feature_dim=HYPERSPACE_REGISTRY.total_dim,
                 region_labels=FEATURE_REGION_LABELS,
                 n_kernels=n_kernels,
                 shared_latent_active=use_shared_latent,

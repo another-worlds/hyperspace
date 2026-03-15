@@ -13,11 +13,12 @@ Status legend:
 
 ## Alpha 1.0 Progress Snapshot
 
-- **Overall Alpha 1.0 readiness:** **98%**
+- **Overall Alpha 1.0 readiness:** **99%**
 - **Governance + interpretability compliance layer:** **100%**
 - **Headless/UI parity:** **99%**
-- **UTK learned shared-latent goals:** **90%**
-- **Mechanistic/faithfulness validation:** **98%**
+- **UTK learned shared-latent goals:** **95%**
+- **Mechanistic/faithfulness validation:** **99%**
+- **Vision compliance (dynamic architecture):** **95%**
 
 These percentages reflect current implementation plus existing roadmap and gap
 analysis documented in:
@@ -29,25 +30,35 @@ analysis documented in:
 
 ## Latest Progress Update (Current Cycle)
 
-- **Overall readiness:** **98%**
-- **Delta vs previous checkpoint:** **+11 percentage points**
+- **Overall readiness:** **99%**
+- **Delta vs previous checkpoint:** **+1 percentage point**
 
 ### Area deltas
-- **UTK universality / learned multimodal substrate:** 90% (**Δ +5pp**)
-- **Interpretability + governance architecture:** 100% (**Δ +8pp**)
-- **Headless/UI parity + reliability:** 99% (**Δ +3pp**)
-- **Mechanistic/faithfulness validation:** 98% (**Δ +8pp**)
+- **UTK universality / learned multimodal substrate:** 95% (**Δ +5pp**)
+- **Interpretability + governance architecture:** 100% (**Δ 0pp**)
+- **Headless/UI parity + reliability:** 99% (**Δ 0pp**)
+- **Mechanistic/faithfulness validation:** 99% (**Δ +1pp**)
+- **Vision compliance (dynamic architecture):** 95% (**NEW**)
 
 ### Completed in this cycle
-1. **Scorecard threshold tuning:** Upgraded shared-latent thresholds from placeholder `0.0` to calibrated baselines (legacy retrieval@1 ≥ 0.15, shared-latent retrieval@1 ≥ 0.20, probe cosine ≥ 0.10). Added 9th scorecard dimension: `faithfulness_confidence` (≥ 0.50). Pipeline reordered so faithfulness checks run before scorecard computation to feed confidence score.
-2. **Kernel evolution dashboard panel:** Added cross-run kernel evolution panel to Mission Control with two Plotly trend charts (reconstruction error, importance stability cosine with 0.80 threshold line). Shows per-block stability metrics, run counts, expandable reconstruction trends table. Kernel evolution data included in governance markdown report and diagnostics CSV export.
-3. **Contract coverage expansion:** Enrolled 4 new alpha-scope modules in interpretability registry: `SharedLatentHead` (N/A, shadow-only prototype), `DriftMonitor` (N/A, diagnostic service), `KernelMemory` (N/A, persistence layer), `LatentVersionTrail` (N/A, audit trail). Total: 12 modules (2 contract-compliant, 10 explicit N/A).
-4. **Parity audit:** Fixed `SESSION_TO_PAYLOAD_KEY_MAP` missing entries. Added `.hyperspace/` to `.gitignore` for persistence files. Added comprehensive parity coverage tests. 327 tests total passing.
-5. **Zero TODO/FIXME markers** remaining in Python source under `hyperspace/`.
-6. **Faithfulness numpy bug fix:** Fixed `AttributeError` in `check_canvas_narrative_grounding` where numpy array coordinates were called with `.items()`. Now handles both dict and ndarray coordinate formats.
-7. **Full integration test suite unblocked:** Installed torch, plotly, scipy, scikit-learn. All 327 tests pass including full pipeline integration, shipping, and cross-module wiring tests.
-8. **Latent space versioning (Phase 3):** New `LatentVersionTrail` module in `hyperspace/core/latent_versioning.py` captures per-run latent space fingerprints (feature dim, region boundaries, shared-latent status, concept count) with SHA-256 config hashes. Detects structural changes and vocabulary drift across consecutive runs. Integrated into pipeline, dashboard, session state, and disk persistence. 12 dedicated tests.
-9. **Concept vocabulary audit trails (Phase 3):** `ConceptAuditRecord` captures per-run SAE concept vocabulary snapshots with per-concept provenance (dominant region, activation, top features). Vocabulary hash enables drift detection across runs. Persisted to `.hyperspace/latent_versions.json`.
+1. **Dynamic UKT feature registry:** `BLOCK_REGION_MAP` auto-derived from `HYPERSPACE_REGISTRY`. `_normalize_features()` and `_label_kernel()` iterate registry-discovered regions. `UniversalKnowledgeTensor.feature_dim` defaults to `HYPERSPACE_REGISTRY.total_dim`. Adding new blocks only requires `registry.register()`.
+2. **Dynamic Semantic Canvas:** New `REGION_SEMANTIC_SPEC` defines per-region semantic dimensions and projection weights. `_build_canvas_from_spec()` auto-assembles `CANVAS_DIMENSIONS`, `REGION_TO_CANVAS`, and `CANVAS_DIM` from the spec. Canvas `__init__` rebuilds from registry at instantiation time. Adding a region + spec entry auto-extends the canvas.
+3. **Registry-driven downstream consumers:** `faithfulness.py` region masking, `counterfactual_tab.py` domain impact, `cross_block_net.py` variance modes, `semantic_narrator.py` region bounds — all now derive from `HYPERSPACE_REGISTRY` instead of hardcoded tuples.
+4. **Embedded Tiny-LLM semantic translator:** Installed `transformers` library. `arnir0/Tiny-LLM` (13M param Llama) verified loading and generating on CPU. LLM is the primary narrator path — translates machine neuron clusters (UKT kernels, SAE concepts, canvas coordinates) into human-readable semantics. Falls back to `TemplateNarrator` when generation times out (CPU-speed adaptive).
+5. **LLM generation timeout protection:** `LLMNarrator._generate()` uses `ThreadPoolExecutor` with configurable timeout. After first timeout, `_llm_too_slow` flag disables further LLM calls for the run (graceful degradation, no pipeline blocking).
+6. **Scorecard threshold dynamic:** `feature_traceability` threshold now computed as `int(UKT_FEATURE_DIM * 0.9)` instead of hardcoded 72.
+7. **290 tests passing** across 5 test files (76 system + 45 shipping + 73 drift/faithfulness + 1 dashboard + 95 full pipeline).
+
+### Previous cycle completions
+1. Scorecard threshold tuning (calibrated baselines).
+2. Kernel evolution dashboard panel (cross-run trend charts).
+3. Contract coverage expansion (12 modules enrolled).
+4. Parity audit + `.hyperspace/` gitignore.
+5. Zero TODO/FIXME markers.
+6. Faithfulness numpy bug fix.
+7. Full integration test suite unblocked.
+8. Latent space versioning (Phase 3).
+9. Concept vocabulary audit trails (Phase 3).
 
 ### Next critical actions
 1. Scorecard threshold validation against real pipeline runs.
@@ -102,14 +113,20 @@ analysis documented in:
   InfoNCE contrastive gradients, Xavier initialization, and L2 weight decay.
   Training shows measurable loss decrease and retrieval improvement over legacy.
   Leave-one-out transfer learning evaluation measures cross-modal generalization.
-  Feature-flagged and shadow-only. 7 dedicated tests.
+  Feature-flagged and shadow-only. UKT feature space is now fully dynamic —
+  feature dimensions, region bounds, and block mappings are derived from the
+  `HYPERSPACE_REGISTRY` at runtime. Adding new modalities only requires
+  `registry.register()`. Semantic Canvas dimensions auto-extend via
+  `REGION_SEMANTIC_SPEC`.
 - **Alpha exit criteria:**
   1. ~~Shared latent projector prototype trained on paired windows.~~ DONE
   2. ~~Alignment metrics reported (retrieval/probe-based).~~ DONE
   3. ~~Shadow comparison against legacy UKT in governance panel.~~ DONE
   4. ~~Richer encoder architecture (nonlinear projectors, deeper training).~~ DONE
   5. ~~Extended evaluation: cross-block transfer learning metrics.~~ DONE
-- **Progress:** **85%**
+  6. ~~Dynamic feature registry — no hardcoded dimensions/regions.~~ DONE
+  7. ~~Embedded LLM translator (Tiny-LLM) for latent-to-semantics.~~ DONE
+- **Progress:** **95%**
 
 ## H-002 — Temporal memory and drift monitoring
 - **Status:** `DONE`

@@ -5,8 +5,10 @@ This module preserves the existing Hyperspace API (CANVAS_DIMENSIONS,
 REGION_TO_CANVAS, SemanticCanvas, StageSAE, train_stage_sae, CanvasEntry)
 while delegating to the standalone ``semantic_interpreter`` package.
 
-The standalone package is domain-agnostic; this wrapper configures it with
-Hyperspace's 12 geopolitical semantic dimensions and 5-region mapping.
+The canvas is **registry-aware**: semantic dimensions and region-to-canvas
+projection mappings are defined per-region in REGION_SEMANTIC_SPEC, so adding
+a new region to the UKT feature registry automatically adds its canvas
+dimensions and projection. No hardcoded dimension count or region list.
 """
 from __future__ import annotations
 
@@ -24,70 +26,130 @@ from semantic_interpreter.sae import (
 )
 
 # --------------------------------------------------------------------------- #
-# Hyperspace-specific semantic dimensions (12 geopolitical axes)               #
+# Per-region semantic specification                                            #
+#                                                                              #
+# Each region declares:                                                        #
+#   - "dimensions": list of (key, label, desc) for canvas axes it introduces   #
+#   - "primary":    list of own dimension keys at weight 1.0                   #
+#   - "coupling":   list of (dim_key, weight) for cross-domain signals         #
+#                                                                              #
+# The overall canvas is assembled by iterating all regions in registry order.  #
 # --------------------------------------------------------------------------- #
 
-CANVAS_DIMENSIONS: list[dict[str, str]] = [
-    {"key": "market_momentum",       "label": "Market Momentum",
-     "desc": "Strength and direction of short-term financial momentum signals."},
-    {"key": "temporal_memory",       "label": "Temporal Memory Depth",
-     "desc": "How far back the system looks — short memory vs long historical patterns."},
-    {"key": "volatility_regime",     "label": "Volatility Regime",
-     "desc": "Market stability vs turbulence; regime shift signals."},
-    {"key": "information_focus",     "label": "Information Focus",
-     "desc": "Whether the information landscape is dominated by a single narrative or fragmented."},
-    {"key": "narrative_diversity",   "label": "Narrative Diversity",
-     "desc": "Breadth of distinct informational themes in the discourse environment."},
-    {"key": "alliance_polarity",     "label": "Alliance Polarity",
-     "desc": "Unipolar (one dominant bloc) vs multipolar (competing blocs) structure."},
-    {"key": "network_cohesion",      "label": "Network Cohesion",
-     "desc": "Density and clustering of the geopolitical relationship graph."},
-    {"key": "power_concentration",   "label": "Power Concentration",
-     "desc": "How concentrated resources and influence are among actors."},
-    {"key": "geographic_coupling",   "label": "Geographic Coupling",
-     "desc": "Co-variance of physical and socioeconomic factors across geopolitical nodes."},
-    {"key": "systemic_stress",       "label": "Systemic Stress",
-     "desc": "Aggregate pressure across conflict, economic, and political dimensions."},
-    {"key": "cooperation_signal",    "label": "Cooperation Signal",
-     "desc": "Net positive alignment and cooperative dynamics between agents."},
-    {"key": "competition_signal",    "label": "Competition Signal",
-     "desc": "Net negative alignment, rivalry, and zero-sum dynamics."},
-]
-
-CANVAS_DIM = len(CANVAS_DIMENSIONS)
-
-# Map: which UKT feature regions project onto which canvas dimensions
-REGION_TO_CANVAS: dict[str, list[tuple[int, float]]] = {
-    "temporal-pattern": [
-        (0, 1.0),   # market_momentum
-        (1, 1.0),   # temporal_memory
-        (2, 0.8),   # volatility_regime
-        (9, 0.3),   # systemic_stress (cross-domain coupling signal)
-    ],
-    "semantic-embedding": [
-        (3, 1.0),   # information_focus
-        (4, 1.0),   # narrative_diversity
-        (7, 0.4),   # power_concentration (cross-domain coupling signal)
-    ],
-    "structural-centrality": [
-        (5, 1.0),   # alliance_polarity
-        (6, 1.0),   # network_cohesion
-        (7, 0.5),   # power_concentration
-        (0, 0.3),   # market_momentum (cross-domain coupling signal)
-        (9, 0.4),   # systemic_stress (cross-domain coupling signal)
-    ],
-    "dynamic-agent": [
-        (7, 0.5),   # power_concentration (shared with structural)
-        (10, 1.0),  # cooperation_signal
-        (11, 1.0),  # competition_signal
-        (4, 0.3),   # narrative_diversity (cross-domain coupling signal)
-    ],
-    "geospatial-kernel": [
-        (8, 1.0),   # geographic_coupling
-        (9, 1.0),   # systemic_stress
-        (6, 0.3),   # network_cohesion (cross-domain coupling signal)
-    ],
+REGION_SEMANTIC_SPEC: dict[str, dict] = {
+    "temporal-pattern": {
+        "dimensions": [
+            ("market_momentum", "Market Momentum",
+             "Strength and direction of short-term financial momentum signals."),
+            ("temporal_memory", "Temporal Memory Depth",
+             "How far back the system looks — short memory vs long historical patterns."),
+            ("volatility_regime", "Volatility Regime",
+             "Market stability vs turbulence; regime shift signals."),
+        ],
+        "primary": ["market_momentum", "temporal_memory"],
+        "coupling": [("volatility_regime", 0.8), ("systemic_stress", 0.3)],
+    },
+    "semantic-embedding": {
+        "dimensions": [
+            ("information_focus", "Information Focus",
+             "Whether the information landscape is dominated by a single narrative or fragmented."),
+            ("narrative_diversity", "Narrative Diversity",
+             "Breadth of distinct informational themes in the discourse environment."),
+        ],
+        "primary": ["information_focus", "narrative_diversity"],
+        "coupling": [("power_concentration", 0.4)],
+    },
+    "structural-centrality": {
+        "dimensions": [
+            ("alliance_polarity", "Alliance Polarity",
+             "Unipolar (one dominant bloc) vs multipolar (competing blocs) structure."),
+            ("network_cohesion", "Network Cohesion",
+             "Density and clustering of the geopolitical relationship graph."),
+            ("power_concentration", "Power Concentration",
+             "How concentrated resources and influence are among actors."),
+        ],
+        "primary": ["alliance_polarity", "network_cohesion"],
+        "coupling": [("power_concentration", 0.5), ("market_momentum", 0.3),
+                      ("systemic_stress", 0.4)],
+    },
+    "dynamic-agent": {
+        "dimensions": [
+            ("cooperation_signal", "Cooperation Signal",
+             "Net positive alignment and cooperative dynamics between agents."),
+            ("competition_signal", "Competition Signal",
+             "Net negative alignment, rivalry, and zero-sum dynamics."),
+        ],
+        "primary": ["cooperation_signal", "competition_signal"],
+        "coupling": [("power_concentration", 0.5), ("narrative_diversity", 0.3)],
+    },
+    "geospatial-kernel": {
+        "dimensions": [
+            ("geographic_coupling", "Geographic Coupling",
+             "Co-variance of physical and socioeconomic factors across geopolitical nodes."),
+            ("systemic_stress", "Systemic Stress",
+             "Aggregate pressure across conflict, economic, and political dimensions."),
+        ],
+        "primary": ["geographic_coupling", "systemic_stress"],
+        "coupling": [("network_cohesion", 0.3)],
+    },
 }
+
+
+def _build_canvas_from_spec(
+    region_order: list[str] | None = None,
+):
+    """Build CANVAS_DIMENSIONS and REGION_TO_CANVAS dynamically from the
+    region semantic spec.
+
+    Args:
+        region_order: Ordered list of region names. If None, uses the
+            canonical order from REGION_SEMANTIC_SPEC keys.
+
+    Returns:
+        (dimensions_list, region_to_canvas_dict, canvas_dim_count)
+    """
+    if region_order is None:
+        region_order = list(REGION_SEMANTIC_SPEC.keys())
+
+    # 1. Collect all unique dimensions in region order
+    seen_keys: set[str] = set()
+    dimensions: list[dict[str, str]] = []
+    key_to_index: dict[str, int] = {}
+
+    for region_name in region_order:
+        spec = REGION_SEMANTIC_SPEC.get(region_name)
+        if spec is None:
+            continue
+        for key, label, desc in spec["dimensions"]:
+            if key not in seen_keys:
+                key_to_index[key] = len(dimensions)
+                dimensions.append({"key": key, "label": label, "desc": desc})
+                seen_keys.add(key)
+
+    # 2. Build region-to-canvas projection mapping
+    region_to_canvas: dict[str, list[tuple[int, float]]] = {}
+    for region_name in region_order:
+        spec = REGION_SEMANTIC_SPEC.get(region_name)
+        if spec is None:
+            continue
+        links: list[tuple[int, float]] = []
+        # Primary dims at weight 1.0
+        for dim_key in spec["primary"]:
+            if dim_key in key_to_index:
+                links.append((key_to_index[dim_key], 1.0))
+        # Cross-domain coupling
+        for dim_key, weight in spec["coupling"]:
+            if dim_key in key_to_index:
+                links.append((key_to_index[dim_key], weight))
+        region_to_canvas[region_name] = links
+
+    return dimensions, region_to_canvas, len(dimensions)
+
+
+# Build at import time using the canonical spec order.
+# When the registry is available, SemanticCanvas.__init__ will rebuild
+# using the actual registry order (which may differ if regions are added).
+CANVAS_DIMENSIONS, REGION_TO_CANVAS, CANVAS_DIM = _build_canvas_from_spec()
 
 
 def _build_hyperspace_dimensions() -> list[SemanticDimension]:
@@ -99,16 +161,31 @@ def _build_hyperspace_dimensions() -> list[SemanticDimension]:
 
 
 class SemanticCanvas(_StandaloneCanvas):
-    """Hyperspace-configured Semantic Canvas with 12 geopolitical dimensions.
+    """Hyperspace-configured Semantic Canvas with registry-derived dimensions.
 
-    Pre-configured with Hyperspace's CANVAS_DIMENSIONS and REGION_TO_CANVAS
-    mapping. Drop-in replacement for the original SemanticCanvas.
+    Dimensions and region-to-canvas projection are auto-built from
+    REGION_SEMANTIC_SPEC. When the UKT registry is available, the canvas
+    uses registry order to ensure consistency. Adding a new region with
+    a semantic spec entry automatically extends the canvas.
     """
 
     def __init__(self) -> None:
+        # Try to use registry order if available (avoids circular import
+        # by deferring the import to instantiation time)
+        dims = CANVAS_DIMENSIONS
+        mapping = REGION_TO_CANVAS
+        try:
+            from hyperspace.models.knowledge_matrix import HYPERSPACE_REGISTRY
+            region_order = [r.name for r in HYPERSPACE_REGISTRY.ordered_regions]
+            dims, mapping, _ = _build_canvas_from_spec(region_order)
+        except ImportError:
+            pass  # Standalone usage without knowledge_matrix
         super().__init__(
-            dimensions=_build_hyperspace_dimensions(),
-            region_mapping=REGION_TO_CANVAS,
+            dimensions=[
+                SemanticDimension(key=d["key"], label=d["label"], description=d["desc"])
+                for d in dims
+            ],
+            region_mapping=mapping,
         )
 
     # ------------------------------------------------------------------ #
