@@ -165,13 +165,25 @@ def check_canvas_narrative_grounding(
     # Find dominant dimensions from canvas entries
     dim_scores: dict[str, float] = {}
     for entry in entries:
-        coords = {}
+        coords = None
         if hasattr(entry, "coordinates"):
             coords = entry.coordinates
         elif isinstance(entry, dict):
             coords = entry.get("coordinates", {})
-        for dim, val in coords.items():
-            dim_scores[dim] = dim_scores.get(dim, 0.0) + abs(float(val))
+
+        if coords is None:
+            continue
+
+        if isinstance(coords, dict):
+            for dim, val in coords.items():
+                dim_scores[dim] = dim_scores.get(dim, 0.0) + abs(float(val))
+        else:
+            # numpy array — use index as dimension key
+            import numpy as np
+            arr = np.asarray(coords)
+            for i, val in enumerate(arr):
+                dim_key = f"dim_{i}"
+                dim_scores[dim_key] = dim_scores.get(dim_key, 0.0) + abs(float(val))
 
     if not dim_scores:
         return results
