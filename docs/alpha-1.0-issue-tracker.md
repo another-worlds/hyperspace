@@ -13,9 +13,9 @@ Status legend:
 
 ## Alpha 1.0 Progress Snapshot
 
-- **Overall Alpha 1.0 readiness:** **95%**
+- **Overall Alpha 1.0 readiness:** **96%**
 - **Governance + interpretability compliance layer:** **98%**
-- **Headless/UI parity:** **98%**
+- **Headless/UI parity:** **99%**
 - **UTK learned shared-latent goals:** **90%**
 - **Mechanistic/faithfulness validation:** **95%**
 
@@ -29,13 +29,13 @@ analysis documented in:
 
 ## Latest Progress Update (Current Cycle)
 
-- **Overall readiness:** **95%**
-- **Delta vs previous checkpoint:** **+8 percentage points**
+- **Overall readiness:** **96%**
+- **Delta vs previous checkpoint:** **+9 percentage points**
 
 ### Area deltas
 - **UTK universality / learned multimodal substrate:** 90% (**Δ +5pp**)
 - **Interpretability + governance architecture:** 98% (**Δ +6pp**)
-- **Headless/UI parity + reliability:** 98% (**Δ +2pp**)
+- **Headless/UI parity + reliability:** 99% (**Δ +3pp**)
 - **Mechanistic/faithfulness validation:** 95% (**Δ +5pp**)
 
 ### Completed in this cycle
