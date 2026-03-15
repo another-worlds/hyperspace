@@ -584,16 +584,16 @@ def _label_feature_variance_modes(
     registry: Any = None,
 ) -> list[dict]:
     """Label the top cross-feature variance modes."""
-    from hyperspace.models.knowledge_matrix import FEATURE_REGION_LABELS
+    from hyperspace.models.knowledge_matrix import HYPERSPACE_REGISTRY
 
     modes = []
     for mode_idx in range(len(eigenvalues)):
         ev = eigenvectors[:, mode_idx]
         # Identify which feature regions this mode spans
         region_energy = {}
-        for (lo, hi), region_name in FEATURE_REGION_LABELS.items():
-            energy = float(np.abs(ev[lo:hi]).sum())
-            region_energy[region_name] = energy
+        for region in HYPERSPACE_REGISTRY.ordered_regions:
+            energy = float(np.abs(ev[region.start:region.end]).sum())
+            region_energy[region.name] = energy
 
         total_energy = sum(region_energy.values()) + 1e-8
         region_shares = {k: v / total_energy for k, v in region_energy.items()}

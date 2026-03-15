@@ -165,13 +165,25 @@ def check_canvas_narrative_grounding(
     # Find dominant dimensions from canvas entries
     dim_scores: dict[str, float] = {}
     for entry in entries:
-        coords = {}
+        coords = None
         if hasattr(entry, "coordinates"):
             coords = entry.coordinates
         elif isinstance(entry, dict):
             coords = entry.get("coordinates", {})
-        for dim, val in coords.items():
-            dim_scores[dim] = dim_scores.get(dim, 0.0) + abs(float(val))
+
+        if coords is None:
+            continue
+
+        if isinstance(coords, dict):
+            for dim, val in coords.items():
+                dim_scores[dim] = dim_scores.get(dim, 0.0) + abs(float(val))
+        else:
+            # numpy array — use index as dimension key
+            import numpy as np
+            arr = np.asarray(coords)
+            for i, val in enumerate(arr):
+                dim_key = f"dim_{i}"
+                dim_scores[dim_key] = dim_scores.get(dim_key, 0.0) + abs(float(val))
 
     if not dim_scores:
         return results
@@ -223,13 +235,11 @@ def check_feature_region_masking(
     if matrix is None or rr is None:
         return results
 
-    # Canonical 5-region layout
+    # Region layout derived from the registry — not hardcoded.
+    from hyperspace.models.knowledge_matrix import HYPERSPACE_REGISTRY
     regions = [
-        ("temporal-pattern", 0, 16),
-        ("semantic-embedding", 16, 32),
-        ("structural-centrality", 32, 48),
-        ("dynamic-agent", 48, 64),
-        ("geospatial-kernel", 64, 80),
+        (r.name, r.start, r.end)
+        for r in HYPERSPACE_REGISTRY.ordered_regions
     ]
 
     total_energy = float(np.sum(np.abs(rr))) + 1e-12

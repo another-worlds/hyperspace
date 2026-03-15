@@ -60,6 +60,30 @@ ALPHA_SCOPE_MODULE_POLICIES: list[AlphaScopeModulePolicy] = [
         "status": "not_applicable",
         "rationale": "USE is produced as derived outputs from helper functions without a stable module object for endpoint contracts.",
     },
+    {
+        "module_name": "SharedLatentHead",
+        "owner": "Core Platform",
+        "status": "not_applicable",
+        "rationale": "Shadow-only prototype behind feature flag; does not control production decisions or narratives.",
+    },
+    {
+        "module_name": "DriftMonitor",
+        "owner": "Governance",
+        "status": "not_applicable",
+        "rationale": "Diagnostic monitoring service; emits alerts and history but is not a predictive module with latent state to interpret.",
+    },
+    {
+        "module_name": "KernelMemory",
+        "owner": "Governance",
+        "status": "not_applicable",
+        "rationale": "Persistence layer for kernel snapshot history; provides evolution analytics but no model-level predictions to explain.",
+    },
+    {
+        "module_name": "LatentVersionTrail",
+        "owner": "Governance",
+        "status": "not_applicable",
+        "rationale": "Audit trail for latent space configuration versions; tracks structural changes but is not a predictive module.",
+    },
 ]
 
 

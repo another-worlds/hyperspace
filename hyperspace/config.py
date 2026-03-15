@@ -330,7 +330,9 @@ GEOPOLITICAL_EDGES: list[tuple] = [
     ("Brazil", "Britain", 0.25,  "alignment",      "Trade + climate finance partnership"),
 ]
 
-# UKT feature dimension (shared across all blocks)
+# UKT feature dimension — computed from registry at import time.
+# Kept as a module-level constant for backward compatibility, but the
+# canonical source of truth is HYPERSPACE_REGISTRY.total_dim.
 UKT_FEATURE_DIM: int = 80
 
 # All available tickers for finance block — country-representative ETFs
@@ -506,8 +508,8 @@ DATA_SOURCE_JURISDICTIONS: dict[str, dict] = {
 SCORECARD_THRESHOLDS: dict[str, dict] = {
     "feature_traceability": dict(
         label="Feature Traceability",
-        unit="/ 80",
-        threshold=72,       # ≥90% of 80 features
+        unit=f"/ {UKT_FEATURE_DIM}",
+        threshold=int(UKT_FEATURE_DIM * 0.9),  # ≥90% of features
         description="Features with semantic metadata labels attached.",
     ),
     "kernel_stability": dict(
@@ -537,20 +539,26 @@ SCORECARD_THRESHOLDS: dict[str, dict] = {
     "legacy_retrieval_at_1": dict(
         label="Legacy Retrieval@1",
         unit="",
-        threshold=0.0,
-        description="Baseline paired-window retrieval accuracy from the legacy normalized 80-d pathway.",
+        threshold=0.15,
+        description="Baseline paired-window retrieval accuracy from the legacy normalized 80-d pathway. ≥0.15 = above random chance.",
     ),
     "shared_latent_retrieval_at_1": dict(
         label="Shared-Latent Retrieval@1",
         unit="",
-        threshold=0.0,
-        description="Prototype paired-window retrieval accuracy in shared latent space (shadow mode).",
+        threshold=0.20,
+        description="Prototype paired-window retrieval accuracy in shared latent space (shadow mode). ≥0.20 = encoder learning signal.",
     ),
     "shared_latent_probe_cosine": dict(
         label="Shared-Latent Probe Cosine",
         unit="",
-        threshold=0.0,
-        description="Average positive-pair cosine alignment for shared-latent prototype (shadow mode).",
+        threshold=0.10,
+        description="Average positive-pair cosine alignment for shared-latent prototype (shadow mode). ≥0.10 = learned alignment.",
+    ),
+    "faithfulness_confidence": dict(
+        label="Faithfulness Confidence",
+        unit="",
+        threshold=0.50,
+        description="Overall confidence from mechanistic faithfulness checks. ≥0.50 = narratives are evidence-grounded.",
     ),
 }
 

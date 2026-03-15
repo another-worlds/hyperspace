@@ -1093,10 +1093,8 @@ class TestPipelineRunner:
             assert "passed" in sc[dim]
 
 
-    def test_dashboard_scorecard_parity_with_pipeline_runner(self):
-        """Dashboard helper must match canonical PipelineRunner scorecard logic."""
-        from hyperspace.pages.dashboard import _compute_scorecard as dashboard_scorecard
-
+    def test_pipeline_runner_scorecard_canonical(self):
+        """PipelineRunner._compute_scorecard is the single canonical scorecard path."""
         snapshots = [
             {
                 "feature_meta": {
@@ -1114,22 +1112,19 @@ class TestPipelineRunner:
         stability = {"n_runs": 4, "mean_cosine": 0.75}
         governance_flags = [{"code": "GOV-005"}]
 
-        expected = PipelineRunner._compute_scorecard(
+        scorecard = PipelineRunner._compute_scorecard(
             snapshots=snapshots,
             sae_result=sae_result,
             data_sources=data_sources,
             stability=stability,
             governance_flags=governance_flags,
         )
-        actual = dashboard_scorecard(
-            ukt_snapshots=snapshots,
-            sae_result=sae_result,
-            data_sources=data_sources,
-            stability=stability,
-            governance_flags=governance_flags,
-        )
 
-        assert actual == expected
+        assert "feature_traceability" in scorecard
+        assert "kernel_stability" in scorecard
+        assert scorecard["feature_traceability"]["value"] == 3
+        assert scorecard["kernel_stability"]["value"] == 0.75
+        assert scorecard["governance_flags"]["value"] == 1
     def test_pipeline_runner_run_id_generated(
         self, rng, synthetic_spatial_data, synthetic_agreement_matrix, timeframe_context,
     ):
@@ -1194,11 +1189,11 @@ class TestPipelineRunner:
         assert contract["GraphEngine"]["na_owner"] == "Geopolitics Modeling"
 
         summary = result["interpretability_contract_summary"]
-        assert summary["total_modules"] == 8
+        assert summary["total_modules"] == 12
         assert summary["compliant_modules"] == 2
-        assert summary["na_modules"] == 6
+        assert summary["na_modules"] == 10
         assert summary["noncompliant_modules"] == 0
-        assert summary["compliance_rate"] == 0.25
+        assert round(summary["compliance_rate"], 4) == round(2 / 12, 4)
 
     def test_pipeline_runner_progress_callback(
         self, rng, synthetic_spatial_data, synthetic_agreement_matrix, timeframe_context,

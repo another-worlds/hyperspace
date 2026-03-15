@@ -171,17 +171,20 @@ class LLMNarrator(NarratorBackend):
     def __init__(
         self,
         model_name: str = "arnir0/Tiny-LLM",
-        max_new_tokens: int = 150,
+        max_new_tokens: int = 60,
         temperature: float = 0.7,
         cache_fn: Any = None,
+        generation_timeout: float = 15.0,
     ) -> None:
         self.model_name = model_name
         self.max_new_tokens = max_new_tokens
         self.temperature = temperature
         self._cache_fn = cache_fn
+        self._generation_timeout = generation_timeout
         self._model = None
         self._tokenizer = None
         self._fallback = TemplateNarrator()
+        self._llm_too_slow = False  # Set True after timeout; skips LLM for rest of run
 
     def _load_model(self):
         """Load model and tokenizer."""
@@ -208,24 +211,44 @@ class LLMNarrator(NarratorBackend):
         return self._model, self._tokenizer
 
     def _generate(self, prompt: str, max_tokens: int | None = None) -> str | None:
-        """Generate text continuation."""
+        """Generate text continuation with timeout protection.
+
+        Uses a thread-based timeout to prevent blocking the pipeline when
+        CPU inference is too slow. Falls back to None (triggering template
+        narrator) on timeout.
+        """
+        if self._llm_too_slow:
+            return None  # Previous generation timed out; skip LLM for this run
+
         model, tokenizer = self._load_model()
         if model is None or tokenizer is None:
             return None
 
         try:
             import torch
+            from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeout
+
             inputs = tokenizer.encode(prompt, return_tensors="pt",
-                                      truncation=True, max_length=800)
-            with torch.no_grad():
-                outputs = model.generate(
-                    inputs,
-                    max_new_tokens=max_tokens or self.max_new_tokens,
-                    temperature=self.temperature,
-                    top_k=50, top_p=0.92,
-                    do_sample=True,
-                    pad_token_id=tokenizer.eos_token_id,
-                )
+                                      truncation=True, max_length=400)
+
+            def _run_generation():
+                with torch.no_grad():
+                    outputs = model.generate(
+                        inputs,
+                        max_new_tokens=max_tokens or self.max_new_tokens,
+                        do_sample=False,
+                        pad_token_id=tokenizer.eos_token_id,
+                    )
+                return outputs
+
+            with ThreadPoolExecutor(max_workers=1) as executor:
+                future = executor.submit(_run_generation)
+                try:
+                    outputs = future.result(timeout=self._generation_timeout)
+                except FuturesTimeout:
+                    self._llm_too_slow = True
+                    return None  # Timeout — fall back to template narrator for rest of run
+
             full_text = tokenizer.decode(outputs[0], skip_special_tokens=True)
             continuation = full_text[len(tokenizer.decode(inputs[0],
                                                           skip_special_tokens=True)):]
@@ -235,7 +258,7 @@ class LLMNarrator(NarratorBackend):
 
     def narrate_canvas(self, canvas: "SemanticCanvas") -> str | None:
         prompt = canvas.format_for_narrator()
-        result = self._generate(prompt, max_tokens=200)
+        result = self._generate(prompt, max_tokens=80)
         return result or self._fallback.narrate_canvas(canvas)
 
     def narrate_layer(self, entry: "CanvasEntry", canvas: "SemanticCanvas") -> str | None:
@@ -261,7 +284,7 @@ class LLMNarrator(NarratorBackend):
             f"{entry.active_concepts} sparse concepts were discovered.\n\n"
             f"The {entry.block_name} layer reveals that"
         )
-        result = self._generate(prompt, max_tokens=120)
+        result = self._generate(prompt, max_tokens=60)
         return result or self._fallback.narrate_layer(entry, canvas)
 
     def narrate_kernel(self, kernel_label: dict, canvas: "SemanticCanvas") -> str | None:
@@ -289,7 +312,7 @@ class LLMNarrator(NarratorBackend):
             f"Top loadings: {feat_desc}.{canvas_context}\n\n"
             f"In plain language, this kernel represents"
         )
-        result = self._generate(prompt, max_tokens=120)
+        result = self._generate(prompt, max_tokens=60)
         return result or self._fallback.narrate_kernel(kernel_label, canvas)
 
     def narrate_concept(self, concept_label: dict, canvas: "SemanticCanvas") -> str | None:
@@ -308,7 +331,7 @@ class LLMNarrator(NarratorBackend):
             f"Mean activation: {activation:.4f}. Loadings: {feat_desc}.\n\n"
             f"This concept captures the idea that"
         )
-        result = self._generate(prompt, max_tokens=100)
+        result = self._generate(prompt, max_tokens=50)
         return result or self._fallback.narrate_concept(concept_label, canvas)
 
     def narrate_reality_regression(
@@ -352,7 +375,7 @@ class LLMNarrator(NarratorBackend):
             f"{canvas_text}\n\n"
             f"The overall assessment is that"
         )
-        result = self._generate(prompt, max_tokens=200)
+        result = self._generate(prompt, max_tokens=80)
         return result or self._fallback.narrate_reality_regression(
             snapshot, canvas, feature_name_fn, region_for_index_fn, region_bounds,
         )

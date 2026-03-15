@@ -110,24 +110,6 @@ def test_dashboard_run_pipeline_hydrates_session_from_runner_payload(monkeypatch
     )
     monkeypatch.setattr(dashboard, "st", mock_st)
 
-    class _DummyUKT:
-        canvas = object()
-
-    monkeypatch.setattr(dashboard, "ukt", _DummyUKT(), raising=False)
-
-    def _build_report(module, module_name):
-        return {"module": module_name, "compliant": True, "module_repr": str(module)}
-
-    def _summarize(report):
-        return {
-            "total_modules": len(report),
-            "compliant_modules": sum(1 for entry in report.values() if entry["compliant"]),
-            "noncompliant_modules": sum(1 for entry in report.values() if not entry["compliant"]),
-            "compliance_rate": 1.0,
-        }
-
-    monkeypatch.setattr(dashboard, "build_interpretable_report", _build_report)
-    monkeypatch.setattr(dashboard, "summarize_interpretable_reports", _summarize)
     monkeypatch.setattr(
         dashboard.PipelineRunner,
         "run",
@@ -151,25 +133,9 @@ def test_dashboard_run_pipeline_hydrates_session_from_runner_payload(monkeypatch
         "max_year": 2026,
     }
 
-    # Contract reports are intentionally rebuilt in dashboard for UI parity.
-    assert mock_st.session_state.interpretability_contract == {
-        "UniversalKnowledgeTensor": {
-            "module": "UniversalKnowledgeTensor",
-            "compliant": True,
-            "module_repr": str(dashboard.ukt),
-        },
-        "SemanticCanvas": {
-            "module": "SemanticCanvas",
-            "compliant": True,
-            "module_repr": str(dashboard.ukt.canvas),
-        },
-    }
-    assert mock_st.session_state.interpretability_contract_summary == {
-        "total_modules": 2,
-        "compliant_modules": 2,
-        "noncompliant_modules": 0,
-        "compliance_rate": 1.0,
-    }
+    # Contract data flows from PipelineRunner payload (no longer rebuilt in dashboard).
+    assert mock_st.session_state.interpretability_contract == payload["interpretability_contract"]
+    assert mock_st.session_state.interpretability_contract_summary == payload["interpretability_contract_summary"]
     assert mock_st.session_state.pipeline_complete is True
 
     assert status.updates[-1] == {"label": "Pipeline complete!", "state": "complete"}

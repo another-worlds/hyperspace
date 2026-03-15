@@ -7,16 +7,19 @@ from typing import Any
 
 import numpy as np
 import pandas as pd
+import plotly.graph_objects as go
 import streamlit as st
 
 from hyperspace.config import (
-    DEFAULT_TICKERS, GEOPOLITICAL_NODES, PIPELINE_STEPS, UKT_FEATURE_DIM,
+    DEFAULT_TICKERS, GEOPOLITICAL_NODES, PIPELINE_STEPS, PLOTLY_LAYOUT,
+    UKT_FEATURE_DIM,
 )
 from hyperspace.models.knowledge_matrix import estimate_reality_regression_stability
 from hyperspace.viz.charts import source_badge
 from hyperspace.core.pipeline import PipelineRunner
 from hyperspace.core.drift_monitor import DriftMonitor
 from hyperspace.core.temporal_memory import KernelMemory
+from hyperspace.core.latent_versioning import LatentVersionTrail
 
 
 _DRIFT_PERSIST_PATH = ".hyperspace/drift_history.json"
@@ -74,6 +77,29 @@ def _save_kernel_memory() -> None:
         except Exception:
             pass
 
+
+_VERSION_TRAIL_PATH = ".hyperspace/latent_versions.json"
+
+
+def _get_version_trail() -> LatentVersionTrail:
+    """Get or create a session-scoped LatentVersionTrail instance."""
+    if "version_trail" not in st.session_state:
+        try:
+            trail = LatentVersionTrail.load(_VERSION_TRAIL_PATH)
+        except (FileNotFoundError, Exception):
+            trail = LatentVersionTrail(max_entries=100)
+        st.session_state.version_trail = trail
+    return st.session_state.version_trail
+
+
+def _save_version_trail() -> None:
+    """Persist latent version trail to disk after a pipeline run."""
+    trail = st.session_state.get("version_trail")
+    if trail is not None:
+        try:
+            trail.save(_VERSION_TRAIL_PATH)
+        except Exception:
+            pass  # Non-critical — session state still has the data
 
 
 # --------------------------------------------------------------------------- #
@@ -200,6 +226,7 @@ def run_pipeline() -> None:
         runner = PipelineRunner(
             drift_monitor=_get_drift_monitor(),
             kernel_memory=_get_kernel_memory(),
+            version_trail=_get_version_trail(),
         )
         result = runner.run(
             finance_result=tft_result,
@@ -210,37 +237,39 @@ def run_pipeline() -> None:
             compute_cross_block=True,
         )
 
-        st.session_state.run_id = result["run_id"]
-        st.session_state.run_timestamp = result["run_timestamp"]
-        st.session_state.finance_result = result["finance_result"]
-        st.session_state.cluster_result = result["cluster_result"]
-        st.session_state.graph_result = result["graph_result"]
-        st.session_state.spatial_result = result["spatial_result"]
-        st.session_state.sim_result = result["sim_result"]
-        st.session_state.sae_result = result["sae_result"]
-        st.session_state.concept_kernel_map = result["concept_kernel_map"]
-        st.session_state.ukt_snapshots = result["snapshots"]
-        st.session_state.data_sources = result["data_sources"]
-        st.session_state.semantic_canvas = result["semantic_canvas"]
-        st.session_state.canvas_narrative = result["canvas_narrative"]
-        st.session_state.reality_narrative = result["reality_narrative"]
-        st.session_state.uvt_result = result["uvt_result"]
-        st.session_state.use_result = result["use_result"]
-        st.session_state.ukt_multirun_stability = result["stability"]
-        st.session_state.governance_flags = result["governance_flags"]
-        st.session_state.interpretability_scorecard = result["interpretability_scorecard"]
+        st.session_state.run_id = result.get("run_id")
+        st.session_state.run_timestamp = result.get("run_timestamp")
+        st.session_state.finance_result = result.get("finance_result")
+        st.session_state.cluster_result = result.get("cluster_result")
+        st.session_state.graph_result = result.get("graph_result")
+        st.session_state.spatial_result = result.get("spatial_result")
+        st.session_state.sim_result = result.get("sim_result")
+        st.session_state.sae_result = result.get("sae_result")
+        st.session_state.concept_kernel_map = result.get("concept_kernel_map", [])
+        st.session_state.ukt_snapshots = result.get("snapshots", [])
+        st.session_state.data_sources = result.get("data_sources", {})
+        st.session_state.semantic_canvas = result.get("semantic_canvas")
+        st.session_state.canvas_narrative = result.get("canvas_narrative")
+        st.session_state.reality_narrative = result.get("reality_narrative")
+        st.session_state.uvt_result = result.get("uvt_result")
+        st.session_state.use_result = result.get("use_result")
+        st.session_state.ukt_multirun_stability = result.get("stability")
+        st.session_state.governance_flags = result.get("governance_flags", [])
+        st.session_state.interpretability_scorecard = result.get("interpretability_scorecard", {})
         st.session_state.alignment_metrics = result.get("alignment_metrics", {})
-        st.session_state.interpretability_contract = result["interpretability_contract"]
-        st.session_state.interpretability_contract_summary = result[
-            "interpretability_contract_summary"
-        ]
+        st.session_state.interpretability_contract = result.get("interpretability_contract", {})
+        st.session_state.interpretability_contract_summary = result.get(
+            "interpretability_contract_summary", {},
+        )
         st.session_state.faithfulness_report = result.get("faithfulness_report")
         st.session_state.drift_result = result.get("drift_result")
         st.session_state.kernel_evolution = result.get("kernel_evolution")
+        st.session_state.latent_version = result.get("latent_version")
 
-        # Persist drift history and kernel memory to disk for cross-session tracking
+        # Persist drift history, kernel memory, and version trail to disk
         _save_drift_monitor()
         _save_kernel_memory()
+        _save_version_trail()
 
         status.update(label="Pipeline complete!", state="complete")
         st.session_state.pipeline_complete = True
@@ -382,6 +411,23 @@ def _build_governance_report_markdown(
                     f"  - [{a.get('code')}] {a.get('label')}: {a.get('detail', '')}"
                 )
 
+    # Kernel evolution (temporal memory)
+    kernel_evolution = st.session_state.get("kernel_evolution")
+    if kernel_evolution and kernel_evolution.get("n_runs", 0) >= 2:
+        report_lines.append("")
+        report_lines.append("## Kernel Evolution (Temporal Memory)")
+        report_lines.append(
+            f"- Total runs tracked: {kernel_evolution['n_runs']}"
+        )
+        report_lines.append(
+            f"- Total snapshots: {kernel_evolution.get('n_snapshots', 0)}"
+        )
+        for bn, bd in kernel_evolution.get("blocks", {}).items():
+            report_lines.append(
+                f"- {bn}: stability={bd.get('mean_importance_stability', 0.0):.4f}, "
+                f"runs={bd.get('n_runs', 0)}"
+            )
+
     report_lines.append("")
     report_lines.append("## Pipeline Reports")
     for snap in snapshots:
@@ -397,6 +443,7 @@ def _build_diagnostics_export_rows(
     alignment_metrics: dict | None,
     faithfulness_report: dict | None,
     drift_result: dict | None,
+    kernel_evolution: dict | None = None,
 ) -> list[dict[str, object]]:
     """Flatten alignment, faithfulness, and drift data for CSV export."""
     rows: list[dict[str, object]] = []
@@ -475,6 +522,24 @@ def _build_diagnostics_export_rows(
                 "Category": "drift",
                 "Metric": key,
                 "Value": drift_result.get(key, 0.0),
+            })
+
+    kernel_evolution = kernel_evolution or {}
+    if kernel_evolution.get("n_runs", 0) >= 1:
+        rows.append({
+            "RunID": run_id,
+            "Timestamp": run_ts,
+            "Category": "kernel_evolution",
+            "Metric": "total_runs",
+            "Value": kernel_evolution["n_runs"],
+        })
+        for bn, bd in kernel_evolution.get("blocks", {}).items():
+            rows.append({
+                "RunID": run_id,
+                "Timestamp": run_ts,
+                "Category": "kernel_evolution",
+                "Metric": f"{bn}/importance_stability",
+                "Value": bd.get("mean_importance_stability", 0.0),
             })
 
     return rows
@@ -754,6 +819,116 @@ def render_results() -> None:
                     f"{alert.get('detail', '')}"
                 )
 
+    # ---- Kernel Evolution Panel (Temporal Memory) ----
+    kernel_evolution = st.session_state.get("kernel_evolution")
+    if kernel_evolution and kernel_evolution.get("n_runs", 0) >= 2:
+        st.markdown("### Kernel Evolution (Cross-Run Memory)")
+        st.caption(
+            f"Tracking kernel structure across **{kernel_evolution['n_runs']}** "
+            f"pipeline runs ({kernel_evolution.get('n_snapshots', 0)} total snapshots)."
+        )
+        blocks_data = kernel_evolution.get("blocks", {})
+        if blocks_data:
+            evo_cols = st.columns(min(len(blocks_data), 4))
+            for i, (block_name, block_evo) in enumerate(blocks_data.items()):
+                with evo_cols[i % len(evo_cols)]:
+                    stability = block_evo.get("mean_importance_stability", 0.0)
+                    n_runs = block_evo.get("n_runs", 0)
+                    st.metric(
+                        label=f"{block_name}",
+                        value=f"{stability:.3f}",
+                        delta=f"{n_runs} runs",
+                        help="Mean cosine similarity of importance vectors across consecutive runs.",
+                    )
+            # Reconstruction trend chart (Plotly)
+            _recon_traces = []
+            for block_name, block_evo in blocks_data.items():
+                recon = block_evo.get("reconstruction_trend", [])
+                if len(recon) >= 2:
+                    _recon_traces.append(go.Scatter(
+                        x=list(range(1, len(recon) + 1)),
+                        y=recon,
+                        mode="lines+markers",
+                        name=block_name,
+                        line=dict(width=2),
+                        marker=dict(size=6),
+                    ))
+            if _recon_traces:
+                _recon_fig = go.Figure(data=_recon_traces)
+                _recon_fig.update_layout(
+                    **PLOTLY_LAYOUT,
+                    title="Reconstruction Error Across Runs",
+                    xaxis_title="Run",
+                    yaxis_title="Reconstruction Error",
+                    height=320,
+                    margin=dict(l=48, r=24, t=44, b=40),
+                    legend=dict(
+                        orientation="h", y=-0.2, x=0.5, xanchor="center",
+                        font=dict(size=11),
+                    ),
+                )
+                st.plotly_chart(_recon_fig, use_container_width=True)
+
+            # Importance stability chart (per-block cosine trend)
+            _imp_traces = []
+            for block_name, block_evo in blocks_data.items():
+                imp_trend = block_evo.get("importance_trend", [])
+                if len(imp_trend) >= 2:
+                    # Compute consecutive cosine similarities
+                    cosines = []
+                    for idx in range(1, len(imp_trend)):
+                        a = np.asarray(imp_trend[idx - 1])
+                        b = np.asarray(imp_trend[idx])
+                        na, nb = np.linalg.norm(a), np.linalg.norm(b)
+                        cos = float(np.dot(a, b) / (na * nb)) if na > 1e-12 and nb > 1e-12 else 0.0
+                        cosines.append(cos)
+                    _imp_traces.append(go.Scatter(
+                        x=list(range(2, len(imp_trend) + 1)),
+                        y=cosines,
+                        mode="lines+markers",
+                        name=block_name,
+                        line=dict(width=2),
+                        marker=dict(size=6),
+                    ))
+            if _imp_traces:
+                _imp_fig = go.Figure(data=_imp_traces)
+                _imp_fig.update_layout(
+                    **PLOTLY_LAYOUT,
+                    title="Importance Vector Stability (Consecutive Cosine)",
+                    xaxis_title="Run",
+                    yaxis_title="Cosine Similarity",
+                    height=320,
+                    yaxis_range=[0, 1.05],
+                    margin=dict(l=48, r=24, t=44, b=40),
+                    legend=dict(
+                        orientation="h", y=-0.2, x=0.5, xanchor="center",
+                        font=dict(size=11),
+                    ),
+                )
+                # Add threshold reference line
+                _imp_fig.add_hline(
+                    y=0.80, line_dash="dash", line_color="rgba(248,113,113,0.5)",
+                    annotation_text="Stability threshold",
+                    annotation_position="top right",
+                    annotation_font_color="rgba(248,113,113,0.8)",
+                )
+                st.plotly_chart(_imp_fig, use_container_width=True)
+
+            # Reconstruction trend table
+            with st.expander("Reconstruction error trends"):
+                trend_rows = []
+                for block_name, block_evo in blocks_data.items():
+                    recon = block_evo.get("reconstruction_trend", [])
+                    for j, val in enumerate(recon):
+                        trend_rows.append({
+                            "Block": block_name,
+                            "Run": j + 1,
+                            "Reconstruction Error": round(val, 6),
+                        })
+                if trend_rows:
+                    import pandas as _pd
+                    st.dataframe(_pd.DataFrame(trend_rows), use_container_width=True)
+
     interpretability_contract = st.session_state.get("interpretability_contract", {})
     interpretability_contract_summary = st.session_state.get(
         "interpretability_contract_summary", {},
@@ -873,6 +1048,7 @@ def render_results() -> None:
         alignment_metrics=alignment_metrics,
         faithfulness_report=faithfulness_report,
         drift_result=drift_result,
+        kernel_evolution=st.session_state.get("kernel_evolution"),
     )
     if diag_rows:
         exp5.download_button(

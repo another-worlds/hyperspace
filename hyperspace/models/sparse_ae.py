@@ -59,6 +59,6 @@ def enrich_concepts_with_narratives(
                 if narrative:
                     cl["semantic_narrative"] = narrative
     except Exception:
-        pass
+        pass  # Concept narratives are optional enrichment
 
     return sae_result

@@ -66,7 +66,7 @@ def _run_counterfactual_ukt(
     try:
         sae_result = train_sparse_ae(sub_matrix, hidden_dim=16, epochs=60)
     except Exception:
-        pass
+        st.warning("SAE training unavailable for counterfactual; concept analysis skipped.")
 
     # Stability
     stability = estimate_reality_regression_stability(sub_matrix, n_runs=6, noise_std=0.01, seed=99)
@@ -90,16 +90,13 @@ def _run_counterfactual_ukt(
 
 def _region_color_for_index(idx: int) -> str:
     """Return the configured feature-region color for a feature index."""
-    region_palette = {
-        "temporal-pattern": "#3498db",
-        "semantic-embedding": "#e67e22",
-        "structural-centrality": "#2ecc71",
-        "dynamic-agent": "#e74c3c",
-        "geospatial-kernel": "#9b59b6",
-    }
-    for (lo, hi), region_name in FEATURE_REGION_LABELS.items():
-        if lo <= idx < hi:
-            return region_palette.get(region_name, "#95a5a6")
+    from hyperspace.models.knowledge_matrix import HYPERSPACE_REGISTRY
+    # Auto-generate palette from registry order
+    _PALETTE = ["#3498db", "#e67e22", "#2ecc71", "#e74c3c", "#9b59b6",
+                "#1abc9c", "#f39c12", "#8e44ad", "#2c3e50", "#d35400"]
+    for i, region in enumerate(HYPERSPACE_REGISTRY.ordered_regions):
+        if region.start <= idx < region.end:
+            return _PALETTE[i % len(_PALETTE)]
     return "#95a5a6"
 
 
@@ -376,11 +373,9 @@ def render() -> None:
 
     # ── Domain-level impact summary (governance-readable) ────────────
     st.markdown("### Domain-Level Impact")
-    region_names = [
-        "temporal-pattern", "semantic-embedding",
-        "structural-centrality", "dynamic-agent", "geospatial-kernel",
-    ]
-    region_bounds = [(0, 16), (16, 32), (32, 48), (48, 64), (64, 80)]
+    from hyperspace.models.knowledge_matrix import HYPERSPACE_REGISTRY
+    region_names = [r.name for r in HYPERSPACE_REGISTRY.ordered_regions]
+    region_bounds = [(r.start, r.end) for r in HYPERSPACE_REGISTRY.ordered_regions]
     impact_rows = []
     for rname, (lo, hi) in zip(region_names, region_bounds):
         orig_energy = float(np.abs(rr_orig[lo:min(hi, len(rr_orig))]).sum())
