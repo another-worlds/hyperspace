@@ -30,6 +30,7 @@ EXPECTED_RUNNER_PAYLOAD_KEYS: tuple[str, ...] = (
     "faithfulness_report",
     "drift_result",
     "kernel_evolution",
+    "latent_version",
 )
 
 
@@ -59,6 +60,7 @@ SESSION_TO_PAYLOAD_KEY_MAP: dict[str, str] = {
     "faithfulness_report": "faithfulness_report",
     "drift_result": "drift_result",
     "kernel_evolution": "kernel_evolution",
+    "latent_version": "latent_version",
 }
 
 
@@ -99,4 +101,5 @@ def build_runner_payload() -> dict[str, Any]:
         },
         "drift_result": None,
         "kernel_evolution": None,
+        "latent_version": None,
     }

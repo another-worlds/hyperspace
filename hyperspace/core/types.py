@@ -189,6 +189,9 @@ class PipelineResult(TypedDict, total=False):
     # Kernel evolution (temporal memory)
     kernel_evolution: dict[str, Any] | None
 
+    # Latent space versioning (Phase 3 governance)
+    latent_version: dict[str, Any] | None
+
 
 @runtime_checkable
 class InterpretableModule(Protocol):

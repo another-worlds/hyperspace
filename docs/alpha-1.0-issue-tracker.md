@@ -13,11 +13,11 @@ Status legend:
 
 ## Alpha 1.0 Progress Snapshot
 
-- **Overall Alpha 1.0 readiness:** **96%**
-- **Governance + interpretability compliance layer:** **98%**
+- **Overall Alpha 1.0 readiness:** **98%**
+- **Governance + interpretability compliance layer:** **100%**
 - **Headless/UI parity:** **99%**
 - **UTK learned shared-latent goals:** **90%**
-- **Mechanistic/faithfulness validation:** **95%**
+- **Mechanistic/faithfulness validation:** **98%**
 
 These percentages reflect current implementation plus existing roadmap and gap
 analysis documented in:
@@ -29,26 +29,29 @@ analysis documented in:
 
 ## Latest Progress Update (Current Cycle)
 
-- **Overall readiness:** **96%**
-- **Delta vs previous checkpoint:** **+9 percentage points**
+- **Overall readiness:** **98%**
+- **Delta vs previous checkpoint:** **+11 percentage points**
 
 ### Area deltas
 - **UTK universality / learned multimodal substrate:** 90% (**Δ +5pp**)
-- **Interpretability + governance architecture:** 98% (**Δ +6pp**)
+- **Interpretability + governance architecture:** 100% (**Δ +8pp**)
 - **Headless/UI parity + reliability:** 99% (**Δ +3pp**)
-- **Mechanistic/faithfulness validation:** 95% (**Δ +5pp**)
+- **Mechanistic/faithfulness validation:** 98% (**Δ +8pp**)
 
 ### Completed in this cycle
 1. **Scorecard threshold tuning:** Upgraded shared-latent thresholds from placeholder `0.0` to calibrated baselines (legacy retrieval@1 ≥ 0.15, shared-latent retrieval@1 ≥ 0.20, probe cosine ≥ 0.10). Added 9th scorecard dimension: `faithfulness_confidence` (≥ 0.50). Pipeline reordered so faithfulness checks run before scorecard computation to feed confidence score.
 2. **Kernel evolution dashboard panel:** Added cross-run kernel evolution panel to Mission Control with two Plotly trend charts (reconstruction error, importance stability cosine with 0.80 threshold line). Shows per-block stability metrics, run counts, expandable reconstruction trends table. Kernel evolution data included in governance markdown report and diagnostics CSV export.
-3. **Contract coverage expansion:** Enrolled 3 new alpha-scope modules in interpretability registry: `SharedLatentHead` (N/A, shadow-only prototype), `DriftMonitor` (N/A, diagnostic service), `KernelMemory` (N/A, persistence layer). Total: 11 modules (2 contract-compliant, 9 explicit N/A).
-4. **Parity audit:** Fixed `SESSION_TO_PAYLOAD_KEY_MAP` missing `interpretability_contract` and `interpretability_contract_summary` entries. Added `.hyperspace/` to `.gitignore` for drift/kernel persistence files. Added comprehensive parity coverage tests (map covers all expected keys). 61 tests total passing.
+3. **Contract coverage expansion:** Enrolled 4 new alpha-scope modules in interpretability registry: `SharedLatentHead` (N/A, shadow-only prototype), `DriftMonitor` (N/A, diagnostic service), `KernelMemory` (N/A, persistence layer), `LatentVersionTrail` (N/A, audit trail). Total: 12 modules (2 contract-compliant, 10 explicit N/A).
+4. **Parity audit:** Fixed `SESSION_TO_PAYLOAD_KEY_MAP` missing entries. Added `.hyperspace/` to `.gitignore` for persistence files. Added comprehensive parity coverage tests. 327 tests total passing.
 5. **Zero TODO/FIXME markers** remaining in Python source under `hyperspace/`.
+6. **Faithfulness numpy bug fix:** Fixed `AttributeError` in `check_canvas_narrative_grounding` where numpy array coordinates were called with `.items()`. Now handles both dict and ndarray coordinate formats.
+7. **Full integration test suite unblocked:** Installed torch, plotly, scipy, scikit-learn. All 327 tests pass including full pipeline integration, shipping, and cross-module wiring tests.
+8. **Latent space versioning (Phase 3):** New `LatentVersionTrail` module in `hyperspace/core/latent_versioning.py` captures per-run latent space fingerprints (feature dim, region boundaries, shared-latent status, concept count) with SHA-256 config hashes. Detects structural changes and vocabulary drift across consecutive runs. Integrated into pipeline, dashboard, session state, and disk persistence. 12 dedicated tests.
+9. **Concept vocabulary audit trails (Phase 3):** `ConceptAuditRecord` captures per-run SAE concept vocabulary snapshots with per-concept provenance (dominant region, activation, top features). Vocabulary hash enables drift detection across runs. Persisted to `.hyperspace/latent_versions.json`.
 
 ### Next critical actions
-1. End-to-end integration test with torch (blocked by pre-existing torch install issue).
-2. Scorecard threshold validation against real pipeline runs.
-3. Phase 3 governance items: latent space versioning and concept vocabulary audit trails.
+1. Scorecard threshold validation against real pipeline runs.
+2. Shared-latent promotion from shadow-only to optional production path (post-alpha).
 
 ---
 
@@ -85,7 +88,7 @@ analysis documented in:
 - **Alpha exit criteria:**
   1. ~~All major model blocks implement contract (or explicit N/A policy).~~ DONE
   2. ~~Pipeline summary reaches 100% compliant or explicit N/A for alpha scope.~~ DONE (11 modules enrolled)
-- **Progress:** **95%**
+- **Progress:** **98%**
 
 ---
 
@@ -218,7 +221,7 @@ analysis documented in:
 - [x] UI visibility in Mission Control
 - [x] Export/report parity for all governance artifacts
 
-**Milestone A progress:** **98%**
+**Milestone A progress:** **100%**
 
 ## Milestone B — Pipeline parity lock (target: 100% complete)
 - [x] Scorecard parity (dashboard delegates to pipeline logic)
@@ -235,8 +238,10 @@ analysis documented in:
 - [x] Cross-session drift persistence (Streamlit session state + disk)
 - [x] Cross-block transfer learning evaluation (leave-one-out protocol)
 - [x] Temporal memory integration (cross-run kernel persistence)
+- [x] Latent space versioning (config fingerprints + structural change detection)
+- [x] Concept vocabulary audit trails (per-run SAE snapshot with drift detection)
 
-**Milestone C progress:** **98%**
+**Milestone C progress:** **100%**
 
 ---
 

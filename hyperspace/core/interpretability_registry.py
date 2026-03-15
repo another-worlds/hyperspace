@@ -78,6 +78,12 @@ ALPHA_SCOPE_MODULE_POLICIES: list[AlphaScopeModulePolicy] = [
         "status": "not_applicable",
         "rationale": "Persistence layer for kernel snapshot history; provides evolution analytics but no model-level predictions to explain.",
     },
+    {
+        "module_name": "LatentVersionTrail",
+        "owner": "Governance",
+        "status": "not_applicable",
+        "rationale": "Audit trail for latent space configuration versions; tracks structural changes but is not a predictive module.",
+    },
 ]
 
 

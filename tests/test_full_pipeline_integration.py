@@ -1189,11 +1189,11 @@ class TestPipelineRunner:
         assert contract["GraphEngine"]["na_owner"] == "Geopolitics Modeling"
 
         summary = result["interpretability_contract_summary"]
-        assert summary["total_modules"] == 11
+        assert summary["total_modules"] == 12
         assert summary["compliant_modules"] == 2
-        assert summary["na_modules"] == 9
+        assert summary["na_modules"] == 10
         assert summary["noncompliant_modules"] == 0
-        assert round(summary["compliance_rate"], 4) == round(2 / 11, 4)
+        assert round(summary["compliance_rate"], 4) == round(2 / 12, 4)
 
     def test_pipeline_runner_progress_callback(
         self, rng, synthetic_spatial_data, synthetic_agreement_matrix, timeframe_context,

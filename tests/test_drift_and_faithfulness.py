@@ -661,13 +661,14 @@ class TestContractRegistry:
         assert "SharedLatentHead" in names
         assert "DriftMonitor" in names
         assert "KernelMemory" in names
+        assert "LatentVersionTrail" in names
 
     def test_total_module_count(self):
         from hyperspace.core.interpretability_registry import (
             ALPHA_SCOPE_MODULE_POLICIES,
         )
 
-        assert len(ALPHA_SCOPE_MODULE_POLICIES) == 11
+        assert len(ALPHA_SCOPE_MODULE_POLICIES) == 12
 
     def test_contract_modules_are_ukt_and_canvas(self):
         from hyperspace.core.interpretability_registry import (
@@ -736,3 +737,206 @@ class TestDashboardFixtureParity:
             assert key in payload_keys_in_map, (
                 f"Expected payload key '{key}' not covered by SESSION_TO_PAYLOAD_KEY_MAP"
             )
+
+    def test_latent_version_in_fixture(self):
+        from tests.dashboard_fixtures import build_runner_payload
+
+        payload = build_runner_payload()
+        assert "latent_version" in payload
+
+    def test_session_map_covers_latent_version(self):
+        from tests.dashboard_fixtures import SESSION_TO_PAYLOAD_KEY_MAP
+
+        assert "latent_version" in SESSION_TO_PAYLOAD_KEY_MAP
+
+
+class TestLatentVersioning:
+    """Tests for latent space versioning and concept vocabulary audit trails."""
+
+    def test_compute_latent_version(self):
+        from hyperspace.core.latent_versioning import compute_latent_version
+
+        region_labels = {
+            (0, 16): "temporal-pattern",
+            (16, 32): "semantic-embedding",
+            (32, 48): "structural-centrality",
+        }
+        version = compute_latent_version(
+            run_id="TEST0001",
+            timestamp="2026-03-15",
+            feature_dim=48,
+            region_labels=region_labels,
+            n_kernels=3,
+            shared_latent_active=False,
+            sae_result=None,
+        )
+        assert version.run_id == "TEST0001"
+        assert version.feature_dim == 48
+        assert version.n_regions == 3
+        assert version.n_kernels == 3
+        assert version.shared_latent_active is False
+        assert version.concept_count == 0
+        assert len(version.config_hash) == 16
+
+    def test_config_hash_deterministic(self):
+        from hyperspace.core.latent_versioning import compute_latent_version
+
+        kwargs = dict(
+            run_id="R1",
+            timestamp="t",
+            feature_dim=80,
+            region_labels={(0, 16): "a", (16, 32): "b"},
+            n_kernels=5,
+            shared_latent_active=True,
+        )
+        v1 = compute_latent_version(**kwargs)
+        v2 = compute_latent_version(**kwargs)
+        assert v1.config_hash == v2.config_hash
+
+    def test_config_hash_changes_on_structural_change(self):
+        from hyperspace.core.latent_versioning import compute_latent_version
+
+        base = dict(
+            run_id="R1", timestamp="t", feature_dim=80,
+            region_labels={(0, 16): "a"}, n_kernels=5, shared_latent_active=False,
+        )
+        v1 = compute_latent_version(**base)
+        v2 = compute_latent_version(**{**base, "feature_dim": 64})
+        assert v1.config_hash != v2.config_hash
+
+    def test_build_concept_audit_record(self):
+        from hyperspace.core.latent_versioning import build_concept_audit_record
+
+        sae_result = {
+            "concept_labels": [
+                {"concept_id": "C00", "dominant_region": "temporal-pattern",
+                 "mean_activation": 0.5, "active": True, "top_features": []},
+                {"concept_id": "C01", "dominant_region": "semantic-embedding",
+                 "mean_activation": 0.1, "active": False, "top_features": []},
+            ]
+        }
+        record = build_concept_audit_record(
+            run_id="R1", timestamp="t", sae_result=sae_result,
+        )
+        assert record is not None
+        assert record.total_concepts == 2
+        assert record.active_concepts == 1
+        assert len(record.vocabulary) == 2
+        assert len(record.vocabulary_hash) == 16
+
+    def test_build_concept_audit_record_none_without_sae(self):
+        from hyperspace.core.latent_versioning import build_concept_audit_record
+
+        assert build_concept_audit_record(run_id="R1", timestamp="t") is None
+
+    def test_version_trail_record_and_summary(self):
+        from hyperspace.core.latent_versioning import (
+            LatentVersionTrail, compute_latent_version,
+        )
+
+        trail = LatentVersionTrail(max_entries=10)
+        regions = {(0, 16): "a", (16, 32): "b"}
+        v1 = compute_latent_version(
+            run_id="R1", timestamp="t1", feature_dim=32,
+            region_labels=regions, n_kernels=2, shared_latent_active=False,
+        )
+        trail.record(v1)
+        summary = trail.get_summary()
+        assert summary["n_versions"] == 1
+        assert summary["latest"]["run_id"] == "R1"
+        assert summary["latest"]["config_hash"] == v1.config_hash
+
+    def test_detect_structural_changes(self):
+        from hyperspace.core.latent_versioning import (
+            LatentVersionTrail, compute_latent_version,
+        )
+
+        trail = LatentVersionTrail()
+        regions = {(0, 16): "a"}
+        v1 = compute_latent_version(
+            run_id="R1", timestamp="t1", feature_dim=80,
+            region_labels=regions, n_kernels=3, shared_latent_active=False,
+        )
+        v2 = compute_latent_version(
+            run_id="R2", timestamp="t2", feature_dim=64,
+            region_labels=regions, n_kernels=3, shared_latent_active=False,
+        )
+        trail.record(v1)
+        trail.record(v2)
+        changes = trail.detect_structural_changes()
+        assert len(changes) == 1
+        assert changes[0]["run_id"] == "R2"
+        assert "feature_dim: 80 → 64" in changes[0]["diffs"]
+
+    def test_detect_vocabulary_drift(self):
+        from hyperspace.core.latent_versioning import (
+            LatentVersionTrail, build_concept_audit_record,
+            compute_latent_version,
+        )
+
+        trail = LatentVersionTrail()
+        regions = {(0, 16): "a"}
+        v = compute_latent_version(
+            run_id="R1", timestamp="t", feature_dim=16,
+            region_labels=regions, n_kernels=1, shared_latent_active=False,
+        )
+
+        sae1 = {"concept_labels": [
+            {"concept_id": "C00", "dominant_region": "a",
+             "mean_activation": 0.5, "active": True, "top_features": []},
+        ]}
+        sae2 = {"concept_labels": [
+            {"concept_id": "C00", "dominant_region": "a",
+             "mean_activation": 0.5, "active": False, "top_features": []},
+        ]}
+
+        r1 = build_concept_audit_record(run_id="R1", timestamp="t1", sae_result=sae1)
+        r2 = build_concept_audit_record(run_id="R2", timestamp="t2", sae_result=sae2)
+        trail.record(v, r1)
+        trail.record(v, r2)
+        drifts = trail.detect_vocabulary_drift()
+        assert len(drifts) == 1
+        assert drifts[0]["run_id"] == "R2"
+
+    def test_version_trail_save_and_load(self, tmp_path):
+        from hyperspace.core.latent_versioning import (
+            LatentVersionTrail, compute_latent_version,
+            build_concept_audit_record,
+        )
+
+        trail = LatentVersionTrail()
+        regions = {(0, 16): "a"}
+        v = compute_latent_version(
+            run_id="R1", timestamp="t", feature_dim=16,
+            region_labels=regions, n_kernels=1, shared_latent_active=True,
+        )
+        sae = {"concept_labels": [
+            {"concept_id": "C00", "dominant_region": "a",
+             "mean_activation": 0.5, "active": True, "top_features": [{"idx": 0}]},
+        ]}
+        r = build_concept_audit_record(run_id="R1", timestamp="t", sae_result=sae)
+        trail.record(v, r)
+
+        path = tmp_path / "versions.json"
+        trail.save(path)
+        loaded = LatentVersionTrail.load(path)
+
+        assert loaded.n_versions == 1
+        assert loaded.n_concept_records == 1
+        summary = loaded.get_summary()
+        assert summary["latest"]["config_hash"] == v.config_hash
+
+    def test_version_trail_max_entries(self):
+        from hyperspace.core.latent_versioning import (
+            LatentVersionTrail, compute_latent_version,
+        )
+
+        trail = LatentVersionTrail(max_entries=3)
+        regions = {(0, 16): "a"}
+        for i in range(5):
+            v = compute_latent_version(
+                run_id=f"R{i}", timestamp=f"t{i}", feature_dim=16,
+                region_labels=regions, n_kernels=1, shared_latent_active=False,
+            )
+            trail.record(v)
+        assert trail.n_versions == 3

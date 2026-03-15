@@ -41,9 +41,15 @@ from hyperspace.core.interpretability_registry import (
     build_alpha_scope_contract_reports,
     enforce_alpha_scope_contract_coverage,
 )
+from hyperspace.core.latent_versioning import (
+    LatentVersionTrail,
+    compute_latent_version,
+    build_concept_audit_record,
+)
 from hyperspace.models.knowledge_matrix import (
     UniversalKnowledgeTensor,
     estimate_reality_regression_stability,
+    FEATURE_REGION_LABELS,
 )
 
 
@@ -59,6 +65,7 @@ class PipelineRunner:
         on_step: Callable[[str, str], None] | None = None,
         drift_monitor: DriftMonitor | None = None,
         kernel_memory: KernelMemory | None = None,
+        version_trail: LatentVersionTrail | None = None,
     ):
         """
         Args:
@@ -67,11 +74,15 @@ class PipelineRunner:
                 When provided, each run is recorded and drift is computed.
             kernel_memory: Optional KernelMemory for cross-run kernel persistence.
                 When provided, kernel snapshots are stored and evolution is tracked.
+            version_trail: Optional LatentVersionTrail for latent space versioning.
+                When provided, captures latent space fingerprints and concept
+                vocabulary snapshots per run for governance auditing.
         """
         self._on_step = on_step or (lambda s, m: None)
         self._warnings: list[str] = []
         self._drift_monitor = drift_monitor
         self._kernel_memory = kernel_memory
+        self._version_trail = version_trail
 
     def _report(self, step: str, msg: str) -> None:
         self._on_step(step, msg)
@@ -414,6 +425,30 @@ class PipelineRunner:
             self._kernel_memory.store_run(run_id, run_timestamp, snapshots)
             kernel_evolution = self._kernel_memory.get_evolution_summary()
 
+        # ---- Latent space versioning (Phase 3 governance) ----
+        latent_version_summary = None
+        if self._version_trail is not None:
+            n_kernels = 0
+            if snapshots:
+                n_kernels = snapshots[-1].get("n_kernels", 0)
+
+            version = compute_latent_version(
+                run_id=run_id,
+                timestamp=run_timestamp,
+                feature_dim=UKT_FEATURE_DIM,
+                region_labels=FEATURE_REGION_LABELS,
+                n_kernels=n_kernels,
+                shared_latent_active=use_shared_latent,
+                sae_result=sae_result,
+            )
+            concept_record = build_concept_audit_record(
+                run_id=run_id,
+                timestamp=run_timestamp,
+                sae_result=sae_result,
+            )
+            self._version_trail.record(version, concept_record)
+            latent_version_summary = self._version_trail.get_summary()
+
         # ---- Temporal drift (H-002) ----
         drift_result = None
         if self._drift_monitor is not None and snapshots:
@@ -483,6 +518,7 @@ class PipelineRunner:
             faithfulness_report=faithfulness_report,
             drift_result=drift_result,
             kernel_evolution=kernel_evolution,
+            latent_version=latent_version_summary,
             run_id=run_id,
             run_timestamp=run_timestamp,
         )

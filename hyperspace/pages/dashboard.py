@@ -19,6 +19,7 @@ from hyperspace.viz.charts import source_badge
 from hyperspace.core.pipeline import PipelineRunner
 from hyperspace.core.drift_monitor import DriftMonitor
 from hyperspace.core.temporal_memory import KernelMemory
+from hyperspace.core.latent_versioning import LatentVersionTrail
 
 
 _DRIFT_PERSIST_PATH = ".hyperspace/drift_history.json"
@@ -76,6 +77,29 @@ def _save_kernel_memory() -> None:
         except Exception:
             pass
 
+
+_VERSION_TRAIL_PATH = ".hyperspace/latent_versions.json"
+
+
+def _get_version_trail() -> LatentVersionTrail:
+    """Get or create a session-scoped LatentVersionTrail instance."""
+    if "version_trail" not in st.session_state:
+        try:
+            trail = LatentVersionTrail.load(_VERSION_TRAIL_PATH)
+        except (FileNotFoundError, Exception):
+            trail = LatentVersionTrail(max_entries=100)
+        st.session_state.version_trail = trail
+    return st.session_state.version_trail
+
+
+def _save_version_trail() -> None:
+    """Persist latent version trail to disk after a pipeline run."""
+    trail = st.session_state.get("version_trail")
+    if trail is not None:
+        try:
+            trail.save(_VERSION_TRAIL_PATH)
+        except Exception:
+            pass  # Non-critical — session state still has the data
 
 
 # --------------------------------------------------------------------------- #
@@ -202,6 +226,7 @@ def run_pipeline() -> None:
         runner = PipelineRunner(
             drift_monitor=_get_drift_monitor(),
             kernel_memory=_get_kernel_memory(),
+            version_trail=_get_version_trail(),
         )
         result = runner.run(
             finance_result=tft_result,
@@ -239,10 +264,12 @@ def run_pipeline() -> None:
         st.session_state.faithfulness_report = result.get("faithfulness_report")
         st.session_state.drift_result = result.get("drift_result")
         st.session_state.kernel_evolution = result.get("kernel_evolution")
+        st.session_state.latent_version = result.get("latent_version")
 
-        # Persist drift history and kernel memory to disk for cross-session tracking
+        # Persist drift history, kernel memory, and version trail to disk
         _save_drift_monitor()
         _save_kernel_memory()
+        _save_version_trail()
 
         status.update(label="Pipeline complete!", state="complete")
         st.session_state.pipeline_complete = True
