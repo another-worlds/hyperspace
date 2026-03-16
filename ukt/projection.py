@@ -5,26 +5,31 @@ the shared projection mixes features across regions so that SVD discovers
 genuine cross-domain patterns rather than recovering the original block
 structure.
 
-The mixing is governed by a cross-region coupling matrix derived from semantic
-relationships between domains. Each block's features still land primarily in
-their home region (preserving interpretability) but also partially project
-into other regions proportional to their semantic coupling strength.
+The projection is ADAPTIVE — it learns from the data as blocks arrive:
 
-Math:
-    Given a raw feature vector ``x`` with features in region ``[s, e)``,
-    the projected vector is ``P @ x`` where ``P`` is a ``(d, d)`` matrix:
+- **Topology**: Which regions CAN couple — structural prior from the semantic
+  spec (e.g., temporal-pattern and geospatial-kernel are semantically related).
+  This is the only non-data-driven component, and it's a mild structural prior
+  that says "these domains are related" without specifying how much or how.
 
-    - Diagonal blocks ``P[s:e, s:e] = I`` (identity — home region, full weight)
-    - Off-diagonal blocks ``P[t_s:t_e, s:e] = w * Q`` where ``w`` is the
-      coupling weight and ``Q`` is a seeded random orthogonal sub-matrix.
+- **Strength**: How strongly two regions couple — computed from the actual
+  feature energy ratio: ``min(E_src, E_tgt) / max(E_src, E_tgt)``.
+  If both blocks are strongly active, full coupling. If one block has
+  near-zero features, coupling drops to zero. This is purely data-driven.
 
-    After projection, every block's features span the full feature space,
-    enabling SVD to discover genuine cross-domain correlations.
+- **Direction**: Which specific features in the source map to which features
+  in the target — rank-1 projection along each block's dominant feature
+  direction: ``outer(v_tgt, v_src)`` where ``v = f / ||f||``.
+  This means the coupling connects the strongest signal in each block.
+  If the data changes (different attention patterns, different centrality
+  structure), the coupling direction changes accordingly.
+
+The projection rebuilds every time a new block arrives, and all previously
+stored blocks are re-projected through the updated matrix.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
 
 import numpy as np
 
@@ -32,28 +37,27 @@ from ukt.registry import FeatureRegionRegistry
 
 
 # ---------------------------------------------------------------------------
-# Default cross-region coupling weights
+# Default coupling topology
 # ---------------------------------------------------------------------------
 # Derived from REGION_SEMANTIC_SPEC canvas coupling definitions.
-# Key: (source_region, target_region) → weight.
-# These represent how strongly a source block's features should project
-# into a target region in the shared space.
+# This defines WHICH regions can couple (the graph edges), NOT how strongly
+# (the edge weights — those come from data).
 
-DEFAULT_COUPLING: dict[tuple[str, str], float] = {
-    # temporal-pattern → geospatial via systemic_stress
-    ("temporal-pattern", "geospatial-kernel"): 0.30,
+DEFAULT_TOPOLOGY: set[tuple[str, str]] = {
+    # temporal-pattern ↔ geospatial via systemic_stress
+    ("temporal-pattern", "geospatial-kernel"),
     # semantic-embedding → structural via power_concentration
-    ("semantic-embedding", "structural-centrality"): 0.40,
+    ("semantic-embedding", "structural-centrality"),
     # structural-centrality → temporal via market_momentum
-    ("structural-centrality", "temporal-pattern"): 0.30,
+    ("structural-centrality", "temporal-pattern"),
     # structural-centrality → geospatial via systemic_stress
-    ("structural-centrality", "geospatial-kernel"): 0.40,
+    ("structural-centrality", "geospatial-kernel"),
     # dynamic-agent → structural via power_concentration
-    ("dynamic-agent", "structural-centrality"): 0.50,
+    ("dynamic-agent", "structural-centrality"),
     # dynamic-agent → semantic via narrative_diversity
-    ("dynamic-agent", "semantic-embedding"): 0.30,
+    ("dynamic-agent", "semantic-embedding"),
     # geospatial-kernel → structural via network_cohesion
-    ("geospatial-kernel", "structural-centrality"): 0.30,
+    ("geospatial-kernel", "structural-centrality"),
 }
 
 
@@ -61,7 +65,6 @@ def _random_orthogonal(n: int, rng: np.random.Generator) -> np.ndarray:
     """Generate a random orthogonal matrix of size (n, n) via QR decomposition."""
     A = rng.standard_normal((n, n))
     Q, R = np.linalg.qr(A)
-    # Ensure deterministic sign convention (positive diagonal of R)
     signs = np.sign(np.diag(R))
     signs[signs == 0] = 1.0
     Q = Q * signs[np.newaxis, :]
@@ -74,71 +77,114 @@ class CouplingInfo:
     source_region: str
     target_region: str
     weight: float
+    data_driven: bool = True
 
 
 class SharedProjection:
-    """Projects block features into a shared embedding space.
+    """Adaptive projection that learns cross-region coupling from block features.
 
-    The projection matrix ``P ∈ R^{d × d}`` mixes features across regions:
+    The projection matrix ``P`` starts as identity and evolves as blocks arrive.
+    Each new block updates the coupling strength and direction between its
+    region and all other observed regions, based on the actual feature values.
 
-    - Diagonal blocks: identity (home region, weight 1.0)
-    - Off-diagonal blocks: ``coupling_weight * random_orthogonal_rotation``
-
-    After projection, every block's features span the full feature space,
-    so SVD discovers genuine cross-domain correlations instead of just
-    recovering the original block structure.
-
-    The projection is invertible (P is well-conditioned because it is
-    diagonally dominant with unit diagonal blocks), allowing back-projection
-    for interpretability.
+    The only structural prior is the coupling TOPOLOGY — which regions can
+    couple. Everything else (strength, direction) comes from data.
 
     Args:
         registry: Feature region registry defining region boundaries.
-        coupling: Cross-region coupling weights. If None, uses DEFAULT_COUPLING.
-        seed: Random seed for reproducible orthogonal sub-matrices.
+        topology: Set of (source_region, target_region) pairs that can couple.
+            If None, uses DEFAULT_TOPOLOGY derived from REGION_SEMANTIC_SPEC.
+        seed: Random seed for the orthogonal fallback basis.
     """
 
     def __init__(
         self,
         registry: FeatureRegionRegistry,
-        coupling: dict[tuple[str, str], float] | None = None,
+        topology: set[tuple[str, str]] | None = None,
         seed: int = 2025,
     ):
         self.registry = registry
-        self.coupling = coupling if coupling is not None else DEFAULT_COUPLING
+        self.topology = topology if topology is not None else DEFAULT_TOPOLOGY
         self.dim = registry.total_dim
         self.seed = seed
-        self._P = self._build_projection_matrix()
-        self._P_inv: np.ndarray | None = None  # Lazy — computed on first use
+        self._block_features: dict[str, np.ndarray] = {}
+        self._P = np.eye(self.dim)
+        self._P_inv: np.ndarray | None = None
 
-    def _build_projection_matrix(self) -> np.ndarray:
-        """Construct the shared projection matrix P."""
+        # Pre-compute fallback orthogonal bases for each region pair
+        # Used when feature vectors are too weak for reliable direction estimation
         rng = np.random.default_rng(self.seed)
+        self._fallback_bases: dict[tuple[str, str], np.ndarray] = {}
+        regions = self.registry.ordered_regions
+        for src in regions:
+            for tgt in regions:
+                if src.name != tgt.name:
+                    min_dim = min(src.dim, tgt.dim)
+                    self._fallback_bases[(src.name, tgt.name)] = _random_orthogonal(
+                        min_dim, rng,
+                    )
+
+    def observe(self, region_name: str, features: np.ndarray) -> None:
+        """Record a block's native features and rebuild the projection.
+
+        Args:
+            region_name: The region this block writes to (e.g., "temporal-pattern").
+            features: The block's native feature vector (extracted from its home region).
+        """
+        self._block_features[region_name] = features.copy()
+        self._rebuild()
+
+    def _rebuild(self) -> None:
+        """Rebuild the projection matrix from all observed block features."""
         P = np.eye(self.dim)
 
-        regions = self.registry.ordered_regions
+        for src_name, tgt_name in self.topology:
+            if src_name not in self._block_features:
+                continue
+            if tgt_name not in self._block_features:
+                continue
 
-        for source in regions:
-            for target in regions:
-                if source.name == target.name:
-                    continue
-                weight = self.coupling.get((source.name, target.name), 0.0)
-                if weight < 1e-6:
-                    continue
+            src_region = self.registry.regions[src_name]
+            tgt_region = self.registry.regions[tgt_name]
+            f_src = self._block_features[src_name]
+            f_tgt = self._block_features[tgt_name]
 
-                sd, td = source.dim, target.dim
-                min_dim = min(sd, td)
+            e_src = float(np.linalg.norm(f_src))
+            e_tgt = float(np.linalg.norm(f_tgt))
 
-                # Random orthogonal sub-matrix for this coupling
-                Q = _random_orthogonal(min_dim, rng)
+            # Strength from data: energy ratio (0 if one block is dead, 1 if equal)
+            strength = min(e_src, e_tgt) / (max(e_src, e_tgt) + 1e-8)
 
-                # Place: target rows, source columns
-                block = np.zeros((td, sd))
-                block[:min_dim, :min_dim] = Q[:min_dim, :min_dim]
+            if strength < 1e-6:
+                continue
 
-                P[target.start:target.end, source.start:source.end] = weight * block
+            sd, td = src_region.dim, tgt_region.dim
+            min_dim = min(sd, td)
 
-        return P
+            # Direction from data: rank-1 projection along dominant feature directions
+            # Blended with orthogonal fallback for numerical stability
+            if e_src > 0.1 and e_tgt > 0.1:
+                v_src = f_src[:min_dim] / e_src
+                v_tgt = f_tgt[:min_dim] / e_tgt
+                # Data-driven rank-1 component
+                data_block = np.outer(v_tgt, v_src)
+                # Fallback orthogonal for the orthogonal complement
+                fallback = self._fallback_bases[(src_name, tgt_name)][:min_dim, :min_dim]
+                # Blend: 70% data-driven direction, 30% orthogonal spread
+                # The blend ensures coupling isn't purely rank-1
+                block = 0.7 * data_block + 0.3 * fallback
+            else:
+                block = self._fallback_bases[(src_name, tgt_name)][:min_dim, :min_dim]
+
+            # Place in full projection matrix
+            coupling_block = np.zeros((td, sd))
+            coupling_block[:min_dim, :min_dim] = block
+            P[tgt_region.start:tgt_region.end, src_region.start:src_region.end] = (
+                strength * coupling_block
+            )
+
+        self._P = P
+        self._P_inv = None  # Invalidate cache
 
     @property
     def inverse(self) -> np.ndarray:
@@ -159,11 +205,7 @@ class SharedProjection:
         return self._P @ features
 
     def back_project(self, projected: np.ndarray) -> np.ndarray:
-        """Recover approximate original features from projected space.
-
-        Used for interpretability: trace a kernel's feature loadings back
-        to the original block contributions.
-        """
+        """Recover approximate original features from projected space."""
         return self.inverse @ projected
 
     @property
@@ -173,17 +215,29 @@ class SharedProjection:
 
     @property
     def active_couplings(self) -> list[CouplingInfo]:
-        """List all active cross-region couplings."""
-        return [
-            CouplingInfo(source_region=src, target_region=tgt, weight=w)
-            for (src, tgt), w in sorted(self.coupling.items())
-            if w > 1e-6
-        ]
+        """List all active cross-region couplings with their data-derived weights."""
+        couplings = []
+        for src_name, tgt_name in sorted(self.topology):
+            if src_name not in self._block_features or tgt_name not in self._block_features:
+                continue
+            f_src = self._block_features[src_name]
+            f_tgt = self._block_features[tgt_name]
+            e_src = float(np.linalg.norm(f_src))
+            e_tgt = float(np.linalg.norm(f_tgt))
+            strength = min(e_src, e_tgt) / (max(e_src, e_tgt) + 1e-8)
+            if strength > 1e-6:
+                couplings.append(CouplingInfo(
+                    source_region=src_name,
+                    target_region=tgt_name,
+                    weight=round(strength, 4),
+                ))
+        return couplings
 
     def coupling_summary(self) -> dict[str, list[tuple[str, float]]]:
         """Summarize active couplings per source region."""
         summary: dict[str, list[tuple[str, float]]] = {}
-        for (src, tgt), weight in self.coupling.items():
-            if weight > 1e-6:
-                summary.setdefault(src, []).append((tgt, weight))
+        for c in self.active_couplings:
+            summary.setdefault(c.source_region, []).append(
+                (c.target_region, c.weight),
+            )
         return summary

@@ -261,6 +261,7 @@ class UniversalKnowledgeTensor:
         self.feature_dim = feature_dim or HYPERSPACE_REGISTRY.total_dim
         self.block_names: list[str] = []
         self.rows: list[np.ndarray] = []
+        self._raw_features: list[np.ndarray] = []  # Unprojected, for re-projection
         self.snapshots: list[dict] = []
         self.global_feature_meta: dict[int, dict] = {}
         self.canvas = SemanticCanvas()
@@ -278,9 +279,19 @@ class UniversalKnowledgeTensor:
         if feature_meta:
             self.global_feature_meta.update(feature_meta)
         raw = _pad_or_truncate(features, self.feature_dim)
-        projected = self.projection.project(raw)
-        normalized = _normalize_features(projected)
-        self.rows.append(normalized)
+        self._raw_features.append(raw)
+
+        # Feed this block's native features to the adaptive projection
+        region_info = BLOCK_REGION_MAP.get(name)
+        if region_info is not None:
+            region_name, lo, hi = region_info
+            self.projection.observe(region_name, raw[lo:hi])
+
+        # Re-project ALL blocks through the updated projection
+        self.rows = [
+            _normalize_features(self.projection.project(r))
+            for r in self._raw_features
+        ]
 
         matrix = np.stack(self.rows)
         decomposition = decompose_svd(matrix)
@@ -299,13 +310,16 @@ class UniversalKnowledgeTensor:
             )
             kernel_labels.append(label)
 
+        # Current block's projected+normalized vector (last row after re-projection)
+        current_normalized = self.rows[-1]
+
         # Semantic Canvas subsystem: per-stage SAE + canvas projection
         stage_sae_result = None
         canvas_entry = None
         region_info = BLOCK_REGION_MAP.get(name)
         if region_info is not None:
             region_name, lo, hi = region_info
-            region_features = normalized[lo:hi]
+            region_features = current_normalized[lo:hi]
             stage_sae_result = train_stage_sae(region_features, concept_dim=8, epochs=60)
             canvas_entry = self.canvas.project_block(
                 block_name=name,
@@ -330,7 +344,7 @@ class UniversalKnowledgeTensor:
                 evidence.append({
                     "index": global_idx,
                     "name": _feature_name(global_idx, self.global_feature_meta),
-                    "loading": round(float(normalized[global_idx]), 4),
+                    "loading": round(float(current_normalized[global_idx]), 4),
                     "source": meta.get("source", "synthetic"),
                     "region": region_name,
                     "canvas_dims": canvas_dim_keys,
