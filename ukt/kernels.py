@@ -140,6 +140,10 @@ def label_kernel(
 ) -> dict:
     """Generate a semantic label for a single kernel.
 
+    In a shared projection space, kernels genuinely span multiple regions.
+    The label reflects this: when two or more regions each contribute >15%
+    of total loading, the label names the cross-domain coupling pattern.
+
     Args:
         k_idx: Kernel index.
         decomposition: SVD decomposition result.
@@ -156,7 +160,24 @@ def label_kernel(
     importance = float(decomposition.importance[k_idx])
 
     region_scores = compute_region_scores(vt_row, registry)
-    dominant_region = max(region_scores, key=region_scores.get)
+    total_score = sum(region_scores.values()) + 1e-8
+
+    sorted_regions = sorted(region_scores.items(), key=lambda x: -x[1])
+    dominant_region = sorted_regions[0][0] if sorted_regions else "unknown"
+
+    # Identify contributing regions (>15% of total loading)
+    contributing = [
+        (name, score / total_score)
+        for name, score in sorted_regions
+        if score / total_score > 0.15
+    ]
+
+    # Block contributions from U column
+    block_contribs = []
+    for i, bn in enumerate(block_names):
+        if i < len(u_col) and abs(float(u_col[i])) > 0.1:
+            block_contribs.append((bn, abs(float(u_col[i]))))
+    block_contribs.sort(key=lambda x: -x[1])
 
     dominant_block_idx = int(np.argmax(np.abs(u_col)))
     dominant_block = (block_names[dominant_block_idx]
@@ -165,10 +186,17 @@ def label_kernel(
     top_features = describe_top_features(vt_row, registry, feature_meta, top_n=5)
     top_feat_name = top_features[0]["name"] if top_features else "?"
 
-    short_label = (
-        f"K{k_idx}: {dominant_block} — {dominant_region.replace('-', ' ')} "
-        f"({importance:.1%} var, lead: {top_feat_name})"
-    )
+    # Build the label: show cross-domain coupling when present
+    _short = lambda name: name.replace("-", " ").split()[0]
+    if len(contributing) >= 3:
+        region_tag = " × ".join(_short(r) for r, _ in contributing[:3])
+    elif len(contributing) == 2:
+        region_tag = f"{_short(contributing[0][0])} × {_short(contributing[1][0])}"
+    else:
+        region_tag = dominant_region.replace("-", " ")
+
+    block_tag = "+".join(bn for bn, _ in block_contribs[:2]) if block_contribs else dominant_block
+    short_label = f"K{k_idx}: {block_tag} — {region_tag} ({importance:.1%} var, lead: {top_feat_name})"
 
     narrative = generate_kernel_narrative(
         k_idx, dominant_block, dominant_region, importance,
@@ -179,6 +207,8 @@ def label_kernel(
         kernel_id=f"K{k_idx}",
         dominant_block=dominant_block,
         dominant_region=dominant_region,
+        contributing_regions=contributing,
+        block_contributions=[(bn, round(v, 4)) for bn, v in block_contribs],
         importance=importance,
         top_features=top_features,
         top_feature_indices=[f["index"] for f in top_features],
