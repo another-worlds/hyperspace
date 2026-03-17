@@ -12,6 +12,9 @@ import numpy as np
 
 from hyperspace.config import (
     FEATURE_NAMES,
+    KERNEL_BLOCK_CONTRIBUTION_MIN,
+    KERNEL_CONTRIBUTING_REGION_THRESHOLD,
+    KERNEL_NARRATOR_IMPORTANCE_MIN,
     REGION_DESCRIPTIONS,
     UKT_FEATURE_DIM,
 )
@@ -23,6 +26,7 @@ from ukt.kernels import (
     describe_top_features,
     generate_kernel_narrative as _standalone_generate_kernel_narrative,
 )
+from ukt.projection import SharedProjection
 from ukt.stability import estimate_regression_stability
 from ukt.utils import _pad_or_truncate
 
@@ -155,13 +159,37 @@ def _label_kernel(
     feature_meta: dict[int, dict] | None,
     timeframe_context: dict | None,
 ) -> dict:
-    """Generate a semantic label for a single kernel."""
+    """Generate a semantic label for a single kernel.
+
+    In the shared projection space, kernels genuinely span multiple regions.
+    The label reflects this: when two or more regions each contribute >15%
+    of total loading, the label names the cross-domain coupling pattern
+    rather than a single dominant region.
+    """
     region_scores = {}
     for region in HYPERSPACE_REGISTRY.ordered_regions:
         lo, hi = region.start, region.end
         if hi <= len(vt_row):
             region_scores[region.name] = float(np.abs(vt_row[lo:hi]).sum())
-    dominant_region = max(region_scores, key=region_scores.get) if region_scores else "unknown"
+    total_score = sum(region_scores.values()) + 1e-8
+
+    # Sort regions by loading contribution
+    sorted_regions = sorted(region_scores.items(), key=lambda x: -x[1])
+    dominant_region = sorted_regions[0][0] if sorted_regions else "unknown"
+
+    # Identify contributing regions above threshold
+    contributing = [
+        (name, score / total_score)
+        for name, score in sorted_regions
+        if score / total_score > KERNEL_CONTRIBUTING_REGION_THRESHOLD
+    ]
+
+    # Block contributions from U column
+    block_contribs = []
+    for i, bn in enumerate(block_names):
+        if i < len(u_col) and abs(float(u_col[i])) > KERNEL_BLOCK_CONTRIBUTION_MIN:
+            block_contribs.append((bn, abs(float(u_col[i]))))
+    block_contribs.sort(key=lambda x: -x[1])
 
     dominant_block_idx = int(np.argmax(np.abs(u_col)))
     dominant_block = (block_names[dominant_block_idx]
@@ -169,10 +197,18 @@ def _label_kernel(
 
     top_features = _describe_top_features(vt_row, feature_meta=feature_meta, top_n=5)
     top_feat_name = top_features[0]["name"] if top_features else "?"
-    short_label = (
-        f"K{k_idx}: {dominant_block} — {dominant_region.replace('-', ' ')} "
-        f"({importance:.1%} var, lead: {top_feat_name})"
-    )
+
+    # Build the label: show cross-domain coupling when present
+    _short = lambda name: name.replace("-", " ").split()[0]  # "temporal-pattern" → "temporal"
+    if len(contributing) >= 3:
+        region_tag = " × ".join(_short(r) for r, _ in contributing[:3])
+    elif len(contributing) == 2:
+        region_tag = f"{_short(contributing[0][0])} × {_short(contributing[1][0])}"
+    else:
+        region_tag = dominant_region.replace("-", " ")
+
+    block_tag = "+".join(bn for bn, _ in block_contribs[:2]) if block_contribs else dominant_block
+    short_label = f"K{k_idx}: {block_tag} — {region_tag} ({importance:.1%} var, lead: {top_feat_name})"
 
     narrative = _generate_kernel_narrative(
         k_idx, dominant_block, dominant_region, importance,
@@ -183,6 +219,8 @@ def _label_kernel(
         kernel_id=f"K{k_idx}",
         dominant_block=dominant_block,
         dominant_region=dominant_region,
+        contributing_regions=contributing,
+        block_contributions=[(bn, round(v, 4)) for bn, v in block_contribs],
         importance=float(importance),
         top_features=top_features,
         top_feature_indices=[f["index"] for f in top_features],
@@ -226,9 +264,11 @@ class UniversalKnowledgeTensor:
         self.feature_dim = feature_dim or HYPERSPACE_REGISTRY.total_dim
         self.block_names: list[str] = []
         self.rows: list[np.ndarray] = []
+        self._raw_features: list[np.ndarray] = []  # Unprojected, for re-projection
         self.snapshots: list[dict] = []
         self.global_feature_meta: dict[int, dict] = {}
         self.canvas = SemanticCanvas()
+        self.projection = SharedProjection(HYPERSPACE_REGISTRY)
 
     def add_block(
         self,
@@ -242,8 +282,23 @@ class UniversalKnowledgeTensor:
         if feature_meta:
             self.global_feature_meta.update(feature_meta)
         raw = _pad_or_truncate(features, self.feature_dim)
-        normalized = _normalize_features(raw)
-        self.rows.append(normalized)
+        self._raw_features.append(raw)
+
+        # Feed this block's NORMALIZED native features to the adaptive projection
+        # so direction estimation sees clean [0,1] data, not raw magnitudes.
+        normalized_raw = _normalize_features(raw)
+        region_info = BLOCK_REGION_MAP.get(name)
+        if region_info is not None:
+            region_name, lo, hi = region_info
+            self.projection.observe(region_name, normalized_raw[lo:hi])
+
+        # Normalize BEFORE projection: bring each region to [0,1] so blocks
+        # enter the shared space on comparable scales.  Then project — the
+        # cross-region structure P creates is preserved for SVD.
+        self.rows = [
+            self.projection.project(_normalize_features(r))
+            for r in self._raw_features
+        ]
 
         matrix = np.stack(self.rows)
         decomposition = decompose_svd(matrix)
@@ -262,28 +317,31 @@ class UniversalKnowledgeTensor:
             )
             kernel_labels.append(label)
 
-        # Semantic Canvas subsystem: per-stage SAE + canvas projection
+        # Semantic Canvas: reset and replay ALL blocks with the current
+        # projection, so every block's canvas coordinates are computed in
+        # the same projection space.  No per-block SAE — canvas coordinates
+        # are data-driven via feature distribution (entropy/concentration).
         stage_sae_result = None
+        self.canvas = SemanticCanvas()
         canvas_entry = None
-        region_info = BLOCK_REGION_MAP.get(name)
-        if region_info is not None:
-            region_name, lo, hi = region_info
-            region_features = normalized[lo:hi]
-            stage_sae_result = train_stage_sae(region_features, concept_dim=8, epochs=60)
-            canvas_entry = self.canvas.project_block(
-                block_name=name,
-                step=len(self.rows),
-                region_name=region_name,
+        for step_idx, (bn, row) in enumerate(zip(self.block_names, self.rows)):
+            ri = BLOCK_REGION_MAP.get(bn)
+            if ri is None:
+                continue
+            rname, lo, hi = ri
+            region_features = row[lo:hi]
+            entry = self.canvas.project_block(
+                block_name=bn,
+                step=step_idx + 1,
+                region_name=rname,
                 features=region_features,
-                sae_result=stage_sae_result,
+                sae_result=None,
             )
-
-            # Attach feature provenance evidence — links canvas narrative back to
-            # concrete feature indices, names, and data sources for governance audit.
+            # Attach feature provenance evidence
             top_local = np.argsort(np.abs(region_features))[-3:][::-1]
             canvas_dim_keys = [
                 self.canvas.dimensions[ci].key
-                for ci, _ in self.canvas.region_mapping.get(region_name, [])
+                for ci, _ in self.canvas.region_mapping.get(rname, [])
                 if ci < self.canvas.n_dims
             ]
             evidence = []
@@ -293,12 +351,14 @@ class UniversalKnowledgeTensor:
                 evidence.append({
                     "index": global_idx,
                     "name": _feature_name(global_idx, self.global_feature_meta),
-                    "loading": round(float(normalized[global_idx]), 4),
+                    "loading": round(float(row[global_idx]), 4),
                     "source": meta.get("source", "synthetic"),
-                    "region": region_name,
+                    "region": rname,
                     "canvas_dims": canvas_dim_keys,
                 })
-            canvas_entry.feature_evidence = evidence
+            entry.feature_evidence = evidence
+            if bn == name:
+                canvas_entry = entry
 
         # Tiny-LLM semantic translator: translates machine neuron clusters
         # (kernels, canvas coordinates) into human-readable narratives.
@@ -313,7 +373,7 @@ class UniversalKnowledgeTensor:
             if canvas_entry is not None:
                 layer_narrative = narrate_layer(canvas_entry, self.canvas)
             for kl in kernel_labels:
-                if kl["importance"] > 0.15:
+                if kl["importance"] > KERNEL_NARRATOR_IMPORTANCE_MIN:
                     k_narr = narrate_kernel(kl, self.canvas)
                     if k_narr:
                         kl["semantic_narrative"] = k_narr
@@ -365,6 +425,7 @@ class UniversalKnowledgeTensor:
         snapshot = dict(
             step=len(self.rows),
             block_name=name,
+            raw_features=[r.copy() for r in self._raw_features],
             matrix=matrix.copy(),
             U=decomposition.U.copy(),
             S=decomposition.S.copy(),

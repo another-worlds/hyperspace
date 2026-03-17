@@ -43,6 +43,7 @@ from ukt.registry import FeatureRegionRegistry
 from ukt.tensor import UniversalKnowledgeTensor
 from ukt.extractors import HookExtractor
 from ukt.kernels import decompose_svd, label_kernel, generate_kernel_narrative
+from ukt.projection import SharedProjection
 from ukt.stability import estimate_regression_stability
 from ukt.interfaces import (
     ModelInterface,
@@ -61,6 +62,7 @@ __all__ = [
     "decompose_svd",
     "label_kernel",
     "generate_kernel_narrative",
+    "SharedProjection",
     "estimate_regression_stability",
     # Model interfaces
     "ModelInterface",

@@ -342,6 +342,21 @@ AVAILABLE_TICKERS: list[str] = ["SPY", "EWZ", "INDA", "FXI", "EWU", "ERUS", "RSX
 DEFAULT_TICKERS: list[str] = ["SPY", "EWZ", "INDA"]
 
 
+# ---------------------------------------------------------------------------
+# Kernel & projection thresholds (centralized — not scattered as magic numbers)
+# ---------------------------------------------------------------------------
+# Minimum fraction of total region loading for a region to be listed as
+# "contributing" to a kernel label.  With N=5 regions, 1/N = 0.20.
+KERNEL_CONTRIBUTING_REGION_THRESHOLD: float = 0.15
+
+# Minimum absolute block loading (U column) for a block to appear in
+# kernel block-contribution lists.
+KERNEL_BLOCK_CONTRIBUTION_MIN: float = 0.1
+
+# Minimum kernel importance (fraction of total variance) to trigger
+# semantic narrator invocation.
+KERNEL_NARRATOR_IMPORTANCE_MIN: float = 0.15
+
 # Feature flags
 FEATURE_FLAGS: dict[str, bool] = {
     # Shared-latent prototype remains shadow-only until parity + governance

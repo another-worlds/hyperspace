@@ -84,14 +84,19 @@ class SemanticCanvas:
         features: np.ndarray,
         sae_result: dict | None,
     ) -> CanvasEntry:
-        """Project a block's features and SAE concepts onto the canvas.
+        """Project a block's features onto the canvas semantic dimensions.
+
+        The canvas is a fixed interpretive lens — named semantic axes defined
+        by domain knowledge.  Coordinates are data-driven: they depend on the
+        actual feature DISTRIBUTION (entropy and concentration), not just total
+        energy, so different feature patterns produce different canvas positions.
 
         Args:
             block_name: Name of the source/block/layer.
             step: Processing step number.
             region_name: Feature region key (must be in region_mapping).
-            features: The block's raw feature vector.
-            sae_result: Output from train_stage_sae() for this block (or None).
+            features: The block's feature vector (after projection into shared space).
+            sae_result: Output from train_stage_sae() (used for heatmap only).
 
         Returns:
             CanvasEntry with semantic coordinates.
@@ -99,15 +104,33 @@ class SemanticCanvas:
         coords = np.zeros(self.n_dims)
         canvas_targets = self.region_mapping.get(region_name, [])
 
-        # Always use feature-energy projection for canvas coordinates.
-        # SAE mean_activation is trained on augmented single-run samples (N≈4)
-        # and is not statistically reliable for coordinate computation.
-        # SAE result is retained only for concept_activations (heatmap visualization).
-        feature_energy = float(np.abs(features).sum()) + 1e-8
+        # Data-driven coordinates: use feature distribution, not just total energy.
+        # - concentration: how peaked the feature vector is (max / mean)
+        # - entropy: how spread out the features are (higher = more diverse)
+        # - energy: total activation strength
+        # These three properties modulate the canvas coordinates differently.
+        abs_feat = np.abs(features)
+        energy = float(abs_feat.sum()) + 1e-8
         dim = max(len(features), 1)
-        for canvas_idx, weight in canvas_targets:
-            if canvas_idx < self.n_dims:
-                coords[canvas_idx] += weight * (feature_energy / dim)
+        mean_act = energy / dim
+        max_act = float(abs_feat.max()) + 1e-8
+        concentration = max_act / (mean_act + 1e-8)  # Peaked → high
+        # Normalized entropy: 0 = all mass on one feature, 1 = uniform
+        probs = abs_feat / energy
+        log_probs = np.log(probs + 1e-10)
+        entropy = float(-np.sum(probs * log_probs)) / (np.log(dim) + 1e-8)
+
+        for i, (canvas_idx, weight) in enumerate(canvas_targets):
+            if canvas_idx >= self.n_dims:
+                continue
+            # Primary dimensions (weight=1.0): driven by energy * concentration
+            # Coupling dimensions (weight<1.0): driven by energy * entropy
+            # This means: primary axes respond to strong, focused signals;
+            # coupling axes respond to broad, distributed patterns.
+            if weight >= 0.99:
+                coords[canvas_idx] += weight * mean_act * concentration
+            else:
+                coords[canvas_idx] += weight * mean_act * (1.0 + entropy)
 
         # Normalize to [0, 1]
         max_val = coords.max()

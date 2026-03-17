@@ -27,42 +27,60 @@ def _run_counterfactual_ukt(
 ) -> dict | None:
     """Re-run UKT SVD with one block removed.
 
+    Rebuilds the SharedProjection from the remaining blocks' raw features,
+    re-projects them, then decomposes. This ensures the counterfactual
+    reflects what would have happened WITHOUT the removed block's influence
+    on the entire projection space — not just a row slice.
+
     Returns a minimal result dict compatible with the main snapshot format,
     or None if not enough blocks remain.
     """
-    # Filter snapshots to exclude the removed block
-    remaining = [s for s in snapshots if s["block_name"] != removed_block]
-    if len(remaining) < 1:
-        return None
+    from hyperspace.models.knowledge_matrix import (
+        HYPERSPACE_REGISTRY,
+        BLOCK_REGION_MAP,
+        _normalize_features,
+    )
+    from ukt.projection import SharedProjection
+    from ukt.kernels import decompose_svd
 
-    # Reconstruct the sub-matrix
-    # More reliably: reconstruct from scratch using the rows stored in the final matrix
-    final_snap = snapshots[-1]
     block_names = [s["block_name"] for s in snapshots]
-    full_matrix = final_snap["matrix"]  # shape (n_blocks, 80)
-
     kept_indices = [i for i, name in enumerate(block_names) if name != removed_block]
     if len(kept_indices) < 2:
         return None
 
-    sub_matrix = full_matrix[kept_indices, :]  # (n_remaining, 80)
+    # Get raw features from the final snapshot (which stores all blocks' raw features)
+    final_snap = snapshots[-1]
+    raw_features = final_snap.get("raw_features")
+
+    if raw_features is None:
+        # Fallback for snapshots without raw_features (legacy)
+        full_matrix = final_snap["matrix"]
+        sub_matrix = full_matrix[kept_indices, :]
+    else:
+        # Rebuild projection from scratch with only the remaining blocks
+        projection = SharedProjection(HYPERSPACE_REGISTRY)
+        for idx in kept_indices:
+            bn = block_names[idx]
+            ri = BLOCK_REGION_MAP.get(bn)
+            if ri is not None:
+                rname, lo, hi = ri
+                normalized = _normalize_features(raw_features[idx])
+                projection.observe(rname, normalized[lo:hi])
+
+        # Re-project remaining blocks through the rebuilt projection
+        rows = []
+        for idx in kept_indices:
+            rows.append(projection.project(_normalize_features(raw_features[idx])))
+        sub_matrix = np.stack(rows)
+
     kept_names = [block_names[i] for i in kept_indices]
 
     # SVD
-    U, S, Vt = np.linalg.svd(sub_matrix, full_matrices=False)
-    n_kernels = len(S)
-    total = S.sum() + 1e-8
-    importance = S / total
-    kernel_activation = U * S[np.newaxis, :]
-    reality_regression = importance @ Vt[:n_kernels, :]
-
-    # Reconstruction error
-    recon = U @ np.diag(S) @ Vt[:n_kernels, :]
-    recon_error = float(np.linalg.norm(sub_matrix - recon))
+    decomposition = decompose_svd(sub_matrix)
+    n_kernels = decomposition.n_kernels
 
     # SAE on reduced matrix
     sae_result = None
-    concept_kernel_map = []
     try:
         sae_result = train_sparse_ae(sub_matrix, hidden_dim=16, epochs=60)
     except Exception:
@@ -75,14 +93,14 @@ def _run_counterfactual_ukt(
         removed_block=removed_block,
         kept_blocks=kept_names,
         sub_matrix=sub_matrix,
-        U=U,
-        S=S,
-        Vt=Vt,
+        U=decomposition.U,
+        S=decomposition.S,
+        Vt=decomposition.Vt,
         n_kernels=n_kernels,
-        importance=importance,
-        kernel_activation=kernel_activation,
-        reality_regression=reality_regression,
-        reconstruction_error=recon_error,
+        importance=decomposition.importance,
+        kernel_activation=decomposition.kernel_activation,
+        reality_regression=decomposition.reality_regression,
+        reconstruction_error=decomposition.reconstruction_error,
         stability=stability,
         sae_result=sae_result,
     )
