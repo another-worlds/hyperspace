@@ -37,28 +37,16 @@ from ukt.registry import FeatureRegionRegistry
 
 
 # ---------------------------------------------------------------------------
-# Default coupling topology
+# Topology is OPEN by default — all region pairs can couple.
 # ---------------------------------------------------------------------------
-# Derived from REGION_SEMANTIC_SPEC canvas coupling definitions.
-# This defines WHICH regions can couple (the graph edges), NOT how strongly
-# (the edge weights — those come from data).
+# The adaptive strength computation (energy ratio) already gates weak
+# couplings to near-zero. If two regions genuinely have nothing to do with
+# each other, their features will have no structural similarity and coupling
+# will be negligible. Let the data decide — don't gatekeep with topology.
+#
+# Pass a restricted topology set to __init__ to limit coupling if needed.
 
-DEFAULT_TOPOLOGY: set[tuple[str, str]] = {
-    # temporal-pattern ↔ geospatial via systemic_stress
-    ("temporal-pattern", "geospatial-kernel"),
-    # semantic-embedding → structural via power_concentration
-    ("semantic-embedding", "structural-centrality"),
-    # structural-centrality → temporal via market_momentum
-    ("structural-centrality", "temporal-pattern"),
-    # structural-centrality → geospatial via systemic_stress
-    ("structural-centrality", "geospatial-kernel"),
-    # dynamic-agent → structural via power_concentration
-    ("dynamic-agent", "structural-centrality"),
-    # dynamic-agent → semantic via narrative_diversity
-    ("dynamic-agent", "semantic-embedding"),
-    # geospatial-kernel → structural via network_cohesion
-    ("geospatial-kernel", "structural-centrality"),
-}
+DEFAULT_TOPOLOGY: None = None  # Sentinel: means "all pairs"
 
 
 def _random_orthogonal(n: int, rng: np.random.Generator) -> np.ndarray:
@@ -100,13 +88,25 @@ class SharedProjection:
     def __init__(
         self,
         registry: FeatureRegionRegistry,
-        topology: set[tuple[str, str]] | None = None,
+        topology: set[tuple[str, str]] | None = DEFAULT_TOPOLOGY,
         seed: int = 2025,
     ):
         self.registry = registry
-        self.topology = topology if topology is not None else DEFAULT_TOPOLOGY
         self.dim = registry.total_dim
         self.seed = seed
+
+        # Full topology: all directed region pairs.  Data-driven strength
+        # gates weak couplings to near-zero, so no need to restrict.
+        if topology is None:
+            regions = registry.ordered_regions
+            self.topology = {
+                (src.name, tgt.name)
+                for src in regions
+                for tgt in regions
+                if src.name != tgt.name
+            }
+        else:
+            self.topology = topology
         self._block_features: dict[str, np.ndarray] = {}
         self._P = np.eye(self.dim)
         self._P_inv: np.ndarray | None = None
@@ -161,20 +161,15 @@ class SharedProjection:
             sd, td = src_region.dim, tgt_region.dim
             min_dim = min(sd, td)
 
-            # Direction from data: rank-1 projection along dominant feature directions
-            # Blended with orthogonal fallback for numerical stability
-            if e_src > 0.1 and e_tgt > 0.1:
-                v_src = f_src[:min_dim] / e_src
-                v_tgt = f_tgt[:min_dim] / e_tgt
-                # Data-driven rank-1 component
-                data_block = np.outer(v_tgt, v_src)
-                # Fallback orthogonal for the orthogonal complement
-                fallback = self._fallback_bases[(src_name, tgt_name)][:min_dim, :min_dim]
-                # Blend: 70% data-driven direction, 30% orthogonal spread
-                # The blend ensures coupling isn't purely rank-1
-                block = 0.7 * data_block + 0.3 * fallback
-            else:
-                block = self._fallback_bases[(src_name, tgt_name)][:min_dim, :min_dim]
+            # Direction from data: rank-1 projection along dominant feature directions.
+            # Blend ratio is data-driven: strong signals (strength≈1) get mostly
+            # data-driven direction; weak signals get mostly orthogonal fallback.
+            v_src = f_src[:min_dim] / e_src
+            v_tgt = f_tgt[:min_dim] / e_tgt
+            data_block = np.outer(v_tgt, v_src)
+            fallback = self._fallback_bases[(src_name, tgt_name)][:min_dim, :min_dim]
+            alpha = strength  # Data confidence tracks coupling strength
+            block = alpha * data_block + (1.0 - alpha) * fallback
 
             # Place in full projection matrix
             coupling_block = np.zeros((td, sd))

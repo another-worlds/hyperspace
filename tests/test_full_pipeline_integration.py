@@ -534,9 +534,10 @@ class TestUKTCanvasIntegration:
         snap = ukt.add_block("Finance", features, feature_meta=meta,
                              timeframe_context=timeframe_context)
 
-        # Canvas entry should be created
+        # Canvas entry should be created; per-block SAE is intentionally
+        # disabled (trains on 1 vector + noise, learns nothing — global SAE
+        # in the pipeline is the meaningful sparse decomposition).
         assert snap["canvas_entry"] is not None
-        assert snap["stage_sae_result"] is not None
         assert len(ukt.canvas.entries) == 1
 
     def test_canvas_grows_with_pipeline(self, rng, timeframe_context):

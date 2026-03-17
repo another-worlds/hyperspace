@@ -12,6 +12,9 @@ import numpy as np
 
 from hyperspace.config import (
     FEATURE_NAMES,
+    KERNEL_BLOCK_CONTRIBUTION_MIN,
+    KERNEL_CONTRIBUTING_REGION_THRESHOLD,
+    KERNEL_NARRATOR_IMPORTANCE_MIN,
     REGION_DESCRIPTIONS,
     UKT_FEATURE_DIM,
 )
@@ -174,17 +177,17 @@ def _label_kernel(
     sorted_regions = sorted(region_scores.items(), key=lambda x: -x[1])
     dominant_region = sorted_regions[0][0] if sorted_regions else "unknown"
 
-    # Identify contributing regions (>15% of total loading)
+    # Identify contributing regions above threshold
     contributing = [
         (name, score / total_score)
         for name, score in sorted_regions
-        if score / total_score > 0.15
+        if score / total_score > KERNEL_CONTRIBUTING_REGION_THRESHOLD
     ]
 
     # Block contributions from U column
     block_contribs = []
     for i, bn in enumerate(block_names):
-        if i < len(u_col) and abs(float(u_col[i])) > 0.1:
+        if i < len(u_col) and abs(float(u_col[i])) > KERNEL_BLOCK_CONTRIBUTION_MIN:
             block_contribs.append((bn, abs(float(u_col[i]))))
     block_contribs.sort(key=lambda x: -x[1])
 
@@ -281,15 +284,19 @@ class UniversalKnowledgeTensor:
         raw = _pad_or_truncate(features, self.feature_dim)
         self._raw_features.append(raw)
 
-        # Feed this block's native features to the adaptive projection
+        # Feed this block's NORMALIZED native features to the adaptive projection
+        # so direction estimation sees clean [0,1] data, not raw magnitudes.
+        normalized_raw = _normalize_features(raw)
         region_info = BLOCK_REGION_MAP.get(name)
         if region_info is not None:
             region_name, lo, hi = region_info
-            self.projection.observe(region_name, raw[lo:hi])
+            self.projection.observe(region_name, normalized_raw[lo:hi])
 
-        # Re-project ALL blocks through the updated projection
+        # Normalize BEFORE projection: bring each region to [0,1] so blocks
+        # enter the shared space on comparable scales.  Then project — the
+        # cross-region structure P creates is preserved for SVD.
         self.rows = [
-            _normalize_features(self.projection.project(r))
+            self.projection.project(_normalize_features(r))
             for r in self._raw_features
         ]
 
@@ -310,31 +317,31 @@ class UniversalKnowledgeTensor:
             )
             kernel_labels.append(label)
 
-        # Current block's projected+normalized vector (last row after re-projection)
-        current_normalized = self.rows[-1]
-
-        # Semantic Canvas subsystem: per-stage SAE + canvas projection
+        # Semantic Canvas: reset and replay ALL blocks with the current
+        # projection, so every block's canvas coordinates are computed in
+        # the same projection space.  No per-block SAE — canvas coordinates
+        # are data-driven via feature distribution (entropy/concentration).
         stage_sae_result = None
+        self.canvas = SemanticCanvas()
         canvas_entry = None
-        region_info = BLOCK_REGION_MAP.get(name)
-        if region_info is not None:
-            region_name, lo, hi = region_info
-            region_features = current_normalized[lo:hi]
-            stage_sae_result = train_stage_sae(region_features, concept_dim=8, epochs=60)
-            canvas_entry = self.canvas.project_block(
-                block_name=name,
-                step=len(self.rows),
-                region_name=region_name,
+        for step_idx, (bn, row) in enumerate(zip(self.block_names, self.rows)):
+            ri = BLOCK_REGION_MAP.get(bn)
+            if ri is None:
+                continue
+            rname, lo, hi = ri
+            region_features = row[lo:hi]
+            entry = self.canvas.project_block(
+                block_name=bn,
+                step=step_idx + 1,
+                region_name=rname,
                 features=region_features,
-                sae_result=stage_sae_result,
+                sae_result=None,
             )
-
-            # Attach feature provenance evidence — links canvas narrative back to
-            # concrete feature indices, names, and data sources for governance audit.
+            # Attach feature provenance evidence
             top_local = np.argsort(np.abs(region_features))[-3:][::-1]
             canvas_dim_keys = [
                 self.canvas.dimensions[ci].key
-                for ci, _ in self.canvas.region_mapping.get(region_name, [])
+                for ci, _ in self.canvas.region_mapping.get(rname, [])
                 if ci < self.canvas.n_dims
             ]
             evidence = []
@@ -344,12 +351,14 @@ class UniversalKnowledgeTensor:
                 evidence.append({
                     "index": global_idx,
                     "name": _feature_name(global_idx, self.global_feature_meta),
-                    "loading": round(float(current_normalized[global_idx]), 4),
+                    "loading": round(float(row[global_idx]), 4),
                     "source": meta.get("source", "synthetic"),
-                    "region": region_name,
+                    "region": rname,
                     "canvas_dims": canvas_dim_keys,
                 })
-            canvas_entry.feature_evidence = evidence
+            entry.feature_evidence = evidence
+            if bn == name:
+                canvas_entry = entry
 
         # Tiny-LLM semantic translator: translates machine neuron clusters
         # (kernels, canvas coordinates) into human-readable narratives.
@@ -364,7 +373,7 @@ class UniversalKnowledgeTensor:
             if canvas_entry is not None:
                 layer_narrative = narrate_layer(canvas_entry, self.canvas)
             for kl in kernel_labels:
-                if kl["importance"] > 0.15:
+                if kl["importance"] > KERNEL_NARRATOR_IMPORTANCE_MIN:
                     k_narr = narrate_kernel(kl, self.canvas)
                     if k_narr:
                         kl["semantic_narrative"] = k_narr
@@ -416,6 +425,7 @@ class UniversalKnowledgeTensor:
         snapshot = dict(
             step=len(self.rows),
             block_name=name,
+            raw_features=[r.copy() for r in self._raw_features],
             matrix=matrix.copy(),
             U=decomposition.U.copy(),
             S=decomposition.S.copy(),

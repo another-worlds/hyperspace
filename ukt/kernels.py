@@ -231,40 +231,28 @@ def generate_kernel_narrative(
 ) -> str:
     """Generate a data-grounded narrative for a kernel.
 
-    This is the algorithmic narrative — purely data-driven, no LLM required.
+    Narrative structure adapts to kernel complexity:
+    - Single-region kernels: brief, factual — one block dominates.
+    - Two-region coupling: highlight the cross-domain link and what it means.
+    - Three+ regions: emphasize the emergent multi-domain pattern.
     """
+    # Block contributions
     block_contributions = []
     for i, bn in enumerate(block_names):
         if i < len(u_col):
             contrib = abs(float(u_col[i]))
             if contrib > 0.1:
-                block_contributions.append(f"{bn} ({contrib:.2f})")
+                block_contributions.append((bn, contrib))
+    block_contributions.sort(key=lambda x: -x[1])
+    block_strs = [f"{bn} ({c:.2f})" for bn, c in block_contributions]
 
-    region = registry.regions.get(dominant_region)
-    region_desc = region.description if region else dominant_region
-    feature_strs = [f"{f['name']} ({f['loading']:+.3f})" for f in top_features[:3]]
-
-    # Group features by region for cross-region coupling analysis
+    # Feature evidence grouped by region
     region_groups: dict[str, list[dict]] = {}
     for f in top_features:
         region_groups.setdefault(f["region"], []).append(f)
 
-    evidence_lines = []
-    for rname, feats in region_groups.items():
-        if rname != dominant_region:
-            evidence_lines.append(
-                f"Cross-region coupling with {rname}: " + ", ".join(
-                    f"{f['name']}={f['loading']:+.3f}" for f in feats[:2]
-                )
-            )
-
-    # Check for multi-region coupling (the most interesting finding)
-    if len(region_groups) >= 2:
-        regions_involved = list(region_groups.keys())
-        evidence_lines.append(
-            f"Emergent cross-domain pattern: {regions_involved[0]} <-> "
-            f"{regions_involved[1]} coupling detected in kernel structure."
-        )
+    n_regions = len(region_groups)
+    feature_strs = [f"{f['name']} ({f['loading']:+.3f})" for f in top_features[:3]]
 
     timeframe_line = ""
     if timeframe_context:
@@ -273,14 +261,59 @@ def generate_kernel_narrative(
         if start and end:
             timeframe_line = f"Time alignment window: {start} to {end}."
 
-    lines = [
-        f"Kernel K{k_idx} explains {importance:.1%} of total variance.",
-        f"Primary driver: {dominant_block} block; dominant region: {dominant_region.replace('-', ' ')}.",
-        f"Top evidence features: {', '.join(feature_strs)}.",
-        f"Block contributions: {', '.join(block_contributions) if block_contributions else 'weak/mixed'}.",
-        f"Region context: {region_desc}",
-    ]
+    lines = [f"Kernel K{k_idx} explains {importance:.1%} of total variance."]
+
+    if n_regions >= 3:
+        # Multi-domain emergent pattern — the most interesting case
+        region_names = list(region_groups.keys())
+        lines.append(
+            f"Emergent cross-domain pattern spanning {n_regions} regions: "
+            f"{', '.join(r.replace('-', ' ') for r in region_names)}."
+        )
+        lines.append(
+            f"Contributing blocks: {', '.join(block_strs) if block_strs else 'mixed'}."
+        )
+        lines.append(f"Key evidence features: {', '.join(feature_strs)}.")
+        # Detail each region's contribution
+        for rname, feats in region_groups.items():
+            region = registry.regions.get(rname)
+            feat_detail = ", ".join(f"{f['name']}={f['loading']:+.3f}" for f in feats[:2])
+            lines.append(
+                f"  {rname.replace('-', ' ')}: {feat_detail}"
+                + (f" — {region.description[:80]}" if region and region.description else "")
+            )
+    elif n_regions == 2:
+        # Two-region coupling — highlight the cross-domain link
+        r1, r2 = list(region_groups.keys())
+        lines.append(
+            f"Cross-domain coupling between {r1.replace('-', ' ')} and "
+            f"{r2.replace('-', ' ')}."
+        )
+        lines.append(
+            f"Primary driver: {block_contributions[0][0] if block_contributions else dominant_block} block."
+        )
+        lines.append(f"Evidence features: {', '.join(feature_strs)}.")
+        f1 = region_groups[r1][0]
+        f2 = region_groups[r2][0]
+        lines.append(
+            f"Coupling signature: {f1['name']} ({f1['loading']:+.3f}) "
+            f"co-varies with {f2['name']} ({f2['loading']:+.3f})."
+        )
+    else:
+        # Single-region dominant — brief and factual
+        region = registry.regions.get(dominant_region)
+        region_desc = region.description if region else dominant_region
+        lines.append(
+            f"Single-domain pattern: {dominant_block} block, "
+            f"{dominant_region.replace('-', ' ')} region."
+        )
+        lines.append(f"Top features: {', '.join(feature_strs)}.")
+        lines.append(f"Context: {region_desc}")
+
+    if block_contributions and n_regions < 3:
+        lines.append(f"Block contributions: {', '.join(block_strs)}.")
+
     if timeframe_line:
         lines.append(timeframe_line)
-    lines.extend(evidence_lines)
+
     return "\n".join(lines)

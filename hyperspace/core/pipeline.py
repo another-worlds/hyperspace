@@ -439,7 +439,7 @@ class PipelineRunner:
                 feature_dim=HYPERSPACE_REGISTRY.total_dim,
                 region_labels=FEATURE_REGION_LABELS,
                 n_kernels=n_kernels,
-                shared_latent_active=use_shared_latent,
+                shared_latent_active=shared_latent_enabled,
                 sae_result=sae_result,
             )
             concept_record = build_concept_audit_record(
