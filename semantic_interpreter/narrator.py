@@ -184,7 +184,8 @@ class LLMNarrator(NarratorBackend):
         self._model = None
         self._tokenizer = None
         self._fallback = TemplateNarrator()
-        self._llm_too_slow = False  # Set True after timeout; skips LLM for rest of run
+        self._timeout_count = 0       # Consecutive timeouts
+        self._timeout_threshold = 3   # Permanently disable after N consecutive
 
     def _load_model(self):
         """Load model and tokenizer."""
@@ -217,8 +218,8 @@ class LLMNarrator(NarratorBackend):
         CPU inference is too slow. Falls back to None (triggering template
         narrator) on timeout.
         """
-        if self._llm_too_slow:
-            return None  # Previous generation timed out; skip LLM for this run
+        if self._timeout_count >= self._timeout_threshold:
+            return None  # Too many consecutive timeouts; skip LLM
 
         model, tokenizer = self._load_model()
         if model is None or tokenizer is None:
@@ -241,13 +242,19 @@ class LLMNarrator(NarratorBackend):
                     )
                 return outputs
 
-            with ThreadPoolExecutor(max_workers=1) as executor:
-                future = executor.submit(_run_generation)
-                try:
-                    outputs = future.result(timeout=self._generation_timeout)
-                except FuturesTimeout:
-                    self._llm_too_slow = True
-                    return None  # Timeout — fall back to template narrator for rest of run
+            # Use daemon thread so it won't block process exit, and
+            # cancel the future on timeout so the executor __exit__
+            # doesn't wait for the worker to finish.
+            executor = ThreadPoolExecutor(max_workers=1)
+            future = executor.submit(_run_generation)
+            executor.shutdown(wait=False)
+            try:
+                outputs = future.result(timeout=self._generation_timeout)
+                self._timeout_count = 0  # Reset on success
+            except FuturesTimeout:
+                future.cancel()
+                self._timeout_count += 1
+                return None
 
             full_text = tokenizer.decode(outputs[0], skip_special_tokens=True)
             continuation = full_text[len(tokenizer.decode(inputs[0],
