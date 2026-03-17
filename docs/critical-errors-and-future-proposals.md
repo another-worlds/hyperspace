@@ -1,6 +1,7 @@
 # Hyperspace v3.0 — Critical Errors & Future Feature Proposals
 
 **Date:** 2026-03-09
+**Last reviewed:** 2026-03-17
 **Scope:** Full codebase audit of `/home/user/hyperspace`
 **Status:** Living document — update as items are resolved
 
@@ -11,129 +12,92 @@
 ### ERR-001: Dashboard Bypasses PipelineRunner — Dual Pipeline Paths
 
 **Severity:** CRITICAL
-**Files:** `hyperspace/pages/dashboard.py:363-619`, `hyperspace/core/pipeline.py:62-295`
+**Status:** **RESOLVED** (verified 2026-03-17)
+**Files:** `hyperspace/pages/dashboard.py`, `hyperspace/core/pipeline.py`
 
 **Description:**
-`dashboard.py:run_pipeline()` (256 lines) implements its own complete pipeline orchestration that **duplicates** `core/pipeline.py:PipelineRunner.run()` (234 lines). The test suite validates `PipelineRunner`, but the production Streamlit app never calls it — meaning the tested code path and the production code path are entirely different.
+`dashboard.py:run_pipeline()` previously implemented its own complete pipeline orchestration that **duplicated** `core/pipeline.py:PipelineRunner.run()`. The test suite validated `PipelineRunner`, but the production Streamlit app never called it.
 
-**Evidence:**
-- `dashboard.py` imports data fetchers directly (`get_ohlcv`, `get_text_data`, etc.) and calls model functions inline
-- `PipelineRunner.run()` accepts pre-fetched data and runs blocks through UKT — a clean, testable interface
-- `dashboard.py` constructs `graph_result` as a plain dict; `PipelineRunner` uses `graph_result_full` with different key structure
-- Both files define `_compute_governance_flags()` and `_compute_scorecard()` with divergent implementations (see ERR-002)
-
-**Impact:**
-- Tests passing does **not** guarantee production correctness
-- Bug fixes applied to `PipelineRunner` are invisible to the Streamlit app
-- Any future block addition must be duplicated in both files
-
-**Fix:**
-Refactor `dashboard.py:run_pipeline()` to call `PipelineRunner.run()`, passing fetched data as arguments. Keep data fetching in dashboard (it needs `st.status` progress UI) but delegate all UKT/SAE/governance logic to the runner.
+**Resolution:**
+Dashboard now imports `PipelineRunner` (line 19) and delegates all core orchestration to `runner.run()` (lines 224-238). Data fetching and model pretraining remain in dashboard (for `st.status` progress UI), but all UKT/SAE/governance logic runs through the canonical runner. The `_compute_governance_flags()` and `_compute_scorecard()` functions have been removed from dashboard entirely.
 
 ---
 
 ### ERR-002: Governance Flag Logic Diverges Between Dashboard and PipelineRunner
 
 **Severity:** HIGH
-**Files:** `hyperspace/pages/dashboard.py:29-127`, `hyperspace/core/pipeline.py:301-388`
+**Status:** **RESOLVED** (verified 2026-03-17)
+**Files:** `hyperspace/core/pipeline.py:531-635`
 
 **Description:**
-Both files implement `_compute_governance_flags()` with semantically different detection logic:
+Both files previously implemented `_compute_governance_flags()` with semantically different detection logic for GOV-001 through GOV-005.
 
-| Flag | dashboard.py | pipeline.py |
-|------|-------------|-------------|
-| GOV-001 | Checks **reality regression** region sums (feature-level, `rr[lo:hi].sum()`) | Checks **kernel importance** max (variance-level, `importance.max() > 0.50`) |
-| GOV-002 | Detects temporal coverage gap between live finance and fallback clusters | **Not implemented** — missing entirely |
-| GOV-003 | Uses **degree centrality** from `graph_result["analysis"]["degree_centrality"]` | Uses **eigenvector centrality** from `graph_result["analysis"]["eigenvector"]` |
-| GOV-004 | Triggers when dormancy > 60% (`1 - active/total > 0.60`) | Triggers when active < 40% (`active/total < 0.40`) — mathematically equivalent but coded differently |
-| GOV-005 | Checks case-sensitive keywords + `any()` on `v` directly | Uses `.lower()` normalization — more robust |
-
-**Impact:**
-- GOV-001 can fire in dashboard but not in tests (or vice versa) because they measure different things
-- GOV-002 is only detectable in the live Streamlit path — tests cannot exercise it
-- GOV-003 measures different centrality types, which can diverge on asymmetric graphs
-
-**Fix:**
-Delete both copies. Add a single `compute_governance_flags()` function to `hyperspace/core/pipeline.py` (or a new `hyperspace/core/governance.py` module) and call it from both locations.
+**Resolution:**
+Governance flag computation is now consolidated in a single canonical location: `PipelineRunner._compute_governance_flags()` in `hyperspace/core/pipeline.py` (lines 531-635). The duplicate implementation was removed from `dashboard.py`. Dashboard receives pre-computed flags from the `PipelineRunner` result and only renders them via `_build_governance_report_markdown()`. All flags (GOV-001 through GOV-005) now use consistent logic regardless of execution path.
 
 ---
 
 ### ERR-003: Landing Page States "64 Input Dimensions" — Actual Value Is 80
 
 **Severity:** MEDIUM
-**File:** `hyperspace/pages/dashboard.py:271`
+**Status:** **RESOLVED** (verified 2026-03-17)
+**File:** `hyperspace/pages/dashboard.py`
 
 **Description:**
-The System Accountability Statement reads:
-> "Every one of **64** input dimensions carries a complete metadata chain"
+The System Accountability Statement previously read "64 input dimensions" instead of 80.
 
-The actual `UKT_FEATURE_DIM` is **80** (config.py), with 5 regions of 16 features each (0-15, 16-31, 32-47, 48-63, 64-79). This was likely written before the geospatial-kernel region (indices 64-79) was added.
-
-**Impact:**
-Users and policymakers reading the governance statement receive incorrect information about system architecture. For a governance-focused tool, this is a credibility risk.
-
-**Fix:**
-Replace `64` with `80` (or reference `UKT_FEATURE_DIM` dynamically).
+**Resolution:**
+The hardcoded "64" reference has been removed. No such text exists in the current codebase. `UKT_FEATURE_DIM` is correctly defined as 80 in `config.py`.
 
 ---
 
 ### ERR-004: Scorecard "Feature Traceability" Uses Different Counting Methods
 
 **Severity:** MEDIUM
-**Files:** `hyperspace/pages/dashboard.py:143-161`, `hyperspace/core/pipeline.py:405-418`
+**Status:** **RESOLVED** (verified 2026-03-17)
+**Files:** `hyperspace/core/pipeline.py:654-667`
 
 **Description:**
-- **dashboard.py** counts features where `feature_meta[idx].get("label")` is truthy — iterating indices 0 through 79 and checking each has a label
-- **pipeline.py** uses `len(meta)` — simply counting the number of keys in the feature_meta dict
+Dashboard and pipeline previously used different counting methods for feature traceability.
 
-These can diverge when:
-- A feature_meta entry exists but has an empty/None `label` field (dashboard counts 0, pipeline counts 1)
-- Integer vs string keys exist in the dict (pipeline counts all, dashboard only checks `range(80)`)
-
-**Impact:**
-The "Feature Traceability" scorecard dimension can show different values depending on whether the tested path or production path computed it.
-
-**Fix:**
-Use one canonical counting method. The dashboard's approach (checking for a non-empty label) is more semantically correct — adopt it in the shared function.
+**Resolution:**
+Scorecard computation is now consolidated in `PipelineRunner._compute_scorecard()` (pipeline.py lines 641-782). Dashboard does not have its own scorecard implementation — it receives the scorecard directly from the `PipelineRunner` result. Single counting method ensures consistency.
 
 ---
 
 ### ERR-005: Counterfactual Tab Comment Says "64" But UKT Is 80-Dimensional
 
 **Severity:** LOW
-**File:** `hyperspace/pages/counterfactual_tab.py:39`
+**Status:** **RESOLVED** (verified 2026-03-17)
+**File:** `hyperspace/pages/counterfactual_tab.py`
 
 **Description:**
-Line 39 comments `# shape (n_blocks, 64)` but the actual matrix shape is `(n_blocks, 80)`. This is a stale comment from before the spatial region was added.
+A stale comment referenced `# shape (n_blocks, 64)`.
 
-**Impact:**
-Misleads developers. No runtime effect.
-
-**Fix:**
-Change comment to `# shape (n_blocks, 80)`.
+**Resolution:**
+The stale comment has been removed. The file now correctly references 80 dimensions (e.g., line 372: "all 80 feature dimensions").
 
 ---
 
 ### ERR-006: `_report_section.py` Is Dead Code in Production
 
 **Severity:** LOW
-**File:** `hyperspace/pages/_report_section.py` (187 lines)
+**Status:** **RESOLVED** (verified 2026-03-17)
+**File:** `hyperspace/pages/_report_section.py`
 
 **Description:**
-`_report_section.py` defines `metric_card()`, `flag_alert()`, `kernel_section()`, and `annotation_summary()`. However, it is never imported by any production page module — only referenced in tests (`test_system.py`) and docs (`integration-testing.md`). The actual tabs use inline Streamlit calls instead of these reusable components.
+`_report_section.py` was previously reported as dead code with no production imports.
 
-**Impact:**
-187 lines of unmaintained code. If the intent was to use these components, they should be adopted. If not, they should be removed.
-
-**Fix:**
-Either integrate into the page modules (replacing inline duplicates) or remove the file.
+**Resolution:**
+The module now exports `render_interpretability_report()` and is actively imported by 4 tab modules: `finance_tab.py`, `clusters_tab.py`, `agents_tab.py`, and `politics_tab.py`. It is no longer dead code.
 
 ---
 
 ### ERR-007: Agent Simulation Seed Parameter Named `s` Instead of `seed`
 
 **Severity:** LOW
-**File:** `hyperspace/models/agent_sim.py:147`
+**Status:** **OPEN** (verified 2026-03-17)
+**File:** `hyperspace/models/agent_sim.py:146`
 
 **Description:**
 ```python
@@ -141,10 +105,7 @@ def run_simulation(agents, steps=50, resource_flow=5.0,
                    alliance_fluidity=0.5, shock_prob=0.1, s=42):
 ```
 
-The seed parameter is named `s` — a single-letter name that violates PEP 8 readability guidelines and the project's own style guide ("Extensive docstrings and inline comments"). Every other function in the codebase uses `seed`.
-
-**Impact:**
-Minor readability issue. Callers must know `s=42` means seed.
+The seed parameter is still named `s` — a single-letter name that violates PEP 8 readability guidelines and the project's style guide. Every other function in the codebase uses `seed`. Used at line 153: `rng = np.random.default_rng(s)`. The pipeline call site (pipeline.py line 237) does not pass `s`, so renaming is safe.
 
 **Fix:**
 Rename `s` to `seed`.
@@ -154,19 +115,14 @@ Rename `s` to `seed`.
 ### ERR-008: Scorecard `governance_flags` Pass Condition Diverges
 
 **Severity:** MEDIUM
-**Files:** `hyperspace/pages/dashboard.py:209`, `hyperspace/core/pipeline.py:474`
+**Status:** **RESOLVED** (verified 2026-03-17)
+**Files:** `hyperspace/core/pipeline.py:770-780`
 
 **Description:**
-- **dashboard.py:** `passed=flag_count == 0` (hard zero — any flag is a failure)
-- **pipeline.py:** `passed=n_flags <= thresh["threshold"]` (uses the configured threshold, which is `0`)
+Dashboard previously hardcoded `passed=flag_count == 0` while pipeline used threshold-based `n_flags <= thresh["threshold"]`.
 
-While currently equivalent (threshold is 0), the dashboard hardcodes the check while the pipeline respects config. If the threshold is ever changed to allow 1 warning flag, dashboard will still fail on any flag.
-
-**Impact:**
-Config-driven thresholds are not honored in production.
-
-**Fix:**
-Use the threshold-based check in both locations (or consolidate per ERR-002).
+**Resolution:**
+Scorecard computation is now consolidated in `PipelineRunner._compute_scorecard()` (pipeline.py lines 770-780). The single implementation uses the config-driven threshold: `passed=n_flags <= thresh["threshold"]`. Dashboard no longer has its own scorecard logic. Threshold is defined in `config.py:548-553` as `threshold=0`.
 
 ---
 
@@ -405,16 +361,16 @@ hyperspace_governance_pkg_{run_id}.zip
 
 ## Appendix: Error Priority Matrix
 
-| ID | Severity | Effort | Impact if Unfixed |
-|----|----------|--------|-------------------|
-| ERR-001 | CRITICAL | Large | Tests don't validate production code |
-| ERR-002 | HIGH | Medium | Governance flags inconsistent across paths |
-| ERR-003 | MEDIUM | Trivial | Incorrect governance statement |
-| ERR-004 | MEDIUM | Small | Scorecard values diverge |
-| ERR-005 | LOW | Trivial | Misleading comment |
-| ERR-006 | LOW | Small | Dead code |
-| ERR-007 | LOW | Trivial | Style violation |
-| ERR-008 | MEDIUM | Trivial | Config not honored in production |
+| ID | Severity | Effort | Impact if Unfixed | Status |
+|----|----------|--------|-------------------|--------|
+| ERR-001 | CRITICAL | Large | Tests don't validate production code | **RESOLVED** |
+| ERR-002 | HIGH | Medium | Governance flags inconsistent across paths | **RESOLVED** |
+| ERR-003 | MEDIUM | Trivial | Incorrect governance statement | **RESOLVED** |
+| ERR-004 | MEDIUM | Small | Scorecard values diverge | **RESOLVED** |
+| ERR-005 | LOW | Trivial | Misleading comment | **RESOLVED** |
+| ERR-006 | LOW | Small | Dead code | **RESOLVED** |
+| ERR-007 | LOW | Trivial | Style violation | **OPEN** |
+| ERR-008 | MEDIUM | Trivial | Config not honored in production | **RESOLVED** |
 
 ## Appendix: Feature Priority Matrix
 
