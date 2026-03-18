@@ -12,7 +12,13 @@ import plotly.graph_objects as go
 import streamlit as st
 from plotly.subplots import make_subplots
 
-from hyperspace.config import PLOTLY_LAYOUT, POLICY_KERNEL_NAMES
+from hyperspace.config import (
+    CF_STABILITY_HIGH,
+    CF_STABILITY_MODERATE,
+    FEATURE_NAMES,
+    PLOTLY_LAYOUT,
+    POLICY_KERNEL_NAMES,
+)
 from hyperspace.models.knowledge_matrix import (
     FEATURE_REGION_LABELS,
     estimate_reality_regression_stability,
@@ -144,24 +150,42 @@ def _plot_rr_diff(
         vertical_spacing=0.10,
     )
 
-    fig.add_trace(go.Bar(x=list(range(max_n)), y=rr_orig_padded,
+    feature_labels = [
+        FEATURE_NAMES[i] if i < len(FEATURE_NAMES) else f"feature_{i}"
+        for i in range(max_n)
+    ]
+
+    hover_orig = (
+        "<b>%{x}</b><br>Weight: %{y:.4f}<extra></extra>"
+    )
+    hover_diff = (
+        "<b>%{x}</b><br>Diff: %{y:.4f}<extra></extra>"
+    )
+
+    fig.add_trace(go.Bar(x=feature_labels, y=rr_orig_padded,
                           marker_color=colors_orig, name="Original",
+                          hovertemplate=hover_orig,
                           showlegend=False), row=1, col=1)
-    fig.add_trace(go.Bar(x=list(range(max_n)), y=rr_cf_padded,
+    fig.add_trace(go.Bar(x=feature_labels, y=rr_cf_padded,
                           marker_color=colors_cf, name="Counterfactual",
+                          hovertemplate=hover_orig,
                           showlegend=False), row=2, col=1)
 
     diff = rr_cf_padded - rr_orig_padded
     diff_colors = ["#64ffda" if d >= 0 else "#ff6b6b" for d in diff]
-    fig.add_trace(go.Bar(x=list(range(max_n)), y=diff,
+    fig.add_trace(go.Bar(x=feature_labels, y=diff,
                           marker_color=diff_colors, name="Difference",
+                          hovertemplate=hover_diff,
                           showlegend=False), row=3, col=1)
 
     fig.update_layout(
         **PLOTLY_LAYOUT,
         title=title,
         height=600,
-        margin=dict(l=20, r=20, t=60, b=20),
+        margin=dict(l=20, r=20, t=60, b=60),
+        xaxis_tickangle=-45,
+        xaxis2_tickangle=-45,
+        xaxis3_tickangle=-45,
     )
     return fig
 
@@ -264,37 +288,46 @@ def render() -> None:
             )
 
     if run_cf:
-        with st.spinner(f"Computing counterfactual (removing '{removed_block}')..."):
-            cf_result = _run_counterfactual_ukt(snapshots, removed_block)
-            if cf_result is None:
-                st.error(
-                    "Cannot compute counterfactual: not enough blocks remain after removal."
-                )
-                st.stop()
+        # Cache key: (removed block, shock config) to avoid recomputing identical scenarios
+        shock_on = st.session_state.get("cf_inject_shock", False)
+        shock_f_val = st.session_state.get("cf_shock_feature", 35) if shock_on else None
+        cf_cache_key = (removed_block, shock_on, shock_f_val)
+        cached_key = st.session_state.get("cf_cache_key")
+        if cached_key == cf_cache_key and st.session_state.get("counterfactual_result") is not None:
+            st.toast("Using cached counterfactual result (same scenario).")
+        else:
+            with st.spinner(f"Computing counterfactual (removing '{removed_block}')..."):
+                cf_result = _run_counterfactual_ukt(snapshots, removed_block)
+                if cf_result is None:
+                    st.error(
+                        "Cannot compute counterfactual: not enough blocks remain after removal."
+                    )
+                    st.stop()
 
-            # Apply shock if requested
-            if st.session_state.get("cf_inject_shock"):
-                shock_f = st.session_state.get("cf_shock_feature", 35)
-                cf_result["sub_matrix"][:, shock_f] *= -1.0
-                # Re-run SVD after shock
-                sub_matrix = cf_result["sub_matrix"]
-                U, S, Vt = np.linalg.svd(sub_matrix, full_matrices=False)
-                n_kernels = len(S)
-                total = S.sum() + 1e-8
-                importance = S / total
-                cf_result["U"] = U
-                cf_result["S"] = S
-                cf_result["Vt"] = Vt
-                cf_result["n_kernels"] = n_kernels
-                cf_result["importance"] = importance
-                cf_result["kernel_activation"] = U * S[np.newaxis, :]
-                cf_result["reality_regression"] = importance @ Vt[:n_kernels, :]
-                recon = U @ np.diag(S) @ Vt[:n_kernels, :]
-                cf_result["reconstruction_error"] = float(np.linalg.norm(sub_matrix - recon))
+                # Apply shock if requested
+                if st.session_state.get("cf_inject_shock"):
+                    shock_f = st.session_state.get("cf_shock_feature", 35)
+                    cf_result["sub_matrix"][:, shock_f] *= -1.0
+                    # Re-run SVD after shock
+                    sub_matrix = cf_result["sub_matrix"]
+                    U, S, Vt = np.linalg.svd(sub_matrix, full_matrices=False)
+                    n_kernels = len(S)
+                    total = S.sum() + 1e-8
+                    importance = S / total
+                    cf_result["U"] = U
+                    cf_result["S"] = S
+                    cf_result["Vt"] = Vt
+                    cf_result["n_kernels"] = n_kernels
+                    cf_result["importance"] = importance
+                    cf_result["kernel_activation"] = U * S[np.newaxis, :]
+                    cf_result["reality_regression"] = importance @ Vt[:n_kernels, :]
+                    recon = U @ np.diag(S) @ Vt[:n_kernels, :]
+                    cf_result["reconstruction_error"] = float(np.linalg.norm(sub_matrix - recon))
 
-            st.session_state.counterfactual_result = cf_result
-            st.session_state.counterfactual_removed_block = removed_block
-        st.success(f"Counterfactual computed. Block '{removed_block}' excluded from analysis.")
+                st.session_state.counterfactual_result = cf_result
+                st.session_state.counterfactual_removed_block = removed_block
+                st.session_state.cf_cache_key = cf_cache_key
+            st.success(f"Counterfactual computed. Block '{removed_block}' excluded from analysis.")
 
     # Display results
     cf_result = st.session_state.get("counterfactual_result")
@@ -342,13 +375,13 @@ def render() -> None:
     m4.caption("L2 distance between original and counterfactual conclusions.")
 
     # Governance interpretation
-    if rr_cosine >= 0.95:
+    if rr_cosine >= CF_STABILITY_HIGH:
         st.success(
             f"✅ **Conclusion stable**: Removing '{removed}' causes minimal change "
             f"(cosine={rr_cosine:.3f}). The system's conclusions are not overly dependent "
             "on this data block."
         )
-    elif rr_cosine >= 0.80:
+    elif rr_cosine >= CF_STABILITY_MODERATE:
         st.warning(
             f"⚠️ **Moderate sensitivity**: Removing '{removed}' meaningfully shifts "
             f"conclusions (cosine={rr_cosine:.3f}). Conclusions citing this block "

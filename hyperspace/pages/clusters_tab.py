@@ -7,7 +7,7 @@ import pandas as pd
 import plotly.express as px
 import streamlit as st
 
-from hyperspace.config import PLOTLY_LAYOUT
+from hyperspace.config import OUTLIER_RATIO_CRITICAL, OUTLIER_RATIO_MODERATE, PLOTLY_LAYOUT
 from hyperspace.data.news import get_text_data
 from hyperspace.models.topic_model import fit_topic_model
 from hyperspace.pages._report_section import render_interpretability_report
@@ -102,13 +102,13 @@ def render() -> None:
                 outlier_ratio = n_outliers / max(n_docs, 1)
 
                 st.markdown("---")
-                if outlier_ratio > 0.30:
+                if outlier_ratio > OUTLIER_RATIO_CRITICAL:
                     st.warning(
                         f"**Topic Coverage: LOW** — {outlier_ratio:.0%} of documents ({n_outliers}/{n_docs}) "
                         f"could not be assigned to any topic. The information landscape may be more "
                         f"fragmented than the {n_topics} discovered topics suggest."
                     )
-                elif outlier_ratio > 0.10:
+                elif outlier_ratio > OUTLIER_RATIO_MODERATE:
                     st.info(
                         f"**Topic Coverage: MODERATE** — {outlier_ratio:.0%} of documents are unassigned. "
                         f"{n_topics} coherent themes identified; some discourse is not captured."

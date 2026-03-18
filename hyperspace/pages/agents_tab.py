@@ -6,7 +6,12 @@ import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 
-from hyperspace.config import GEOPOLITICAL_NODES, PLOTLY_LAYOUT
+from hyperspace.config import (
+    GEOPOLITICAL_NODES,
+    GINI_CONCENTRATION_HIGH,
+    GINI_CONCENTRATION_MODERATE,
+    PLOTLY_LAYOUT,
+)
 from hyperspace.data.political import get_political_data
 from hyperspace.models.agent_sim import (
     ClusterAgent, initialize_agents_from_data, run_simulation,
@@ -137,14 +142,14 @@ def render() -> None:
                 top_share = float(max(resources) / (res_arr.sum() + 1e-8))
                 max_agent = max(agents.values(), key=lambda a: a.resources)
 
-                if gini > 0.50:
+                if gini > GINI_CONCENTRATION_HIGH:
                     st.error(
                         f"**Power Concentration: HIGH** — Resource Gini = {gini:.2f}. "
                         f"{max_agent.name} holds {top_share:.0%} of all resources. "
                         "This signals a highly unipolar equilibrium — governance risk for "
                         "coercive influence or single-actor dependency."
                     )
-                elif gini > 0.25:
+                elif gini > GINI_CONCENTRATION_MODERATE:
                     st.warning(
                         f"**Power Concentration: MODERATE** — Resource Gini = {gini:.2f}. "
                         f"Leading actor ({max_agent.name}) holds {top_share:.0%} of resources. "

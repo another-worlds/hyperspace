@@ -43,7 +43,7 @@ div[data-testid="stMetric"]:hover {
     box-shadow: 0 6px 28px rgba(0,0,0,0.5), 0 0 0 1px rgba(100,255,218,0.08);
 }
 div[data-testid="stMetric"] label {
-    color: #3d5673 !important;
+    color: #8ea8c2 !important;
     font-size: 0.71em !important;
     font-weight: 700 !important;
     letter-spacing: 0.10em !important;
@@ -69,7 +69,7 @@ div[data-testid="stMetricDelta"] { color: #64ffda !important; }
     background: transparent !important;
     border: none !important;
     border-bottom: 2px solid transparent !important;
-    color: #3d5673 !important;
+    color: #8ea8c2 !important;
     font-family: 'Inter', sans-serif !important;
     font-weight: 500 !important;
     font-size: 0.84em !important;
@@ -121,7 +121,7 @@ div[data-testid="stMetricDelta"] { color: #64ffda !important; }
     background: #070d1a !important;
 }
 [data-testid="stExpander"] summary {
-    color: #567090 !important;
+    color: #8ea8c2 !important;
     font-family: 'Inter', sans-serif !important;
     font-size: 0.88em !important;
     font-weight: 500 !important;
@@ -130,7 +130,7 @@ div[data-testid="stMetricDelta"] { color: #64ffda !important; }
 
 /* ─── Captions ──────────────────────────────────────────────────────── */
 .stCaption p, .stCaption {
-    color: #2d4a66 !important;
+    color: #7a9bb5 !important;
     font-size: 0.79em !important;
     font-family: 'Inter', sans-serif !important;
     line-height: 1.55 !important;
@@ -356,6 +356,28 @@ KERNEL_BLOCK_CONTRIBUTION_MIN: float = 0.1
 # Minimum kernel importance (fraction of total variance) to trigger
 # semantic narrator invocation.
 KERNEL_NARRATOR_IMPORTANCE_MIN: float = 0.15
+
+# --------------------------------------------------------------------------- #
+# Tab-level governance / display thresholds (centralized from tab modules)    #
+# --------------------------------------------------------------------------- #
+# Finance tab: forecast confidence bands
+FORECAST_CONFIDENCE_HIGH: float = 0.10
+FORECAST_CONFIDENCE_MODERATE: float = 0.30
+
+# Clusters tab: topic coverage outlier ratios
+OUTLIER_RATIO_CRITICAL: float = 0.30
+OUTLIER_RATIO_MODERATE: float = 0.10
+
+# Agents tab: resource Gini concentration
+GINI_CONCENTRATION_HIGH: float = 0.50
+GINI_CONCENTRATION_MODERATE: float = 0.25
+
+# Interpreter tab: kernel expander auto-expand threshold
+KERNEL_EXPANDER_THRESHOLD: float = 0.20
+
+# Counterfactual tab: reality regression cosine stability
+CF_STABILITY_HIGH: float = 0.95
+CF_STABILITY_MODERATE: float = 0.80
 
 # Feature flags
 FEATURE_FLAGS: dict[str, bool] = {
