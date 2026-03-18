@@ -6,7 +6,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
-from hyperspace.config import PLOTLY_LAYOUT
+from hyperspace.config import FEATURE_NAMES, PLOTLY_LAYOUT
 
 
 def plot_kernel_matrix(snapshot: dict, block_names: list[str] | None = None) -> go.Figure:
@@ -56,31 +56,46 @@ def plot_reality_regression(snapshot: dict) -> go.Figure:
     """Visualize the universal reality regression vector."""
     rr = snapshot["reality_regression"]
     n = len(rr)
-    # Color by feature region
+    # Color and region label by feature region
+    region_map = [
+        (16, "#3498db", "Temporal"),
+        (32, "#e67e22", "Semantic"),
+        (48, "#2ecc71", "Structural"),
+        (64, "#e74c3c", "Dynamic"),
+        (80, "#9b59b6", "Geospatial"),
+    ]
     colors = []
+    regions = []
     for i in range(n):
-        if i < 16:
-            colors.append("#3498db")  # temporal
-        elif i < 32:
-            colors.append("#e67e22")  # semantic
-        elif i < 48:
-            colors.append("#2ecc71")  # structural
-        elif i < 64:
-            colors.append("#e74c3c")  # dynamic
-        else:
-            colors.append("#9b59b6")  # geospatial
+        for bound, color, label in region_map:
+            if i < bound:
+                colors.append(color)
+                regions.append(label)
+                break
+
+    feature_labels = FEATURE_NAMES[:n] if n <= len(FEATURE_NAMES) else [
+        FEATURE_NAMES[i] if i < len(FEATURE_NAMES) else f"feature_{i}"
+        for i in range(n)
+    ]
 
     fig = go.Figure(go.Bar(
-        x=list(range(n)), y=rr,
+        x=feature_labels, y=rr,
         marker_color=colors,
+        customdata=list(zip(range(n), regions)),
+        hovertemplate=(
+            "<b>%{x}</b> (idx %{customdata[0]})<br>"
+            "Region: %{customdata[1]}<br>"
+            "Weight: %{y:.4f}<extra></extra>"
+        ),
     ))
     fig.update_layout(
         **PLOTLY_LAYOUT,
         title="Universal Reality Regression (Feature-Space Basis)",
         height=280,
-        margin=dict(l=20, r=20, t=40, b=20),
-        xaxis_title="Feature Index",
+        margin=dict(l=20, r=20, t=40, b=60),
+        xaxis_title="Feature",
         yaxis_title="Weight",
+        xaxis_tickangle=-45,
     )
     # Add region annotations (use np.max + np.abs to avoid ambiguous array truth value)
     annotation_y = float(np.max(np.abs(rr))) * 1.1

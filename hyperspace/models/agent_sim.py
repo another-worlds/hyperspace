@@ -143,14 +143,14 @@ def run_simulation(
     resource_flow: float = 5.0,
     alliance_fluidity: float = 0.5,
     shock_prob: float = 0.1,
-    s: int = 42,
+    seed: int = 42,
 ) -> tuple[dict[str, ClusterAgent], list[str], np.ndarray, dict[int, dict]]:
     """Run the agent simulation.
 
     Returns:
         (agents, log_entries, features_for_ukt, feature_meta)
     """
-    rng = np.random.default_rng(s)
+    rng = np.random.default_rng(seed)
     log_entries: list[str] = []
 
     for step in range(steps):

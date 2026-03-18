@@ -15,7 +15,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 
-from hyperspace.config import PLOTLY_LAYOUT
+from hyperspace.config import KERNEL_EXPANDER_THRESHOLD, PLOTLY_LAYOUT
 from hyperspace.models.sparse_ae import train_sparse_ae, map_concepts_to_kernels
 from hyperspace.models.semantic_canvas import CANVAS_DIMENSIONS
 from hyperspace.viz import kernel_viz
@@ -45,15 +45,22 @@ def render() -> None:
                 if snapshots:
                     final_snap = snapshots[-1]
                     matrix = final_snap["matrix"]
-                    sae_result = train_sparse_ae(
-                        matrix, hidden_dim=16, epochs=100,
-                    )
-                    if sae_result and final_snap:
-                        concept_kernel_map = map_concepts_to_kernels(
-                            sae_result, final_snap,
+                    # Cache SAE result keyed by matrix hash to avoid re-training
+                    matrix_hash = hash(matrix.tobytes())
+                    cached_hash = st.session_state.get("sae_matrix_hash")
+                    if cached_hash == matrix_hash and sae_result is not None:
+                        st.toast("Using cached SAE result (matrix unchanged).")
+                    else:
+                        sae_result = train_sparse_ae(
+                            matrix, hidden_dim=16, epochs=100,
                         )
-                        st.session_state.sae_result = sae_result
-                        st.session_state.concept_kernel_map = concept_kernel_map
+                        if sae_result and final_snap:
+                            concept_kernel_map = map_concepts_to_kernels(
+                                sae_result, final_snap,
+                            )
+                            st.session_state.sae_result = sae_result
+                            st.session_state.concept_kernel_map = concept_kernel_map
+                            st.session_state.sae_matrix_hash = matrix_hash
                 else:
                     st.warning("Run the full pipeline first to populate the UKT.")
                     return
@@ -281,7 +288,7 @@ def render() -> None:
             for kl in final_snap["kernel_labels"]:
                 with st.expander(
                     f"{kl['label']}",
-                    expanded=kl["importance"] > 0.2,
+                    expanded=kl["importance"] > KERNEL_EXPANDER_THRESHOLD,
                 ):
                     st.markdown(kl["narrative"])
                     if kl.get("semantic_narrative"):
@@ -456,7 +463,7 @@ def render() -> None:
                     fig_var = go.Figure(go.Bar(
                         x=[cl["mode_id"] for cl in coupling_labels],
                         y=[cl["variance_explained"] for cl in coupling_labels],
-                        marker_color=["#64ffda" if cl["variance_explained"] > 0.2
+                        marker_color=["#64ffda" if cl["variance_explained"] > KERNEL_EXPANDER_THRESHOLD
                                       else "#3498db" for cl in coupling_labels],
                     ))
                     fig_var.update_layout(

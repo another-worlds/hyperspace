@@ -3,7 +3,12 @@ from __future__ import annotations
 
 import streamlit as st
 
-from hyperspace.config import DEFAULT_TICKERS, PLOTLY_LAYOUT
+from hyperspace.config import (
+    DEFAULT_TICKERS,
+    FORECAST_CONFIDENCE_HIGH,
+    FORECAST_CONFIDENCE_MODERATE,
+    PLOTLY_LAYOUT,
+)
 from hyperspace.data.finance import get_ohlcv
 from hyperspace.models.tft_forecast import fit_tft
 from hyperspace.pages._report_section import render_interpretability_report
@@ -140,12 +145,12 @@ def render() -> None:
                     q_high = q_mean[:, -1]
                     coverage = float(np.mean(q_high - q_low) / (np.mean(np.abs(q_mid)) + 1e-8))
 
-                    if coverage < 0.10:
+                    if coverage < FORECAST_CONFIDENCE_HIGH:
                         st.success(
                             f"Forecast confidence: **HIGH** — uncertainty band is {coverage:.1%} "
                             "of forecast magnitude. Conclusions from this block are robust."
                         )
-                    elif coverage < 0.30:
+                    elif coverage < FORECAST_CONFIDENCE_MODERATE:
                         st.warning(
                             f"Forecast confidence: **MODERATE** — uncertainty band is {coverage:.1%} "
                             "of forecast magnitude. Exercise caution when citing specific values."

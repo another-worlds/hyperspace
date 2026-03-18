@@ -619,8 +619,27 @@ def render_results() -> None:
     src_html = " ".join(source_badge(v) for v in data_sources.values())
     st.markdown(f"**Data Sources**: {src_html}", unsafe_allow_html=True)
 
-    # Summary metrics from real computations
+    # Gather all session state data for use across sections
     final_snap = snapshots[-1]
+    gov_flags = st.session_state.get("governance_flags", [])
+    scorecard = st.session_state.get("interpretability_scorecard", {})
+    canvas_narrative = st.session_state.get("canvas_narrative")
+    reality_narrative = st.session_state.get("reality_narrative")
+    alignment_metrics = st.session_state.get("alignment_metrics", {})
+    faithfulness_report = st.session_state.get("faithfulness_report")
+    drift_result = st.session_state.get("drift_result")
+    kernel_evolution = st.session_state.get("kernel_evolution")
+    interpretability_contract = st.session_state.get("interpretability_contract", {})
+    interpretability_contract_summary = st.session_state.get(
+        "interpretability_contract_summary", {},
+    )
+
+    # ================================================================== #
+    #  EXECUTIVE SUMMARY — prominent, non-collapsible                     #
+    # ================================================================== #
+    st.markdown("### Executive Summary")
+
+    # Key metrics row
     m1, m2, m3, m4, m5 = st.columns(5)
     m1.metric("Active Kernels", str(final_snap["n_kernels"]))
 
@@ -645,6 +664,31 @@ def render_results() -> None:
 
     m5.metric("Recon Error", f"{final_snap['reconstruction_error']:.6f}")
 
+    # Scorecard pass/fail headline
+    if scorecard:
+        pass_count = sum(1 for item in scorecard.values() if item.get("passed", False))
+        total_count = len(scorecard)
+        all_pass = pass_count == total_count
+        if all_pass:
+            st.success(f"Scorecard: **{pass_count}/{total_count} PASS** — System meets minimum interpretability standards.")
+        else:
+            st.warning(f"Scorecard: **{pass_count}/{total_count} PASS** — Review flagged items before citing conclusions.")
+
+    # Governance flags headline
+    if gov_flags:
+        n_warn = sum(1 for f in gov_flags if f.get("severity") == "warning")
+        n_info = len(gov_flags) - n_warn
+        st.warning(f"Governance: **{len(gov_flags)} flag(s)** detected ({n_warn} warning, {n_info} info).")
+    else:
+        st.markdown(
+            '<span class="gov-pass">✓ No governance flags detected</span>',
+            unsafe_allow_html=True,
+        )
+
+    # Brief narrative summary
+    if canvas_narrative:
+        st.info(f"**Narrative summary:** {canvas_narrative}")
+
     stability = st.session_state.get("ukt_multirun_stability")
     if isinstance(stability, dict) and stability.get("n_runs", 0) > 0:
         st.caption(
@@ -655,405 +699,388 @@ def render_results() -> None:
 
     st.markdown("---")
 
-    # ---- A3: Governance Flags Panel ----
-    gov_flags = st.session_state.get("governance_flags", [])
-    if gov_flags:
-        st.markdown("### ⚠️ Governance Flags")
-        st.caption(
-            f"{len(gov_flags)} issue(s) detected. These are auto-generated alerts "
-            "indicating potential data quality, bias, or coverage concerns."
-        )
-        for flag in gov_flags:
-            severity = flag.get("severity", "warning")
-            code = flag.get("code", "GOV-???")
-            label = flag.get("label", "Unknown")
-            description = flag.get("description", "")
-            detail = flag.get("detail", "")
-            icon = "⚠️" if severity == "warning" else "ℹ️"
-            with st.expander(f'{icon} [{code}] {label}', expanded=True):
-                st.markdown(f"**Definition:** {description}")
-                if detail:
-                    st.markdown(
-                        f'<div class="contest-note"><strong>Detected:</strong> {detail}</div>',
-                        unsafe_allow_html=True,
-                    )
-    else:
-        st.markdown(
-            '<span class="gov-pass">✓ No governance flags detected</span>',
-            unsafe_allow_html=True,
-        )
-
-    st.markdown("---")
-
-    # ---- B3: Interpretability Score Card ----
-    alignment_metrics = st.session_state.get("alignment_metrics", {})
-    if alignment_metrics:
-        st.markdown("### Alignment Comparison (Legacy vs Shared-Latent)")
-        legacy = alignment_metrics.get("legacy", {})
-        shared = alignment_metrics.get("shared_latent", {})
-        parity = alignment_metrics.get("parity_delta", {})
-        c1, c2, c3 = st.columns(3)
-        c1.metric("Legacy Retrieval@1", f"{legacy.get('retrieval_at_1', 0.0):.3f}")
-        c2.metric("Shared Retrieval@1 (shadow)", f"{shared.get('retrieval_at_1', 0.0):.3f}")
-        c3.metric("Delta (shared-legacy)", f"{parity.get('retrieval_at_1', 0.0):+.3f}")
-        st.caption("Shared-latent path is feature-flagged and shadow-only. Default decisions remain on legacy UKT outputs.")
-
-    scorecard = st.session_state.get("interpretability_scorecard", {})
-    if scorecard:
-        st.markdown("### 📊 Interpretability Accountability Score Card")
-        st.caption(
-            "Formal pass/fail audit against minimum governance thresholds. "
-            "This score card is included in all exported reports."
-        )
-        sc_rows = []
-        for key, item in scorecard.items():
-            passed = item.get("passed", False)
-            status_icon = "✅ PASS" if passed else "⚠️ WARN"
-            sc_rows.append({
-                "Dimension": item.get("label", key),
-                "Value": f"{item.get('value', 'N/A')}{item.get('unit', '')}",
-                "Threshold": f"≥{item.get('threshold', 'N/A')}{item.get('unit', '')}",
-                "Status": status_icon,
-                "Description": item.get("description", ""),
-            })
-        sc_df = pd.DataFrame(sc_rows)
-
-        # Style: color Status column
-        def _style_status(val: str) -> str:
-            if "PASS" in val:
-                return "color: #64ffda; font-weight: bold"
-            return "color: #ffaa00; font-weight: bold"
-
-        try:
-            styled = sc_df.style.map(_style_status, subset=["Status"])
-        except AttributeError:
-            styled = sc_df.style.applymap(_style_status, subset=["Status"])
-        st.dataframe(styled, use_container_width=True, hide_index=True)
-
-        # Overall pass/fail summary
-        all_pass = all(item.get("passed", False) for item in scorecard.values())
-        pass_count = sum(1 for item in scorecard.values() if item.get("passed", False))
-        total_count = len(scorecard)
-        if all_pass:
-            st.success(f"Overall: {pass_count}/{total_count} criteria PASS — System meets minimum interpretability standards.")
-        else:
-            st.warning(f"Overall: {pass_count}/{total_count} criteria PASS — Review flagged items before citing conclusions.")
-
-    st.markdown("---")
-
-    # Semantic Canvas summary
-    canvas_narrative = st.session_state.get("canvas_narrative")
-    reality_narrative = st.session_state.get("reality_narrative")
-    if canvas_narrative or reality_narrative:
-        st.markdown("### Semantic Interpretability — LLM Narratives")
-        if canvas_narrative:
-            st.success(f"**Cross-Domain Narrative:** {canvas_narrative}")
-        if reality_narrative:
-            st.info(f"**Reality Assessment:** {reality_narrative}")
-
-    st.caption(
-        "For detailed kernel analysis, concept discovery, and per-block interpretability "
-        "reports, see the **Semantic Interpreter** tab."
-    )
-
-    # ---- Faithfulness Report (H-003) ----
-    faithfulness_report = st.session_state.get("faithfulness_report")
-    if faithfulness_report:
-        st.markdown("### Narrative Faithfulness Checks")
-        confidence = faithfulness_report.get("overall_confidence", 1.0)
-        low_conf = faithfulness_report.get("low_confidence", False)
-        checks = faithfulness_report.get("checks", [])
-
-        if low_conf:
-            st.warning(
-                f"Explanation confidence is **{confidence:.0%}** — below minimum threshold. "
-                "Narratives have been downgraded to avoid unsupported claims."
+    # ================================================================== #
+    #  SECTION 1: Governance & Accountability (expanded by default)       #
+    # ================================================================== #
+    with st.expander("Governance & Accountability", expanded=True):
+        # Governance Flags
+        if gov_flags:
+            st.markdown("#### Governance Flags")
+            st.caption(
+                f"{len(gov_flags)} issue(s) detected. These are auto-generated alerts "
+                "indicating potential data quality, bias, or coverage concerns."
             )
-        else:
-            st.success(
-                f"Explanation confidence: **{confidence:.0%}** — "
-                f"{sum(1 for c in checks if c.get('passed'))}/{len(checks)} checks passed."
+            for flag in gov_flags:
+                severity = flag.get("severity", "warning")
+                code = flag.get("code", "GOV-???")
+                label = flag.get("label", "Unknown")
+                description = flag.get("description", "")
+                detail = flag.get("detail", "")
+                icon = "⚠️" if severity == "warning" else "ℹ️"
+                with st.expander(f'{icon} [{code}] {label}', expanded=True):
+                    st.markdown(f"**Definition:** {description}")
+                    if detail:
+                        st.markdown(
+                            f'<div class="contest-note"><strong>Detected:</strong> {detail}</div>',
+                            unsafe_allow_html=True,
+                        )
+
+        # Interpretability Score Card
+        if scorecard:
+            st.markdown("#### Interpretability Accountability Score Card")
+            st.caption(
+                "Formal pass/fail audit against minimum governance thresholds. "
+                "This score card is included in all exported reports."
             )
+            sc_rows = []
+            for key, item in scorecard.items():
+                passed = item.get("passed", False)
+                status_icon = "✅ PASS" if passed else "⚠️ WARN"
+                sc_rows.append({
+                    "Dimension": item.get("label", key),
+                    "Value": f"{item.get('value', 'N/A')}{item.get('unit', '')}",
+                    "Threshold": f"≥{item.get('threshold', 'N/A')}{item.get('unit', '')}",
+                    "Status": status_icon,
+                    "Description": item.get("description", ""),
+                })
+            sc_df = pd.DataFrame(sc_rows)
 
-        if checks:
-            with st.expander("Intervention check details", expanded=False):
-                fc_rows = []
-                for c in checks:
-                    fc_rows.append({
-                        "Module": c.get("module_name", ""),
-                        "Check": c.get("check_name", ""),
-                        "Passed": "PASS" if c.get("passed") else "FAIL",
-                        "Delta": f"{c.get('delta', 0.0):+.6f}",
-                        "Detail": c.get("detail", ""),
-                    })
-                st.dataframe(pd.DataFrame(fc_rows), use_container_width=True, hide_index=True)
+            def _style_status(val: str) -> str:
+                if "PASS" in val:
+                    return "color: #64ffda; font-weight: bold"
+                return "color: #ffaa00; font-weight: bold"
 
-    # ---- Temporal Drift Panel (H-002) ----
-    drift_result = st.session_state.get("drift_result")
-    if drift_result:
-        st.markdown("### Temporal Drift Monitor")
-        dc1, dc2, dc3 = st.columns(3)
-        dc1.metric(
-            "Regression Cosine",
-            f"{drift_result.get('regression_cosine', 0.0):.4f}",
-        )
-        dc2.metric(
-            "Importance Cosine",
-            f"{drift_result.get('importance_cosine', 0.0):.4f}",
-        )
-        dc3.metric(
-            "Stability Delta",
-            f"{drift_result.get('stability_delta', 0.0):+.4f}",
-        )
-        st.caption(
-            f"Window size: {drift_result.get('window_size', 0)} | "
-            f"Total records: {drift_result.get('n_records', 0)}"
-        )
+            try:
+                styled = sc_df.style.map(_style_status, subset=["Status"])
+            except AttributeError:
+                styled = sc_df.style.applymap(_style_status, subset=["Status"])
+            st.dataframe(styled, use_container_width=True, hide_index=True)
 
-        drift_alerts = drift_result.get("alerts", [])
-        if drift_alerts:
-            st.markdown("#### Drift Alerts")
-            for alert in drift_alerts:
+        # Faithfulness Report
+        if faithfulness_report:
+            st.markdown("#### Narrative Faithfulness Checks")
+            confidence = faithfulness_report.get("overall_confidence", 1.0)
+            low_conf = faithfulness_report.get("low_confidence", False)
+            checks = faithfulness_report.get("checks", [])
+
+            if low_conf:
                 st.warning(
-                    f"[{alert.get('code')}] {alert.get('label')}: "
-                    f"{alert.get('detail', '')}"
+                    f"Explanation confidence is **{confidence:.0%}** — below minimum threshold. "
+                    "Narratives have been downgraded to avoid unsupported claims."
+                )
+            else:
+                st.success(
+                    f"Explanation confidence: **{confidence:.0%}** — "
+                    f"{sum(1 for c in checks if c.get('passed'))}/{len(checks)} checks passed."
                 )
 
-    # ---- Kernel Evolution Panel (Temporal Memory) ----
-    kernel_evolution = st.session_state.get("kernel_evolution")
-    if kernel_evolution and kernel_evolution.get("n_runs", 0) >= 2:
-        st.markdown("### Kernel Evolution (Cross-Run Memory)")
+            if checks:
+                with st.expander("Intervention check details", expanded=False):
+                    fc_rows = []
+                    for c in checks:
+                        fc_rows.append({
+                            "Module": c.get("module_name", ""),
+                            "Check": c.get("check_name", ""),
+                            "Passed": "PASS" if c.get("passed") else "FAIL",
+                            "Delta": f"{c.get('delta', 0.0):+.6f}",
+                            "Detail": c.get("detail", ""),
+                        })
+                    st.dataframe(pd.DataFrame(fc_rows), use_container_width=True, hide_index=True)
+
+    # ================================================================== #
+    #  SECTION 2: Semantic Narratives                                     #
+    # ================================================================== #
+    with st.expander("Semantic Narratives", expanded=False):
+        if canvas_narrative or reality_narrative:
+            if canvas_narrative:
+                st.success(f"**Cross-Domain Narrative:** {canvas_narrative}")
+            if reality_narrative:
+                st.info(f"**Reality Assessment:** {reality_narrative}")
+        else:
+            st.caption("No narratives generated. Run the Semantic Interpreter tab for detailed analysis.")
+
         st.caption(
-            f"Tracking kernel structure across **{kernel_evolution['n_runs']}** "
-            f"pipeline runs ({kernel_evolution.get('n_snapshots', 0)} total snapshots)."
+            "For detailed kernel analysis, concept discovery, and per-block interpretability "
+            "reports, see the **Semantic Interpreter** tab."
         )
-        blocks_data = kernel_evolution.get("blocks", {})
-        if blocks_data:
-            evo_cols = st.columns(min(len(blocks_data), 4))
-            for i, (block_name, block_evo) in enumerate(blocks_data.items()):
-                with evo_cols[i % len(evo_cols)]:
-                    stability = block_evo.get("mean_importance_stability", 0.0)
-                    n_runs = block_evo.get("n_runs", 0)
-                    st.metric(
-                        label=f"{block_name}",
-                        value=f"{stability:.3f}",
-                        delta=f"{n_runs} runs",
-                        help="Mean cosine similarity of importance vectors across consecutive runs.",
+
+    # ================================================================== #
+    #  SECTION 3: Temporal Stability                                      #
+    # ================================================================== #
+    with st.expander("Temporal Stability", expanded=False):
+        # Temporal Drift Panel
+        if drift_result:
+            st.markdown("#### Temporal Drift Monitor")
+            dc1, dc2, dc3 = st.columns(3)
+            dc1.metric(
+                "Regression Cosine",
+                f"{drift_result.get('regression_cosine', 0.0):.4f}",
+            )
+            dc2.metric(
+                "Importance Cosine",
+                f"{drift_result.get('importance_cosine', 0.0):.4f}",
+            )
+            dc3.metric(
+                "Stability Delta",
+                f"{drift_result.get('stability_delta', 0.0):+.4f}",
+            )
+            st.caption(
+                f"Window size: {drift_result.get('window_size', 0)} | "
+                f"Total records: {drift_result.get('n_records', 0)}"
+            )
+
+            drift_alerts = drift_result.get("alerts", [])
+            if drift_alerts:
+                st.markdown("##### Drift Alerts")
+                for alert in drift_alerts:
+                    st.warning(
+                        f"[{alert.get('code')}] {alert.get('label')}: "
+                        f"{alert.get('detail', '')}"
                     )
-            # Reconstruction trend chart (Plotly)
-            _recon_traces = []
-            for block_name, block_evo in blocks_data.items():
-                recon = block_evo.get("reconstruction_trend", [])
-                if len(recon) >= 2:
-                    _recon_traces.append(go.Scatter(
-                        x=list(range(1, len(recon) + 1)),
-                        y=recon,
-                        mode="lines+markers",
-                        name=block_name,
-                        line=dict(width=2),
-                        marker=dict(size=6),
-                    ))
-            if _recon_traces:
-                _recon_fig = go.Figure(data=_recon_traces)
-                _recon_fig.update_layout(
-                    **PLOTLY_LAYOUT,
-                    title="Reconstruction Error Across Runs",
-                    xaxis_title="Run",
-                    yaxis_title="Reconstruction Error",
-                    height=320,
-                    margin=dict(l=48, r=24, t=44, b=40),
-                    legend=dict(
-                        orientation="h", y=-0.2, x=0.5, xanchor="center",
-                        font=dict(size=11),
-                    ),
-                )
-                st.plotly_chart(_recon_fig, use_container_width=True)
 
-            # Importance stability chart (per-block cosine trend)
-            _imp_traces = []
-            for block_name, block_evo in blocks_data.items():
-                imp_trend = block_evo.get("importance_trend", [])
-                if len(imp_trend) >= 2:
-                    # Compute consecutive cosine similarities
-                    cosines = []
-                    for idx in range(1, len(imp_trend)):
-                        a = np.asarray(imp_trend[idx - 1])
-                        b = np.asarray(imp_trend[idx])
-                        na, nb = np.linalg.norm(a), np.linalg.norm(b)
-                        cos = float(np.dot(a, b) / (na * nb)) if na > 1e-12 and nb > 1e-12 else 0.0
-                        cosines.append(cos)
-                    _imp_traces.append(go.Scatter(
-                        x=list(range(2, len(imp_trend) + 1)),
-                        y=cosines,
-                        mode="lines+markers",
-                        name=block_name,
-                        line=dict(width=2),
-                        marker=dict(size=6),
-                    ))
-            if _imp_traces:
-                _imp_fig = go.Figure(data=_imp_traces)
-                _imp_fig.update_layout(
-                    **PLOTLY_LAYOUT,
-                    title="Importance Vector Stability (Consecutive Cosine)",
-                    xaxis_title="Run",
-                    yaxis_title="Cosine Similarity",
-                    height=320,
-                    yaxis_range=[0, 1.05],
-                    margin=dict(l=48, r=24, t=44, b=40),
-                    legend=dict(
-                        orientation="h", y=-0.2, x=0.5, xanchor="center",
-                        font=dict(size=11),
-                    ),
-                )
-                # Add threshold reference line
-                _imp_fig.add_hline(
-                    y=0.80, line_dash="dash", line_color="rgba(248,113,113,0.5)",
-                    annotation_text="Stability threshold",
-                    annotation_position="top right",
-                    annotation_font_color="rgba(248,113,113,0.8)",
-                )
-                st.plotly_chart(_imp_fig, use_container_width=True)
-
-            # Reconstruction trend table
-            with st.expander("Reconstruction error trends"):
-                trend_rows = []
+        # Kernel Evolution Panel
+        if kernel_evolution and kernel_evolution.get("n_runs", 0) >= 2:
+            st.markdown("#### Kernel Evolution (Cross-Run Memory)")
+            st.caption(
+                f"Tracking kernel structure across **{kernel_evolution['n_runs']}** "
+                f"pipeline runs ({kernel_evolution.get('n_snapshots', 0)} total snapshots)."
+            )
+            blocks_data = kernel_evolution.get("blocks", {})
+            if blocks_data:
+                evo_cols = st.columns(min(len(blocks_data), 4))
+                for i, (block_name, block_evo) in enumerate(blocks_data.items()):
+                    with evo_cols[i % len(evo_cols)]:
+                        stab = block_evo.get("mean_importance_stability", 0.0)
+                        n_runs = block_evo.get("n_runs", 0)
+                        st.metric(
+                            label=f"{block_name}",
+                            value=f"{stab:.3f}",
+                            delta=f"{n_runs} runs",
+                            help="Mean cosine similarity of importance vectors across consecutive runs.",
+                        )
+                # Reconstruction trend chart
+                _recon_traces = []
                 for block_name, block_evo in blocks_data.items():
                     recon = block_evo.get("reconstruction_trend", [])
-                    for j, val in enumerate(recon):
-                        trend_rows.append({
-                            "Block": block_name,
-                            "Run": j + 1,
-                            "Reconstruction Error": round(val, 6),
-                        })
-                if trend_rows:
-                    import pandas as _pd
-                    st.dataframe(_pd.DataFrame(trend_rows), use_container_width=True)
+                    if len(recon) >= 2:
+                        _recon_traces.append(go.Scatter(
+                            x=list(range(1, len(recon) + 1)),
+                            y=recon,
+                            mode="lines+markers",
+                            name=block_name,
+                            line=dict(width=2),
+                            marker=dict(size=6),
+                        ))
+                if _recon_traces:
+                    _recon_fig = go.Figure(data=_recon_traces)
+                    _recon_fig.update_layout(
+                        **PLOTLY_LAYOUT,
+                        title="Reconstruction Error Across Runs",
+                        xaxis_title="Run",
+                        yaxis_title="Reconstruction Error",
+                        height=320,
+                        margin=dict(l=48, r=24, t=44, b=40),
+                        legend=dict(
+                            orientation="h", y=-0.2, x=0.5, xanchor="center",
+                            font=dict(size=11),
+                        ),
+                    )
+                    st.plotly_chart(_recon_fig, use_container_width=True)
 
-    interpretability_contract = st.session_state.get("interpretability_contract", {})
-    interpretability_contract_summary = st.session_state.get(
-        "interpretability_contract_summary", {},
-    )
+                # Importance stability chart
+                _imp_traces = []
+                for block_name, block_evo in blocks_data.items():
+                    imp_trend = block_evo.get("importance_trend", [])
+                    if len(imp_trend) >= 2:
+                        cosines = []
+                        for idx in range(1, len(imp_trend)):
+                            a = np.asarray(imp_trend[idx - 1])
+                            b = np.asarray(imp_trend[idx])
+                            na, nb = np.linalg.norm(a), np.linalg.norm(b)
+                            cos = float(np.dot(a, b) / (na * nb)) if na > 1e-12 and nb > 1e-12 else 0.0
+                            cosines.append(cos)
+                        _imp_traces.append(go.Scatter(
+                            x=list(range(2, len(imp_trend) + 1)),
+                            y=cosines,
+                            mode="lines+markers",
+                            name=block_name,
+                            line=dict(width=2),
+                            marker=dict(size=6),
+                        ))
+                if _imp_traces:
+                    _imp_fig = go.Figure(data=_imp_traces)
+                    _imp_fig.update_layout(
+                        **PLOTLY_LAYOUT,
+                        title="Importance Vector Stability (Consecutive Cosine)",
+                        xaxis_title="Run",
+                        yaxis_title="Cosine Similarity",
+                        height=320,
+                        yaxis_range=[0, 1.05],
+                        margin=dict(l=48, r=24, t=44, b=40),
+                        legend=dict(
+                            orientation="h", y=-0.2, x=0.5, xanchor="center",
+                            font=dict(size=11),
+                        ),
+                    )
+                    _imp_fig.add_hline(
+                        y=0.80, line_dash="dash", line_color="rgba(248,113,113,0.5)",
+                        annotation_text="Stability threshold",
+                        annotation_position="top right",
+                        annotation_font_color="rgba(248,113,113,0.8)",
+                    )
+                    st.plotly_chart(_imp_fig, use_container_width=True)
 
-    if interpretability_contract:
-        st.markdown("### Interpretability Contract Governance View")
-        st.caption(
-            "Alpha-scope modules must be either contract-compliant or explicitly "
-            "marked N/A with owner + rationale."
+                with st.expander("Reconstruction error trends"):
+                    trend_rows = []
+                    for block_name, block_evo in blocks_data.items():
+                        recon = block_evo.get("reconstruction_trend", [])
+                        for j, val in enumerate(recon):
+                            trend_rows.append({
+                                "Block": block_name,
+                                "Run": j + 1,
+                                "Reconstruction Error": round(val, 6),
+                            })
+                    if trend_rows:
+                        import pandas as _pd
+                        st.dataframe(_pd.DataFrame(trend_rows), use_container_width=True)
+
+        if not drift_result and not (kernel_evolution and kernel_evolution.get("n_runs", 0) >= 2):
+            st.caption("No temporal stability data available yet. Run the pipeline multiple times to populate.")
+
+    # ================================================================== #
+    #  SECTION 4: Technical Details & Exports (collapsed by default)      #
+    # ================================================================== #
+    with st.expander("Technical Details & Exports", expanded=False):
+        # Alignment Comparison
+        if alignment_metrics:
+            st.markdown("#### Alignment Comparison (Legacy vs Shared-Latent)")
+            legacy = alignment_metrics.get("legacy", {})
+            shared = alignment_metrics.get("shared_latent", {})
+            parity = alignment_metrics.get("parity_delta", {})
+            c1, c2, c3 = st.columns(3)
+            c1.metric("Legacy Retrieval@1", f"{legacy.get('retrieval_at_1', 0.0):.3f}")
+            c2.metric("Shared Retrieval@1 (shadow)", f"{shared.get('retrieval_at_1', 0.0):.3f}")
+            c3.metric("Delta (shared-legacy)", f"{parity.get('retrieval_at_1', 0.0):+.3f}")
+            st.caption("Shared-latent path is feature-flagged and shadow-only. Default decisions remain on legacy UKT outputs.")
+
+        # Contract Compliance
+        if interpretability_contract:
+            st.markdown("#### Interpretability Contract Governance View")
+            st.caption(
+                "Alpha-scope modules must be either contract-compliant or explicitly "
+                "marked N/A with owner + rationale."
+            )
+            st.write(
+                "Summary:",
+                {
+                    "total": interpretability_contract_summary.get("total_modules", 0),
+                    "compliant": interpretability_contract_summary.get("compliant_modules", 0),
+                    "na": interpretability_contract_summary.get("na_modules", 0),
+                    "noncompliant": interpretability_contract_summary.get("noncompliant_modules", 0),
+                    "rate": interpretability_contract_summary.get("compliance_rate", 0.0),
+                },
+            )
+
+            rows = []
+            for module_name, module_report in interpretability_contract.items():
+                rows.append({
+                    "Module": module_name,
+                    "Status": module_report.get("status", "unknown"),
+                    "Compliant": module_report.get("compliant", False),
+                    "NAOwner": module_report.get("na_owner"),
+                    "NAReason": module_report.get("na_reason"),
+                    "InterfaceIssues": len(module_report.get("interface_issues", [])),
+                    "PayloadIssues": len(module_report.get("payload_issues", [])),
+                })
+            st.dataframe(pd.DataFrame(rows), use_container_width=True)
+
+        # Export buttons
+        st.markdown("#### Export")
+        run_id = st.session_state.get("run_id", "UNKNOWN")
+        run_ts = st.session_state.get("run_timestamp", "")
+        exp1, exp2, exp3, exp4, exp5 = st.columns(5)
+
+        report_md = _build_governance_report_markdown(
+            run_id=run_id,
+            run_ts=run_ts,
+            scorecard=scorecard,
+            governance_flags=gov_flags,
+            snapshots=snapshots,
+            canvas_narrative=canvas_narrative,
+            reality_narrative=reality_narrative,
+            interpretability_contract=interpretability_contract,
+            interpretability_contract_summary=interpretability_contract_summary,
+            alignment_metrics=alignment_metrics,
+            faithfulness_report=faithfulness_report,
+            drift_result=drift_result,
         )
-        st.write(
-            "Summary:",
-            {
-                "total": interpretability_contract_summary.get("total_modules", 0),
-                "compliant": interpretability_contract_summary.get("compliant_modules", 0),
-                "na": interpretability_contract_summary.get("na_modules", 0),
-                "noncompliant": interpretability_contract_summary.get("noncompliant_modules", 0),
-                "rate": interpretability_contract_summary.get("compliance_rate", 0.0),
-            },
+
+        exp1.download_button(
+            "Download Report (Markdown)", report_md,
+            f"hyperspace_report_{run_id}.md", "text/markdown",
+            key="dashboard_download_report",
         )
 
-        rows = []
-        for module_name, module_report in interpretability_contract.items():
-            rows.append({
-                "Module": module_name,
-                "Status": module_report.get("status", "unknown"),
-                "Compliant": module_report.get("compliant", False),
-                "NAOwner": module_report.get("na_owner"),
-                "NAReason": module_report.get("na_reason"),
-                "InterfaceIssues": len(module_report.get("interface_issues", [])),
-                "PayloadIssues": len(module_report.get("payload_issues", [])),
-            })
-        st.dataframe(pd.DataFrame(rows), use_container_width=True)
+        metrics_rows = []
+        for snap in snapshots:
+            for kl in snap["kernel_labels"]:
+                metrics_rows.append({
+                    "RunID": run_id, "Timestamp": run_ts,
+                    "Step": snap["step"], "Block": snap["block_name"],
+                    "Kernel": kl["kernel_id"], "Importance": kl["importance"],
+                    "Region": kl["dominant_region"],
+                })
+        if metrics_rows:
+            exp2.download_button(
+                "Download Metrics (CSV)",
+                pd.DataFrame(metrics_rows).to_csv(index=False),
+                f"hyperspace_metrics_{run_id}.csv", "text/csv",
+                key="dashboard_download_metrics",
+            )
 
-    # Export — D1: stamped with run ID
-    st.markdown("### Export")
-    run_id = st.session_state.get("run_id", "UNKNOWN")
-    run_ts = st.session_state.get("run_timestamp", "")
-    exp1, exp2, exp3, exp4, exp5 = st.columns(5)
+        if scorecard:
+            sc_export_rows = [
+                {
+                    "RunID": run_id, "Timestamp": run_ts,
+                    "Dimension": item.get("label"), "Value": item.get("value"),
+                    "Threshold": item.get("threshold"), "Unit": item.get("unit", ""),
+                    "Pass": item.get("passed"), "Description": item.get("description"),
+                }
+                for item in scorecard.values()
+            ]
+            exp3.download_button(
+                "Download Score Card (CSV)",
+                pd.DataFrame(sc_export_rows).to_csv(index=False),
+                f"hyperspace_scorecard_{run_id}.csv", "text/csv",
+                key="dashboard_download_scorecard",
+            )
 
-    report_md = _build_governance_report_markdown(
-        run_id=run_id,
-        run_ts=run_ts,
-        scorecard=scorecard,
-        governance_flags=gov_flags,
-        snapshots=snapshots,
-        canvas_narrative=canvas_narrative,
-        reality_narrative=reality_narrative,
-        interpretability_contract=interpretability_contract,
-        interpretability_contract_summary=interpretability_contract_summary,
-        alignment_metrics=alignment_metrics,
-        faithfulness_report=faithfulness_report,
-        drift_result=drift_result,
-    )
-
-    exp1.download_button(
-        "Download Report (Markdown)", report_md,
-        f"hyperspace_report_{run_id}.md", "text/markdown",
-        key="dashboard_download_report",
-    )
-
-    metrics_rows = []
-    for snap in snapshots:
-        for kl in snap["kernel_labels"]:
-            metrics_rows.append({
-                "RunID": run_id, "Timestamp": run_ts,
-                "Step": snap["step"], "Block": snap["block_name"],
-                "Kernel": kl["kernel_id"], "Importance": kl["importance"],
-                "Region": kl["dominant_region"],
-            })
-    if metrics_rows:
-        exp2.download_button(
-            "Download Metrics (CSV)",
-            pd.DataFrame(metrics_rows).to_csv(index=False),
-            f"hyperspace_metrics_{run_id}.csv", "text/csv",
-            key="dashboard_download_metrics",
+        contract_export_rows = _build_contract_export_rows(
+            run_id=run_id,
+            run_ts=run_ts,
+            interpretability_contract=interpretability_contract,
+            interpretability_contract_summary=interpretability_contract_summary,
         )
+        if contract_export_rows:
+            exp4.download_button(
+                "Download Contract Compliance (CSV)",
+                pd.DataFrame(contract_export_rows).to_csv(index=False),
+                f"hyperspace_contract_{run_id}.csv", "text/csv",
+                key="dashboard_download_interpretability_contract",
+            )
 
-    # Score card CSV export
-    if scorecard:
-        sc_export_rows = [
-            {
-                "RunID": run_id, "Timestamp": run_ts,
-                "Dimension": item.get("label"), "Value": item.get("value"),
-                "Threshold": item.get("threshold"), "Unit": item.get("unit", ""),
-                "Pass": item.get("passed"), "Description": item.get("description"),
-            }
-            for item in scorecard.values()
-        ]
-        exp3.download_button(
-            "Download Score Card (CSV)",
-            pd.DataFrame(sc_export_rows).to_csv(index=False),
-            f"hyperspace_scorecard_{run_id}.csv", "text/csv",
-            key="dashboard_download_scorecard",
+        diag_rows = _build_diagnostics_export_rows(
+            run_id=run_id,
+            run_ts=run_ts,
+            alignment_metrics=alignment_metrics,
+            faithfulness_report=faithfulness_report,
+            drift_result=drift_result,
+            kernel_evolution=kernel_evolution,
         )
-
-
-    contract_export_rows = _build_contract_export_rows(
-        run_id=run_id,
-        run_ts=run_ts,
-        interpretability_contract=interpretability_contract,
-        interpretability_contract_summary=interpretability_contract_summary,
-    )
-    if contract_export_rows:
-        exp4.download_button(
-            "Download Contract Compliance (CSV)",
-            pd.DataFrame(contract_export_rows).to_csv(index=False),
-            f"hyperspace_contract_{run_id}.csv", "text/csv",
-            key="dashboard_download_interpretability_contract",
-        )
-
-    # Governance diagnostics CSV: alignment metrics + faithfulness + drift
-    diag_rows = _build_diagnostics_export_rows(
-        run_id=run_id,
-        run_ts=run_ts,
-        alignment_metrics=alignment_metrics,
-        faithfulness_report=faithfulness_report,
-        drift_result=drift_result,
-        kernel_evolution=st.session_state.get("kernel_evolution"),
-    )
-    if diag_rows:
-        exp5.download_button(
-            "Download Diagnostics (CSV)",
-            pd.DataFrame(diag_rows).to_csv(index=False),
-            f"hyperspace_diagnostics_{run_id}.csv", "text/csv",
-            key="dashboard_download_diagnostics",
-        )
+        if diag_rows:
+            exp5.download_button(
+                "Download Diagnostics (CSV)",
+                pd.DataFrame(diag_rows).to_csv(index=False),
+                f"hyperspace_diagnostics_{run_id}.csv", "text/csv",
+                key="dashboard_download_diagnostics",
+            )
