@@ -269,6 +269,45 @@ PipelineResult(
 
 ---
 
+## Caching & Performance Gaps
+
+The pipeline backend caches data fetches (`@st.cache_data`) and model loading
+(`@st.cache_resource`), but several expensive post-pipeline computations are
+**not cached** in the UI layer:
+
+| Component | Cached? | Cost | Fix |
+|-----------|---------|------|-----|
+| OHLCV / macro data | YES (`@st.cache_data`, TTL 1h/24h) | — | — |
+| News corpus | YES (`@st.cache_data`, TTL 30m) | — | — |
+| Political data | YES (`@st.cache_data`, TTL 24h) | — | — |
+| BERTopic model | YES (`@st.cache_resource`) | — | — |
+| TFT model | YES (`@st.cache_data`) | — | — |
+| **SAE training (global)** | **NO** | 5–10s per click (100 epochs) | Cache in `session_state` by matrix hash |
+| **Counterfactual baseline SVD** | **NO** | 3–8s per click | Reuse pipeline's SVD from `ukt_snapshots[-1]` |
+| **UVT training** | **NO** | 10–20s (120 epochs) | Cache in `session_state` by UKT snapshot hash |
+| **USE training** | **NO** | 15–25s (150 epochs) | Cache in `session_state` by UKT snapshot hash |
+| **Stability estimation** | **NO** | 2–5s (6+ SVD reruns) | Cache in `session_state` by matrix hash |
+| Intermediate DataFrames (`.corr()`, `.pivot()`) | **NO** | <1s each | `@st.cache_data` |
+
+### Pipeline Progress UX
+
+The dashboard's `st.status` container shows one text line per block during
+pipeline execution (15–30s total). The following improvements are needed:
+
+1. **Per-block progress bar**: `st.progress(step / total_blocks)` inside the
+   orchestration loop.
+2. **Per-source status during data cascade**: News module tries 11 sources
+   sequentially. Users should see which source is being attempted.
+3. **Block timing**: Store `time.time()` delta per block in `PipelineResult`.
+   Display in the Pipeline tab status table (currently has no timing column).
+4. **Lazy diagnostics**: Advanced Diagnostics in Interpreter tab renders ~200
+   lines of charts even when the expander is collapsed. Should defer rendering
+   until the expander is opened.
+
+See `STRATEGY_UI.md` §7 for the full caching strategy.
+
+---
+
 ## Key Files
 
 | File | Role |

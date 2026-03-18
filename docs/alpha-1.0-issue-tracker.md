@@ -13,8 +13,9 @@ Status legend:
 
 ## Alpha 1.0 Progress Snapshot
 
-- **Overall Alpha 1.0 readiness:** **99%**
-- **Governance + interpretability compliance layer:** **100%**
+- **Overall Alpha 1.0 readiness:** **92%** (was 99% — UI audit identified critical gaps)
+- **Backend governance + interpretability:** **100%**
+- **UI-layer governance compliance:** **60%** (**NEW** — feature names, contrast, hierarchy, caching)
 - **Headless/UI parity:** **99%**
 - **UTK learned shared-latent goals:** **95%**
 - **Mechanistic/faithfulness validation:** **99%**
@@ -72,8 +73,12 @@ Error audit against current codebase confirms:
 9. Concept vocabulary audit trails (Phase 3).
 
 ### Next critical actions
-1. Scorecard threshold validation against real pipeline runs.
-2. Shared-latent promotion from shadow-only to optional production path (post-alpha).
+1. **H-004**: Add feature names to Reality Regression charts (critical vision failure).
+2. **H-005**: Fix WCAG AA contrast failures in dark theme CSS.
+3. **H-006**: Restructure Mission Control with executive summary and content grouping.
+4. **H-007**: Cache SAE/UVT/USE/counterfactual SVD by input hash in session state.
+5. Scorecard threshold validation against real pipeline runs.
+6. Shared-latent promotion from shadow-only to optional production path (post-alpha).
 
 ---
 
@@ -181,6 +186,72 @@ Error audit against current codebase confirms:
 
 ---
 
+## Severity: HIGH (UI Layer)
+
+## H-004 — Feature names missing from Reality Regression charts
+- **Status:** `OPEN`
+- **Why high:** The Reality Regression bar chart is the system's primary
+  feature-importance visualization. It shows feature *indices* (0–79) instead
+  of `FEATURE_NAMES` / `registry.feature_name(idx)`. This breaks
+  interpretability for non-technical stakeholders — the core vision promise.
+- **Root cause:** `kernel_viz.plot_reality_regression()` does not pass feature
+  names to the Plotly figure's x-axis or `hovertemplate`. The `FEATURE_NAMES`
+  list exists in `config.py` and is registered in `HYPERSPACE_REGISTRY`.
+- **Affected locations:** `interpreter_tab.py:264`, `counterfactual_tab.py:121-166`
+  (`_plot_rr_diff`), `kernel_viz.py:plot_reality_regression()`.
+- **Alpha exit criteria:**
+  1. Reality Regression chart x-axis shows feature names.
+  2. Hover template shows: feature name, region, loading value.
+  3. Counterfactual RR diff chart shows feature names.
+- **Progress:** **0%**
+
+## H-005 — WCAG AA contrast failures in dark theme
+- **Status:** `OPEN`
+- **Why high:** Multiple text elements fail WCAG AA minimum contrast (4.5:1):
+  caption text (`#2d4a66` on `#070d1a` ≈ 1.8:1), metric labels (`#3d5673` ≈
+  2.5:1), inactive tab text (`#3d5673` ≈ 2.5:1), expander summaries (`#567090`
+  ≈ 3:1). Governance badges (`#fbbf24` on `#1c0e00` ≈ 4.2:1) barely pass.
+- **Root cause:** CSS colors in `config.py` lines 33–194 were chosen for
+  aesthetic preference without contrast ratio verification.
+- **Alpha exit criteria:**
+  1. All body text ≥ 4.5:1 contrast ratio.
+  2. All large text (≥18px) ≥ 3:1 contrast ratio.
+- **Progress:** **0%**
+
+## H-006 — Mission Control lacks content hierarchy and executive summary
+- **Status:** `OPEN`
+- **Why high:** Tab 0 renders 15+ sections in flat scroll. No executive summary,
+  no content grouping. Governance outputs (flags, scorecard) are buried below
+  technical metrics (TFT params, recon error). Policy officers cannot find
+  actionable information without scrolling through ML diagnostics.
+- **Root cause:** `dashboard.py` renders all results sequentially with
+  `st.markdown("---")` dividers. No grouping logic, no tab/accordion structure
+  within Mission Control.
+- **Proposed structure:**
+  1. Executive Summary (narrative + top 3 findings)
+  2. Governance Status (flags + scorecard + faithfulness)
+  3. Data Provenance (sources + jurisdictions + freshness)
+  4. System Diagnostics (collapsed: drift + kernel evolution + alignment)
+  5. Export (all formats)
+- **Progress:** **0%**
+
+## H-007 — Uncached expensive UI-layer computations
+- **Status:** `OPEN`
+- **Why high:** SAE training (100 epochs, 5–10s), counterfactual baseline SVD
+  (3–8s), UVT (120 epochs, 10–20s), and USE (150 epochs, 15–25s) all re-run
+  on every button click. This wastes user time and produces slightly different
+  results (torch stochastic init), conflicting with the reproducibility
+  invariant.
+- **Root cause:** Tab modules call training functions directly without checking
+  session state for cached results. No hash-based cache key mechanism.
+- **Alpha exit criteria:**
+  1. SAE, UVT, USE cached in `session_state` by input matrix hash.
+  2. Counterfactual reuses pipeline's baseline SVD from `ukt_snapshots[-1]`.
+  3. Re-click on unchanged data returns cached result instantly.
+- **Progress:** **0%**
+
+---
+
 ## Severity: MEDIUM
 
 ## M-001 — Governance artifact consistency in UI exports
@@ -205,6 +276,42 @@ Error audit against current codebase confirms:
 - **Current state:** Counterfactual region coloring now uses canonical
   `FEATURE_REGION_LABELS`; stale 64-d comments corrected to 80-d.
 - **Progress:** **100%**
+
+## M-004 — Hardcoded governance/display thresholds in tab modules
+- **Status:** `OPEN`
+- **Why medium:** 10 threshold values used in governance interpretation and
+  display logic are hardcoded in tab modules instead of centralized in
+  `config.py`. This conflicts with the "Centralized configuration" compliance
+  principle and makes auditing difficult.
+- **Thresholds to centralize:**
+  - `finance_tab.py`: forecast confidence 0.10/0.30
+  - `clusters_tab.py`: outlier ratio 0.30/0.10
+  - `agents_tab.py`: Gini concentration 0.50/0.25
+  - `interpreter_tab.py`: kernel expander threshold 0.20
+  - `counterfactual_tab.py`: RR cosine stability 0.95/0.80, shock range 32–47
+- **Progress:** **0%**
+
+## M-005 — Pipeline progress lacks per-block timing and API status
+- **Status:** `OPEN`
+- **Why medium:** The 15–30s pipeline run shows only flat text lines like
+  "Running Finance block..." in a single `st.status` container. No progress bar,
+  no per-block timing, no per-source API status during the 11-source news cascade.
+- **Progress:** **0%**
+
+## M-006 — Tab buttons silently overwrite pipeline results
+- **Status:** `OPEN`
+- **Why medium:** Each tab has a "Compute X" button that runs independently.
+  Clicking "Compute TFT Forecast" after the pipeline overwrites the pipeline's
+  finance result in session state with no warning or diff. Users cannot tell if
+  they're viewing pipeline results or manual overrides.
+- **Progress:** **0%**
+
+## M-007 — Counterfactual has no scenario memory
+- **Status:** `OPEN`
+- **Why medium:** Each counterfactual run overwrites the previous result. A
+  governance auditor cannot compare "remove Finance" vs. "remove Clusters"
+  side-by-side. This limits the practical utility of the contestability mechanism.
+- **Progress:** **0%**
 
 ## M-003 — Session-state lifecycle coverage for governance keys
 - **Status:** `DONE`

@@ -144,6 +144,26 @@ full API documentation and integration guide.
 
 ---
 
+## UI Status
+
+The backend pipeline, UKT framework, and governance layer are fully functional.
+The **UI rendering layer** has known gaps documented in `STRATEGY_UI.md`:
+
+| Area | Status | Key Issue |
+|------|--------|-----------|
+| Backend pipeline | **Complete** | 290 tests passing |
+| Governance logic | **Complete** | Flags, scorecard, faithfulness, drift |
+| Feature interpretability in charts | **Broken** | Reality Regression shows indices 0–79, not feature names |
+| Dark theme accessibility | **Failing** | Caption/label/tab text fails WCAG AA contrast |
+| Mission Control hierarchy | **Needs work** | 15+ flat sections, no executive summary |
+| Computation caching | **Incomplete** | SAE, counterfactual SVD, UVT, USE uncached |
+| Pipeline progress UX | **Minimal** | Single spinner for 15–30s, no per-block status |
+
+See `docs/alpha-1.0-issue-tracker.md` (H-004 through H-007) and
+`STRATEGY_UI.md` for full details and implementation plans.
+
+---
+
 ## Quick Start
 
 ```bash

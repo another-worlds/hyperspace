@@ -363,14 +363,68 @@ values.
 | Auditability | Snapshot preservation | Inspectable projection matrix, coupling list, thresholds | Feature evidence traces, reconstruction error | **Compliant** |
 | Graceful degradation | try/except with fallback data | Zero-energy regions decouple; SVD handles degenerate matrices | Canvas/narrative handle empty inputs | **Compliant** |
 | Centralized configuration | N/A | Thresholds in `config.py` | Canvas dimensions in `canvas.py` | **Compliant** |
+| UI interpretability | Feature names in charts | N/A | Reality Regression uses FEATURE_NAMES in hover/labels | **Non-Compliant** — shows indices 0–79, not names |
+| UI accessibility | WCAG AA contrast | N/A | All text meets 4.5:1 contrast on dark background | **Non-Compliant** — captions, labels, tabs fail |
+| UI progressive disclosure | Technical vs governance content separated | N/A | Mission Control groups governance outputs before diagnostics | **Non-Compliant** — 15+ flat sections, no hierarchy |
+| Threshold centralization | N/A | All thresholds in `config.py` | Display thresholds in `config.py` | **Partial** — 10 governance thresholds scattered in tab modules |
+| Computation caching | N/A | N/A | Expensive operations cached between clicks | **Non-Compliant** — SAE, counterfactual SVD, UVT, USE uncached |
 
 ---
 
-## 6. Open Directions (Post-Alpha)
+## 6. UI-Layer Compliance Gaps
 
-The Alpha 1.0 architecture satisfies the emergence and governance contracts
-above. The following directions are identified for future work but are NOT
-required for Alpha compliance:
+The Alpha 1.0 backend satisfies the emergence and governance contracts above.
+However, the **UI rendering layer** introduces compliance gaps that undermine
+the governance promise at the point of stakeholder interaction:
+
+### 6.1 Interpretability Broken at Display Time
+
+The Reality Regression chart (`interpreter_tab.py:264`, `counterfactual_tab.py:368`)
+is the system's primary feature-importance visualization. It displays 80 bars
+labeled by **feature index** (0, 1, 2...) instead of `FEATURE_NAMES` ("attention_recent_1d",
+"China: Eigenvector Centrality", etc.). The full provenance chain (raw data →
+feature → kernel → narrative) is intact in the backend, but the UI drops human-readable
+names at the final rendering step. This is a **critical vision failure**: the
+system is interpretable internally but opaque at the user interface.
+
+**Affected components**: `kernel_viz.plot_reality_regression()`, `_plot_rr_diff()`,
+counterfactual domain-level impact.
+
+### 6.2 Governance Content Buried Under Diagnostics
+
+Mission Control (Tab 0) renders 15+ sections in flat scroll order: 5 summary
+metrics → governance flags → alignment comparison → scorecard → narratives →
+faithfulness → drift → kernel evolution → contract → export. A policy officer
+seeking the governance scorecard must scroll past technical metrics they don't
+understand. The tab lacks an executive summary, content grouping, or table of
+contents.
+
+### 6.3 Contestability UX Incomplete
+
+The counterfactual tab correctly rebuilds the pipeline from raw features (§4.1
+above), but the UI does not support **scenario memory** — each counterfactual
+run overwrites the previous result. A governance auditor cannot compare
+"remove Finance" vs. "remove Clusters" side-by-side, which limits the practical
+utility of the contestability mechanism.
+
+### 6.4 Uncached Computation Degrades Repeatability
+
+SAE training (100 epochs), stability estimation (6+ SVD runs), and counterfactual
+baseline SVD all recompute on every button click with no session-state caching.
+This means identical inputs produce slightly different outputs (due to torch
+stochastic initialization), which conflicts with the reproducibility invariant
+(§2.3 above).
+
+See `STRATEGY_UI.md` for the full strategic UI audit and issue tracker.
+
+---
+
+## 7. Open Directions (Post-Alpha)
+
+The Alpha 1.0 backend architecture satisfies the emergence and governance
+contracts above. The UI-layer gaps (§6) must be resolved before the system
+can be considered compliant at the stakeholder-facing level. The following
+directions are identified for future work:
 
 1. **Learned cross-modal alignment.** Replace SVD with contrastive alignment
    objectives (InfoNCE) for stronger cross-modal binding.

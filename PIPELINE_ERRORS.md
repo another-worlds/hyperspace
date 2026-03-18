@@ -98,3 +98,18 @@ The attention mask is not set and cannot be inferred from input because pad toke
 2. `hyperspace/pages/dashboard.py` — `_compute_governance_flags()`
 
 **Resolution:** The duplicate implementation in `dashboard.py` has been removed. Governance flag computation is now consolidated in `PipelineRunner._compute_governance_flags()` (pipeline.py lines 531-635). Dashboard receives pre-computed flags from the `PipelineRunner` result and only renders them. All governance flags (GOV-001 through GOV-005) use consistent detection logic regardless of execution path.
+
+---
+
+## 6. UI-Layer Issues (identified 2026-03-18)
+
+A comprehensive UI audit identified additional issues at the rendering layer.
+These are not pipeline runtime errors but affect how results are presented:
+
+- **ERR-009** (HIGH): Reality Regression charts show feature indices 0–79 instead of names
+- **ERR-010** (HIGH): Dark theme CSS fails WCAG AA contrast for captions, labels, tabs
+- **H-006**: Mission Control has 15+ flat sections with no content hierarchy
+- **H-007**: SAE, counterfactual SVD, UVT, USE uncached between button clicks
+
+See `docs/critical-errors-and-future-proposals.md` and `STRATEGY_UI.md` for
+full details and remediation plans.

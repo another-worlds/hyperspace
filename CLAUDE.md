@@ -48,6 +48,46 @@
 | 6 | Hyperspace Pipeline | End-to-end orchestration |
 | 7 | Counterfactual | Block removal + diff analysis (contestability) |
 
+### Known UI Issues & Constraints
+
+See `STRATEGY_UI.md` for the full strategic audit. Key constraints:
+
+- **WCAG contrast failures**: Caption text (`#2d4a66`), metric labels (`#3d5673`),
+  inactive tabs (`#3d5673`), and expander summaries (`#567090`) all fail WCAG AA
+  minimum contrast (4.5:1) against the `#070d1a` background. Fix before any
+  user-facing deployment.
+- **Feature names not shown**: Reality Regression chart (interpreter_tab.py,
+  counterfactual_tab.py) displays feature indices 0–79 instead of
+  `FEATURE_NAMES`. This breaks the core interpretability promise.
+- **Uncached heavy computation**: SAE training (100 epochs), counterfactual
+  baseline SVD, UVT (120 epochs), and USE (150 epochs) all re-run on every
+  button click with no session-state caching.
+- **Hardcoded thresholds**: 10 governance/display thresholds are scattered across
+  tab modules instead of centralized in `config.py`. See STRATEGY_UI.md §6
+  "Hardcoded Thresholds to Centralize" for the full list.
+- **Mission Control content hierarchy**: 15+ sections in flat scroll with no
+  grouping or executive summary. Policy users must scroll past technical
+  diagnostics to find governance outputs.
+- **Pipeline progress**: Single `st.status` for 15-30s with no per-block timing,
+  no progress bar, no per-source API status.
+
+### UI Development Principles
+
+When modifying UI code, follow these rules in addition to the style guide:
+
+1. **Feature names over indices** — Always use `FEATURE_NAMES[idx]` or
+   `registry.feature_name(idx)` in hover templates and axis labels
+2. **Cache expensive results** — Any computation >1s must be cached in
+   `st.session_state` keyed by input hash, or via `@st.cache_data`/`@st.cache_resource`
+3. **Centralize thresholds** — All magic numbers used in governance/display logic
+   belong in `config.py` with descriptive constant names
+4. **Contrast compliance** — All text elements must meet WCAG AA (4.5:1 for body,
+   3:1 for large text) against the dark background
+5. **Progressive disclosure** — Technical diagnostics collapsed by default;
+   governance outputs prominent and early in the page
+6. **Hover templates** — Every Plotly chart must have a `hovertemplate` with
+   human-readable field names, not just default Plotly hover
+
 ### Development Commands
 ```bash
 pip install -r requirements.txt

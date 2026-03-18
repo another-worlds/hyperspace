@@ -49,6 +49,15 @@ vision of learned, modality-agnostic, cross-domain representation alignment.
    - The interpreter tab and pipeline reports expose kernel labels, semantic
      dimensions, and layer-level narratives.
 
+**Note (2026-03-18):** A UI-layer audit (`STRATEGY_UI.md`) found that while
+the backend is well-aligned, the **rendering layer** undermines several of
+these strengths — e.g., the Reality Regression chart drops feature names at
+display time (showing indices instead), Mission Control buries governance
+outputs under technical diagnostics, and expensive computations (SAE, UVT)
+re-run on every click. See `docs/vision-compliance.md` §6 for compliance
+matrix updates and `docs/alpha-1.0-issue-tracker.md` H-004 through H-007
+for tracked issues.
+
 ### Structural gaps vs target UKT design
 
 1. **Latent space is hand-partitioned, not learned jointly**
