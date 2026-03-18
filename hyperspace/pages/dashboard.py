@@ -22,6 +22,12 @@ from hyperspace.core.temporal_memory import KernelMemory
 from hyperspace.core.latent_versioning import LatentVersionTrail
 from hyperspace.core.parallel_fetch import fetch_all_data_parallel, fetch_models_parallel
 from hyperspace.core.logging import StructuredLogger, log_pipeline_step
+from hyperspace.viz.pipeline_progress import (
+    PipelineProgressTracker,
+    StreamlitProgressContext,
+    render_pipeline_progress,
+    render_timing_summary,
+)
 
 
 _DRIFT_PERSIST_PATH = ".hyperspace/drift_history.json"
@@ -138,9 +144,19 @@ def render_landing() -> None:
 
 def run_pipeline() -> None:
     """Execute dashboard pipeline via canonical PipelineRunner orchestration."""
+    # Create progress tracker
+    tracker = PipelineProgressTracker()
+    tracker.add_block("data_fetch", "Gathering market signals, news, geopolitical data, and spatial layers")
+    tracker.add_block("model_training", "Training TFT and BERTopic models")
+    tracker.add_block("core_pipeline", "Running graph, agents, and interpretation analysis")
+    tracker.add_block("governance_analysis", "Computing flags, compliance scorecard, and audit trail")
+
     with st.status("Running Hyperspace Pipeline...", expanded=True) as status:
         # ---- Step 1: Fetch Data in Parallel ----
-        st.write("📥 Fetching real data sources (finance, news, political, spatial) in parallel...")
+        with StreamlitProgressContext(
+            tracker, "data_fetch", "Fetching data sources in parallel..."
+        ) as block:
+            st.write("📥 Fetching real data sources (finance, news, political, spatial) in parallel...")
         tickers = st.session_state.get("tickers", DEFAULT_TICKERS) or DEFAULT_TICKERS
         import time
         fetch_start = time.time()
@@ -162,18 +178,20 @@ def run_pipeline() -> None:
                 log_pipeline_step(f"data_fetch_{source}", "failed", error_msg=str(error))
                 st.warning(f"⚠️ {source.upper()}: {error}")
 
-        if not fetch_result.is_complete():
-            missing = fetch_result.get_missing()
-            status.update(
-                label=f"Pipeline blocked: missing {', '.join(missing)}",
-                state="error"
-            )
-            st.error(f"Cannot proceed without: {', '.join(missing)}")
-            return
+            if not fetch_result.is_complete():
+                missing = fetch_result.get_missing()
+                status.update(
+                    label=f"Pipeline blocked: missing {', '.join(missing)}",
+                    state="error"
+                )
+                st.error(f"Cannot proceed without: {', '.join(missing)}")
+                block.fail(f"Missing: {', '.join(missing)}")
+                return
 
-        fetch_duration = time.time() - fetch_start
-        st.write(f"✓ Data fetching complete ({fetch_duration:.1f}s): {fetch_result.ohlcv_source} | {fetch_result.docs_source} | {fetch_result.agreement_source}")
-        log_pipeline_step("data_fetch", "completed", duration_sec=fetch_duration)
+            fetch_duration = time.time() - fetch_start
+            st.write(f"✓ Data fetching complete ({fetch_duration:.1f}s): {fetch_result.ohlcv_source} | {fetch_result.docs_source} | {fetch_result.agreement_source}")
+            log_pipeline_step("data_fetch", "completed", duration_sec=fetch_duration)
+            block.complete(f"Fetched from {fetch_result.ohlcv_source}, {fetch_result.docs_source}, {fetch_result.agreement_source}")
 
         # Extract fetched data
         ohlcv_df = fetch_result.ohlcv_df
@@ -205,51 +223,61 @@ def run_pipeline() -> None:
         st.session_state.timeframe_context = timeframe_context
 
         # ---- Step 2: Train Models in Parallel ----
-        st.write("⚙️ Training models (TFT, BERTopic) in parallel...")
-        model_start = time.time()
+        with StreamlitProgressContext(
+            tracker, "model_training", "Training TFT and BERTopic models in parallel..."
+        ) as block:
+            st.write("⚙️ Training models (TFT, BERTopic) in parallel...")
+            model_start = time.time()
 
-        model_results = fetch_models_parallel(
-            tickers=tuple(tickers),
-            docs=docs,
-            docs_source=docs_src,
-            max_workers=2,
-        )
+            model_results = fetch_models_parallel(
+                tickers=tuple(tickers),
+                docs=docs,
+                docs_source=docs_src,
+                max_workers=2,
+            )
 
-        # Check model training results
-        tft_result = model_results.get("tft_result")
-        cluster_result = model_results.get("bertopic_result")
+            # Check model training results
+            tft_result = model_results.get("tft_result")
+            cluster_result = model_results.get("bertopic_result")
 
-        if "tft_error" in model_results:
-            status.update(label="Pipeline blocked: TFT fitting failed", state="error")
-            st.error(f"TFT fitting failed: {model_results['tft_error']}")
-            log_pipeline_step("tft_training", "failed", error_msg=str(model_results.get("tft_error")))
-            return
+            if "tft_error" in model_results:
+                status.update(label="Pipeline blocked: TFT fitting failed", state="error")
+                st.error(f"TFT fitting failed: {model_results['tft_error']}")
+                log_pipeline_step("tft_training", "failed", error_msg=str(model_results.get("tft_error")))
+                block.fail(str(model_results.get("tft_error")))
+                return
 
-        if "bertopic_error" in model_results:
-            status.update(label="Pipeline blocked: BERTopic unavailable", state="error")
-            st.error(f"BERTopic fitting failed: {model_results['bertopic_error']}")
-            log_pipeline_step("bertopic_fitting", "failed", error_msg=str(model_results.get("bertopic_error")))
-            return
+            if "bertopic_error" in model_results:
+                status.update(label="Pipeline blocked: BERTopic unavailable", state="error")
+                st.error(f"BERTopic fitting failed: {model_results['bertopic_error']}")
+                log_pipeline_step("bertopic_fitting", "failed", error_msg=str(model_results.get("bertopic_error")))
+                block.fail(str(model_results.get("bertopic_error")))
+                return
 
-        model_duration = time.time() - model_start
-        st.write(f"✓ Model training complete ({model_duration:.1f}s)")
-        log_pipeline_step("model_training", "completed", duration_sec=model_duration)
+            model_duration = time.time() - model_start
+            st.write(f"✓ Model training complete ({model_duration:.1f}s)")
+            log_pipeline_step("model_training", "completed", duration_sec=model_duration)
+            block.complete("TFT and BERTopic models trained successfully")
 
         # ---- Step 3: Canonical orchestration (single path) ----
-        st.write("Running canonical pipeline runner for graph/spatial/agents/interpreter...")
-        runner = PipelineRunner(
-            drift_monitor=_get_drift_monitor(),
-            kernel_memory=_get_kernel_memory(),
-            version_trail=_get_version_trail(),
-        )
-        result = runner.run(
-            finance_result=tft_result,
-            cluster_result=cluster_result,
-            agreement_matrix=agreement,
-            spatial_data=raw_spatial,
-            timeframe_context=timeframe_context,
-            compute_cross_block=True,
-        )
+        with StreamlitProgressContext(
+            tracker, "core_pipeline", "Graph and agent simulation analysis underway..."
+        ) as block:
+            st.write("Running canonical pipeline runner for graph/spatial/agents/interpreter...")
+            runner = PipelineRunner(
+                drift_monitor=_get_drift_monitor(),
+                kernel_memory=_get_kernel_memory(),
+                version_trail=_get_version_trail(),
+            )
+            result = runner.run(
+                finance_result=tft_result,
+                cluster_result=cluster_result,
+                agreement_matrix=agreement,
+                spatial_data=raw_spatial,
+                timeframe_context=timeframe_context,
+                compute_cross_block=True,
+            )
+            block.complete("Core pipeline executed successfully")
 
         st.session_state.run_id = result.get("run_id")
         st.session_state.run_timestamp = result.get("run_timestamp")
@@ -280,10 +308,20 @@ def run_pipeline() -> None:
         st.session_state.kernel_evolution = result.get("kernel_evolution")
         st.session_state.latent_version = result.get("latent_version")
 
-        # Persist drift history, kernel memory, and version trail to disk
-        _save_drift_monitor()
-        _save_kernel_memory()
-        _save_version_trail()
+        # ---- Step 4: Governance Analysis ----
+        with StreamlitProgressContext(
+            tracker, "governance_analysis", "Computing compliance scorecard and audit trail..."
+        ) as block:
+            # Persist drift history, kernel memory, and version trail to disk
+            _save_drift_monitor()
+            _save_kernel_memory()
+            _save_version_trail()
+            block.complete("Governance analysis complete")
+
+        # Finalize progress tracking and display summary
+        tracker.finalize()
+        st.markdown("---")
+        render_timing_summary(tracker)
 
         status.update(label="Pipeline complete!", state="complete")
         st.session_state.pipeline_complete = True
