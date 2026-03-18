@@ -18,7 +18,9 @@ from hyperspace.config import (
     FEATURE_NAMES,
     PLOTLY_LAYOUT,
     POLICY_KERNEL_NAMES,
+    STRUCTURAL_REGION_BOUNDS,
 )
+from hyperspace.core.caching import get_or_compute_svd, make_svd_cache_key
 from hyperspace.models.knowledge_matrix import (
     FEATURE_REGION_LABELS,
     estimate_reality_regression_stability,
@@ -278,9 +280,10 @@ def render() -> None:
         )
         inject_shock = st.checkbox("Inject sign flip on structural features", key="cf_inject_shock")
         if inject_shock:
+            lo, hi = STRUCTURAL_REGION_BOUNDS
             shock_feature = st.slider(
-                "Feature index to flip (structural region: 32–47):",
-                min_value=32, max_value=47, value=35,
+                f"Feature index to flip (structural region: {lo}–{hi}):",
+                min_value=lo, max_value=hi, value=(lo + hi) // 2,
                 key="cf_shock_feature",
             )
             st.caption(
