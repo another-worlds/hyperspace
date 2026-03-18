@@ -21,6 +21,7 @@ from hyperspace.core.caching import (
     get_cache_stats,
     make_sae_cache_key,
 )
+from hyperspace.core.logging import StructuredLogger, log_sae_training
 from hyperspace.models.sparse_ae import train_sparse_ae, map_concepts_to_kernels
 from hyperspace.models.semantic_canvas import CANVAS_DIMENSIONS
 from hyperspace.viz import kernel_viz
@@ -61,6 +62,11 @@ def render() -> None:
                     matrix = final_snap["matrix"]
 
                     # Use improved caching system with hyperparameter hashing
+                    import time
+                    start_time = time.time()
+                    cache_key = make_sae_cache_key(matrix, 16, 100)
+                    was_cached = f"cache_{cache_key}" in st.session_state
+
                     def _train_sae(m, hidden_dim, epochs):
                         return train_sparse_ae(m, hidden_dim=hidden_dim, epochs=epochs)
 
@@ -71,6 +77,9 @@ def render() -> None:
                         compute_fn=_train_sae,
                         force_retrain=force_retrain,
                     )
+
+                    duration = time.time() - start_time
+                    log_sae_training(cached=was_cached, hidden_dim=16, epochs=100, duration_sec=duration)
 
                     if sae_result and final_snap:
                         concept_kernel_map = map_concepts_to_kernels(
