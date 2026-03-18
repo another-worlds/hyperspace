@@ -131,29 +131,21 @@ Scorecard computation is now consolidated in `PipelineRunner._compute_scorecard(
 ### FEAT-001: Temporal Windowed UKT — Rolling Kernel Analysis
 
 **Priority:** HIGH
+**Status:** **PARTIALLY IMPLEMENTED** (verified 2026-03-17)
+
 **Rationale:** Currently the UKT accumulates blocks as a static (n_blocks x 80) matrix with one row per modality. There is no temporal dimension — a pipeline run captures a single point in time.
 
-**Proposal:**
-Add a **rolling window mode** where the UKT maintains the last N pipeline runs (e.g., daily runs over 30 days). Each run becomes a row, enabling:
-- Kernel **drift detection**: alert when kernel structure shifts significantly between runs
-- **Temporal kernel evolution**: track how the same kernel's feature loadings change over time
-- **Trend decomposition**: decompose kernels into trend + cyclical + noise components
+**What exists:**
+- `DriftMonitor` (`hyperspace/core/drift_monitor.py:99-247`): Rolling window history of run snapshots, windowed cosine drift detection (DRIFT-001/002/003), configurable alert thresholds, disk persistence via JSON.
+- `KernelMemory` (`hyperspace/core/temporal_memory.py:60-283`): Per-block kernel evolution tracking, importance trends, reconstruction error trends, regression cosines between consecutive runs, disk persistence.
+- Pipeline integration: Both are wired into `PipelineRunner.run()` (pipeline.py lines 423-427, 453-494) and results exported to `PipelineResult`.
 
-**Implementation Sketch:**
-```python
-class TemporalUKT:
-    def __init__(self, window_size=30, feature_dim=80):
-        self.window: deque[np.ndarray] = deque(maxlen=window_size)
+**What remains unimplemented:**
+- `TemporalUKT` class with SVD on time-stacked (n_runs, 80) matrix to produce temporal modes (U) and feature modes (Vt).
+- Trend decomposition (trend + cyclical + noise) of kernel evolution.
+- Per-kernel drift detail (which specific features drove the drift).
 
-    def add_run(self, run_regression: np.ndarray) -> dict:
-        self.window.append(run_regression)
-        matrix = np.stack(list(self.window))
-        # SVD on time-windowed matrix gives temporal kernels
-        U, S, Vt = np.linalg.svd(matrix, full_matrices=False)
-        # U columns = temporal modes (which runs activate which kernel)
-        # Vt rows = feature modes (same as current kernels)
-        return {"temporal_kernels": Vt, "run_activations": U, ...}
-```
+**Note:** The codebase chose pairwise cosine similarity-based drift detection instead of the time-stacked SVD approach. This addresses the governance use case ("Has the system's understanding changed?") through a different mechanism.
 
 **Governance Value:** Enables the question "Has the system's understanding changed recently?" — critical for detecting data distribution shifts.
 
@@ -162,7 +154,9 @@ class TemporalUKT:
 ### FEAT-002: Causal Graph Overlay on Kernel Structure
 
 **Priority:** HIGH
-**Rationale:** The current system discovers **correlational** structure (SVD kernels capture co-variation). Users and policymakers frequently misinterpret correlation as causation. The governance framing explicitly warns against this (dashboard.py line 302) but offers no tools to explore causal hypotheses.
+**Status:** **NOT IMPLEMENTED** (verified 2026-03-17)
+
+**Rationale:** The current system discovers **correlational** structure (SVD kernels capture co-variation). Users and policymakers frequently misinterpret correlation as causation. The governance framing explicitly warns against this but offers no tools to explore causal hypotheses.
 
 **Proposal:**
 Integrate a lightweight **causal discovery** layer:
@@ -171,6 +165,8 @@ Integrate a lightweight **causal discovery** layer:
 3. Distinguish "kernel loads on features X and Y" (correlation) from "X → Y is a plausible causal path" (directed edge)
 4. Add a "Causal Audit" governance flag (GOV-006) when a kernel's top features have no discoverable causal links — indicating the pattern may be spurious
 
+**Current state:** No causal discovery libraries are imported. No DAG inference code exists. GOV-006 is not defined (config.py only has GOV-001 through GOV-005). Kernel visualizations in `hyperspace/viz/kernel_viz.py` show correlational structure only.
+
 **Governance Value:** Directly addresses the "correlation ≠ causation" limitation. Enables policymakers to ask "Is this pattern causal or coincidental?"
 
 ---
@@ -178,26 +174,21 @@ Integrate a lightweight **causal discovery** layer:
 ### FEAT-003: Multi-Run Governance Audit Trail with Persistent Storage
 
 **Priority:** HIGH
+**Status:** **PARTIALLY IMPLEMENTED** (verified 2026-03-17)
+
 **Rationale:** Currently, `run_id` and `run_timestamp` exist only in Streamlit session state — they vanish when the browser tab closes. For a governance tool, non-repudiation requires persistent audit trails.
 
-**Proposal:**
-1. Add a lightweight SQLite backend (`hyperspace/storage/audit.py`)
-2. After each pipeline run, persist: `run_id`, `run_timestamp`, `data_sources`, `governance_flags`, `scorecard`, `reality_regression` vector, `kernel_labels`
-3. Add a "Run History" tab showing prior runs with diff capabilities
-4. Enable cross-run governance queries: "Has GOV-001 fired in the last 7 runs?"
+**What exists:**
+- `DriftMonitor` persists run history to disk via JSON (`hyperspace/core/drift_monitor.py:249-284`): `save_to_disk()` / `load_from_disk()` to `.hyperspace/drift_history.json`.
+- `KernelMemory` persists kernel evolution to disk (`hyperspace/core/temporal_memory.py`): `.save()` / `.load()` to `.hyperspace/kernel_memory.json`.
+- `LatentVersionTrail` persists latent space versions (`hyperspace/core/latent_versioning.py:180-324`): structural change detection, vocabulary drift detection, concept audit records to `.hyperspace/latent_versions.json`.
+- Dashboard loads/saves all three on startup/completion (`dashboard.py:28-100`).
 
-**Schema:**
-```sql
-CREATE TABLE runs (
-    run_id TEXT PRIMARY KEY,
-    timestamp TEXT,
-    data_sources JSON,
-    governance_flags JSON,
-    scorecard JSON,
-    reality_regression BLOB,  -- numpy array serialized
-    n_kernels INTEGER
-);
-```
+**What remains unimplemented:**
+- SQLite backend (`hyperspace/storage/audit.py`) — storage is JSON-only across 3 separate files.
+- "Run History" tab for browsing and comparing historical runs.
+- Cross-run governance queries ("Has GOV-001 fired in the last 7 runs?").
+- Unified run table with `run_id`, `data_sources`, `governance_flags`, `scorecard`, `reality_regression`, and `kernel_labels` in a single queryable store.
 
 **Governance Value:** Enables regulatory compliance — auditors can inspect historical runs without re-executing the pipeline.
 
@@ -206,28 +197,18 @@ CREATE TABLE runs (
 ### FEAT-004: Adversarial Robustness Testing for UKT
 
 **Priority:** MEDIUM
+**Status:** **PARTIALLY IMPLEMENTED** (verified 2026-03-17) — random perturbation only, no adversarial testing
+
 **Rationale:** The stability test (8 noisy runs with Gaussian perturbation at std=0.01) is a good start but only tests random noise. It does not test **adversarial** perturbations — targeted modifications designed to flip a kernel's conclusion.
 
-**Proposal:**
-1. Implement a **minimal adversarial perturbation** finder: for each kernel, find the smallest feature change that flips the kernel's dominant region
-2. Report the "adversarial budget" per kernel — how much targeted noise is needed to change the conclusion
-3. Add GOV-007: "Adversarially Fragile Kernel" when the budget is below a threshold
-4. Visualize adversarial sensitivity as a heatmap (kernels x features)
+**What exists:**
+- Gaussian stability test (`ukt/stability.py:12-60`): `estimate_regression_stability()` adds random noise and measures cosine similarity across perturbed regression vectors.
+- Stability visualization in governance panel (`hyperspace/pages/governance.py:494-514`) with traffic-light verdicts.
 
-**Implementation Sketch:**
-```python
-def find_adversarial_budget(matrix, target_kernel, max_iters=100):
-    """Binary search for minimal perturbation that flips kernel dominant region."""
-    eps_lo, eps_hi = 0.0, 1.0
-    for _ in range(max_iters):
-        eps = (eps_lo + eps_hi) / 2
-        perturbed = matrix.copy()
-        # Perturb only the target kernel's dominant region
-        perturbed[:, lo:hi] += eps * gradient_direction
-        # Re-SVD and check if dominant region changed
-        ...
-    return eps  # adversarial budget
-```
+**What remains unimplemented:**
+- `find_adversarial_budget()` — targeted perturbation finder.
+- GOV-007 "Adversarially Fragile Kernel" flag — not defined in config.py.
+- Per-kernel adversarial sensitivity heatmap (kernels x features).
 
 **Governance Value:** Answers "How much would someone need to manipulate the data to change this conclusion?" — directly relevant to AI safety and manipulation resistance.
 
@@ -236,16 +217,19 @@ def find_adversarial_budget(matrix, target_kernel, max_iters=100):
 ### FEAT-005: Interactive Feature Attribution Drilldown
 
 **Priority:** MEDIUM
-**Rationale:** The provenance trace panel (`governance.py:71-100`) provides per-feature audit chains, but users must navigate a sidebar selectbox for one feature at a time. There is no visual way to "click on a kernel and see what drives it."
+**Status:** **NOT IMPLEMENTED** (verified 2026-03-17) — static provenance exists, no interactive drilldown
 
-**Proposal:**
-1. Make kernel labels in the Plotly charts **clickable** (using Plotly `customdata` + Streamlit click events)
-2. On click, expand an inline attribution panel showing:
-   - Top-5 features with full provenance metadata
-   - Data source, entity, metric, time scope
-   - Which other kernels share these features (cross-kernel coupling)
-   - Counterfactual impact: "If this feature were zeroed, kernel importance would change by X%"
-3. Add a "Feature Dependency Graph" visualization: features as nodes, kernels as hyperedges
+**Rationale:** The provenance trace panel (`governance.py:71-170`) provides per-feature audit chains, but users must navigate a sidebar selectbox for one feature at a time. There is no visual way to "click on a kernel and see what drives it."
+
+**What exists:**
+- Static provenance panel (`hyperspace/pages/governance.py:71-170`): per-feature audit chains via sidebar selectbox, kernel loadings metadata, reality regression weights, SAE concept connections, jurisdiction badges, stakeholder annotations.
+
+**What remains unimplemented:**
+- Plotly `customdata` + `clickData` for clickable kernel labels.
+- Inline attribution panel on kernel click.
+- Cross-kernel coupling view ("which other kernels share these features").
+- Counterfactual impact estimates ("zeroing this feature changes importance by X%").
+- Feature Dependency Graph visualization (features as nodes, kernels as hyperedges).
 
 **Governance Value:** Enables non-technical policymakers to interactively explore "Why did the system conclude X?" without understanding SVD mathematics.
 
@@ -254,7 +238,11 @@ def find_adversarial_budget(matrix, target_kernel, max_iters=100):
 ### FEAT-006: Expand Geopolitical Graph Beyond 6 Actors
 
 **Priority:** MEDIUM
-**Rationale:** The system hardcodes 6 geopolitical actors (USA, Russia, China, Britain, India, Brazil). The `GEOPOLITICAL_NODES` and `GEOPOLITICAL_EDGES` in `config.py` are static. The System Accountability Statement already acknowledges "systemic omissions exist."
+**Status:** **NOT IMPLEMENTED** (verified 2026-03-17)
+
+**Rationale:** The system hardcodes 6 geopolitical actors (USA, Russia, China, Britain, India, Brazil). The `GEOPOLITICAL_NODES` and `GEOPOLITICAL_EDGES` in `config.py:306-313` are static. The System Accountability Statement already acknowledges "systemic omissions exist."
+
+**Current state:** `GEOPOLITICAL_NODES` is a static dict with exactly 6 entries. Agent count is derived from this dict (`agent_sim.py:61`). No sidebar multiselect for actor selection exists. Pipeline passes `list(GEOPOLITICAL_NODES.keys())` directly to spatial module.
 
 **Proposal:**
 1. Make the node set configurable via sidebar multiselect (from a larger pool of ~20 actors)
@@ -270,35 +258,17 @@ def find_adversarial_budget(matrix, target_kernel, max_iters=100):
 ### FEAT-007: Unified Pipeline Runner in Dashboard (Architecture Consolidation)
 
 **Priority:** HIGH (prerequisite for all other features)
+**Status:** **FULLY IMPLEMENTED** (verified 2026-03-17)
+
 **Rationale:** ERR-001 and ERR-002 describe the dual-pipeline problem. This proposal formalizes the fix.
 
-**Proposal:**
-1. Refactor `dashboard.py:run_pipeline()` into two phases:
-   - **Phase A: Data Fetch** (keeps `st.status` UI, handles errors with `st.error`)
-   - **Phase B: Pipeline Execution** (calls `PipelineRunner.run()` with fetched data)
-2. Map `PipelineResult` fields to `st.session_state` in a single function
-3. Delete `_compute_governance_flags()` and `_compute_scorecard()` from `dashboard.py`
-4. Update tests to verify that `PipelineRunner` output matches what the UI expects
-
-**Target State:**
-```python
-# dashboard.py — Phase B becomes:
-def run_pipeline():
-    # Phase A: fetch data (with st.status UI)
-    finance_result, cluster_result, agreement, spatial = _fetch_all_data()
-
-    # Phase B: delegate to tested runner
-    runner = PipelineRunner(on_step=lambda s, m: st.write(m))
-    result = runner.run(
-        finance_result=finance_result,
-        cluster_result=cluster_result,
-        agreement_matrix=agreement,
-        spatial_data=spatial,
-    )
-
-    # Phase C: map result to session state
-    _store_pipeline_result(result)
-```
+**Resolution:**
+Dashboard now follows the exact target architecture:
+- **Phase A** (`dashboard.py:137-220`): Data fetching with `st.status` progress UI.
+- **Phase B** (`dashboard.py:226-238`): `runner = PipelineRunner(...)` then `result = runner.run(...)`.
+- **Phase C** (`dashboard.py:240-267`): Hydrates `st.session_state` from `PipelineResult` dict.
+- `_compute_governance_flags()` and `_compute_scorecard()` have been deleted from dashboard.
+- All governance logic is canonical in `PipelineRunner` (pipeline.py).
 
 **Governance Value:** Single source of truth for all governance computations. Tests validate exactly the code that runs in production.
 
@@ -307,23 +277,22 @@ def run_pipeline():
 ### FEAT-008: Export Pipeline Results as Machine-Readable Governance Package
 
 **Priority:** MEDIUM
+**Status:** **PARTIALLY IMPLEMENTED** (verified 2026-03-17) — individual exports exist, no unified package
+
 **Rationale:** Current exports are Markdown reports and CSV metrics. For regulatory compliance and inter-system interoperability, a structured machine-readable format is needed.
 
-**Proposal:**
-Add a "Governance Package" export (JSON + numpy arrays in a zip archive):
-```
-hyperspace_governance_pkg_{run_id}.zip
-├── manifest.json           # run_id, timestamp, version, data_sources
-├── governance_flags.json   # all detected flags with detail
-├── scorecard.json          # pass/fail for each dimension
-├── reality_regression.npy  # 80-dim vector
-├── kernel_labels.json      # all kernel metadata
-├── provenance_chains.json  # per-feature audit trail
-├── counterfactual/         # if run
-│   ├── {block}_removed.json
-│   └── {block}_rr_diff.npy
-└── signatures.json         # SHA-256 hashes of all included files
-```
+**What exists** (`dashboard.py:968-1059`):
+- Markdown governance report download (stamped with `run_id`)
+- Metrics CSV (kernel importances per run)
+- Scorecard CSV (pass/fail dimensions)
+- Contract compliance CSV (per-module compliance)
+- Diagnostics CSV (alignment metrics, faithfulness, drift)
+
+**What remains unimplemented:**
+- Unified zip archive packaging (`hyperspace_governance_pkg_{run_id}.zip`)
+- `manifest.json`, `signatures.json` (SHA-256 tamper detection)
+- `reality_regression.npy`, `kernel_labels.json`, `provenance_chains.json`
+- Counterfactual diffs in package
 
 **Governance Value:** Enables downstream systems, regulatory bodies, or audit frameworks to ingest Hyperspace outputs programmatically. The `signatures.json` provides tamper detection.
 
@@ -332,13 +301,17 @@ hyperspace_governance_pkg_{run_id}.zip
 ### FEAT-009: Semantic Canvas as Shared Embedding Space Across Runs
 
 **Priority:** LOW
+**Status:** **NOT IMPLEMENTED** (verified 2026-03-17) — canvas exists within-run only
+
 **Rationale:** The Semantic Canvas (12 named dimensions) currently resets every run. Its value as a "shared semantic coordinate system" is limited to within a single pipeline execution.
 
-**Proposal:**
-1. Persist canvas coordinates across runs (using FEAT-003's SQLite backend)
+**Current state:** `SemanticCanvas` (`semantic_interpreter/canvas.py:36-232`) accumulates coordinates within a single run via `project_block()` and `get_accumulated_state()`. It has no `save()`/`load()` methods for cross-run persistence. Canvas is destroyed on Streamlit rerun.
+
+**What remains unimplemented:**
+1. Persist canvas coordinates across runs
 2. Compute canvas **velocity** (how fast coordinates shift between runs)
-3. Visualize a "semantic trajectory" — the system's understanding moving through the 12-dim space over time
-4. Alert when velocity exceeds a threshold (rapid semantic shift → possible data regime change)
+3. Visualize a "semantic trajectory" across time
+4. Alert when velocity exceeds a threshold
 
 **Governance Value:** Provides an intuitive, non-technical view of "Is the world changing according to this system?" that policymakers can monitor without understanding SVD.
 
@@ -347,7 +320,11 @@ hyperspace_governance_pkg_{run_id}.zip
 ### FEAT-010: Real-Time Data Streaming with Incremental UKT Updates
 
 **Priority:** LOW
+**Status:** **NOT IMPLEMENTED** (verified 2026-03-17)
+
 **Rationale:** The current architecture is batch-mode: fetch all data, run full pipeline, display results. For operational use, incremental updates as new data arrives would reduce latency.
+
+**Current state:** Architecture is entirely synchronous and batch-based. No WebSocket listeners, no `asyncio` usage, no incremental SVD, no stale data timers. Pipeline executes as a blocking `result = runner.run(...)` call.
 
 **Proposal:**
 1. Add a websocket listener for streaming data sources (yfinance real-time, GDELT GKG streaming)
@@ -374,15 +351,15 @@ hyperspace_governance_pkg_{run_id}.zip
 
 ## Appendix: Feature Priority Matrix
 
-| ID | Priority | Effort | Governance Value |
-|----|----------|--------|-----------------|
-| FEAT-007 | HIGH | Medium | Prerequisite for correctness |
-| FEAT-001 | HIGH | Medium | Temporal drift detection |
-| FEAT-002 | HIGH | Large | Causal vs correlational clarity |
-| FEAT-003 | HIGH | Medium | Persistent audit trail |
-| FEAT-004 | MEDIUM | Medium | Adversarial robustness |
-| FEAT-005 | MEDIUM | Medium | Interactive attribution |
-| FEAT-006 | MEDIUM | Large | Broader geopolitical coverage |
-| FEAT-008 | MEDIUM | Small | Machine-readable exports |
-| FEAT-009 | LOW | Medium | Cross-run semantic tracking |
-| FEAT-010 | LOW | Large | Real-time operation |
+| ID | Priority | Effort | Governance Value | Status |
+|----|----------|--------|-----------------|--------|
+| FEAT-007 | HIGH | Medium | Prerequisite for correctness | **DONE** |
+| FEAT-001 | HIGH | Medium | Temporal drift detection | **PARTIAL** — DriftMonitor + KernelMemory done; TemporalUKT SVD not done |
+| FEAT-002 | HIGH | Large | Causal vs correlational clarity | **NOT STARTED** |
+| FEAT-003 | HIGH | Medium | Persistent audit trail | **PARTIAL** — JSON persistence done; SQLite/queries not done |
+| FEAT-004 | MEDIUM | Medium | Adversarial robustness | **PARTIAL** — Gaussian stability done; adversarial testing not done |
+| FEAT-005 | MEDIUM | Medium | Interactive attribution | **NOT STARTED** — static provenance only |
+| FEAT-006 | MEDIUM | Large | Broader geopolitical coverage | **NOT STARTED** |
+| FEAT-008 | MEDIUM | Small | Machine-readable exports | **PARTIAL** — 5 exports done; zip package not done |
+| FEAT-009 | LOW | Medium | Cross-run semantic tracking | **NOT STARTED** |
+| FEAT-010 | LOW | Large | Real-time operation | **NOT STARTED** |
