@@ -330,13 +330,56 @@ def render() -> None:
                 st.session_state.counterfactual_result = cf_result
                 st.session_state.counterfactual_removed_block = removed_block
                 st.session_state.cf_cache_key = cf_cache_key
+
+                # Store in scenario history (keep last 5)
+                if "cf_scenario_history" not in st.session_state:
+                    st.session_state.cf_scenario_history = []
+
+                scenario = {
+                    "name": f"CF_{len(st.session_state.cf_scenario_history) + 1}: Remove {removed_block}",
+                    "removed_block": removed_block,
+                    "result": cf_result,
+                    "shock_injected": shock_on,
+                }
+                st.session_state.cf_scenario_history.append(scenario)
+                if len(st.session_state.cf_scenario_history) > 5:
+                    st.session_state.cf_scenario_history.pop(0)
+
             st.success(f"Counterfactual computed. Block '{removed_block}' excluded from analysis.")
 
-    # Display results
-    cf_result = st.session_state.get("counterfactual_result")
-    if cf_result is None:
-        st.caption("Select a block to remove and click 'Run Counterfactual' to begin.")
-        return
+    # Scenario Management UI
+    scenario_history = st.session_state.get("cf_scenario_history", [])
+    if scenario_history:
+        st.markdown("---")
+        st.markdown("### 📊 Scenario Comparison")
+
+        col1, col2 = st.columns([2, 1])
+        with col1:
+            scenario_names = [s["name"] for s in scenario_history]
+            selected_idx = st.selectbox(
+                "Select scenario to view:",
+                range(len(scenario_names)),
+                format_func=lambda i: scenario_names[i],
+                key="cf_scenario_select",
+            )
+            cf_result = scenario_history[selected_idx]["result"]
+
+        with col2:
+            st.markdown("#### 📝 Stored Scenarios")
+            for i, s in enumerate(scenario_history):
+                if st.button(
+                    f"#{i+1}: {s['removed_block']}",
+                    use_container_width=True,
+                    key=f"cf_scenario_btn_{i}"
+                ):
+                    st.session_state.cf_scenario_select = i
+                    st.rerun()
+    else:
+        # No history yet
+        cf_result = st.session_state.get("counterfactual_result")
+        if cf_result is None:
+            st.caption("Select a block to remove and click 'Run Counterfactual' to begin.")
+            return
 
     removed = cf_result.get("removed_block", "?")
     kept = cf_result.get("kept_blocks", [])
