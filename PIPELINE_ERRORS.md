@@ -1,8 +1,9 @@
 # Hyperspace Pipeline — Critical Error Report
 
 **Date:** 2026-03-09
+**Last reviewed:** 2026-03-17
 **Branch:** `claude/run-pipeline-errors-JRuk1`
-**Test Suite:** 217/217 tests PASS
+**Test Suite:** 290/290 tests PASS
 
 ---
 
@@ -18,22 +19,23 @@ However, the following **operational issues and warnings** were identified:
 
 ### 1a. `pytorch-forecasting` and `lightning` not installed → TFT returns `None`
 
-**Location:** `hyperspace/models/tft_forecast.py:73-202`
-**Symptom:** `fit_tft()` catches all exceptions in a bare `except Exception` block (line 200), calls `st.error()`, and returns `None`. If `lightning` or `pytorch-forecasting` is not installed, TFT silently fails.
-**Impact:** The dashboard pipeline (`dashboard.py:430-433`) treats `None` as a hard block — it shows "Pipeline blocked: TFT fitting failed" and returns early. However, the **error message is misleading** ("Ensure live market data is reachable") when the actual cause is a missing Python package.
-**Fix:** Add specific `ImportError` handling before the general `Exception` catch to provide an accurate error message.
+**Status:** **RESOLVED** (verified 2026-03-17)
+**Location:** `hyperspace/models/tft_forecast.py:73-82`
+**Original symptom:** `fit_tft()` caught all exceptions in a bare `except Exception` block with a misleading error message.
+**Resolution:** Specific `ImportError` handling has been added at lines 73-82 of `fit_tft()`. The catch provides an accurate error message: "TFT fitting failed: missing dependency — {e}. Install with: pip install pytorch-forecasting lightning". The general `except Exception` block remains at line 207 as a fallback for non-import errors.
 
 ### 1b. `bertopic` and `sentence-transformers` not installed → BERTopic returns `None`
 
-**Location:** `hyperspace/models/topic_model.py`
-**Symptom:** Similar to TFT — if BERTopic or sentence-transformers is not installed, `fit_topic_model()` returns `None`.
-**Impact:** Pipeline blocks with "Pipeline blocked: BERTopic unavailable" (dashboard.py:454-456).
-**Fix:** Same as 1a — add explicit `ImportError` handling.
+**Status:** **RESOLVED** (verified 2026-03-17)
+**Location:** `hyperspace/models/topic_model.py:46-53`
+**Original symptom:** BERTopic import failure was caught by a generic exception handler with no installation guidance.
+**Resolution:** Specific `ImportError` handling added at lines 46-53: "BERTopic unavailable: missing dependency — {e}. Install with: pip install bertopic sentence-transformers". General exception handler remains at lines 119-121.
 
 ### 1c. `requirements.txt` build failures
 
-**Location:** `requirements.txt:13-14`
-**Symptom:** `yfinance` depends on `multitasking` and `sgmllib3k`, which fail to build wheels on Python 3.11+ (`AttributeError: install_layout`).
+**Status:** **OPEN** (verified 2026-03-17)
+**Location:** `requirements.txt:13`
+**Symptom:** `yfinance>=0.2.41,<1.0` is still listed and depends on `multitasking` and `sgmllib3k`, which fail to build wheels on Python 3.11+ (`AttributeError: install_layout`).
 **Impact:** `pip install -r requirements.txt` fails completely. The app uses `stooq.com` via pandas-datareader as the actual data source (not yfinance), so `yfinance` may be a vestigial dependency.
 **Fix:** Either remove `yfinance` from requirements.txt if unused, or pin to a version that builds cleanly on Python 3.11+.
 
@@ -89,15 +91,10 @@ The attention mask is not set and cannot be inferred from input because pad toke
 
 ## 5. Architecture Note: Dual Governance Flag Computation
 
-**Observation:** Governance flags are computed in two places:
-1. `hyperspace/core/pipeline.py:301-388` — `PipelineRunner._compute_governance_flags()` (used by tests)
-2. `hyperspace/pages/dashboard.py:29-127` — `_compute_governance_flags()` (used by Streamlit UI)
+**Status:** **RESOLVED** (verified 2026-03-17)
 
-These two implementations use **different detection logic**:
-- `pipeline.py` checks kernel importance via SVD (`importance.max() > 0.50`)
-- `dashboard.py` checks reality regression region sums (`max_region_share > 0.50`)
-- `pipeline.py` checks eigenvector centrality for GOV-003
-- `dashboard.py` checks degree centrality for GOV-003
+**Original observation:** Governance flags were computed in two places with divergent logic:
+1. `hyperspace/core/pipeline.py` — `PipelineRunner._compute_governance_flags()`
+2. `hyperspace/pages/dashboard.py` — `_compute_governance_flags()`
 
-**Impact:** The same pipeline data may produce different governance flags depending on whether it runs through the headless `PipelineRunner` or the Streamlit `dashboard.run_pipeline()`.
-**Recommendation:** Consolidate to a single governance flag computation to ensure consistency.
+**Resolution:** The duplicate implementation in `dashboard.py` has been removed. Governance flag computation is now consolidated in `PipelineRunner._compute_governance_flags()` (pipeline.py lines 531-635). Dashboard receives pre-computed flags from the `PipelineRunner` result and only renders them. All governance flags (GOV-001 through GOV-005) use consistent detection logic regardless of execution path.

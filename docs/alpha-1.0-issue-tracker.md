@@ -25,6 +25,17 @@ analysis documented in:
 - `docs/critical-errors-and-future-proposals.md`
 - `docs/vision-assessment-and-redesign.md`
 
+### Independent verification (2026-03-17)
+
+Error audit against current codebase confirms:
+- **7/8 ERR items resolved** (ERR-001 through ERR-006, ERR-008). Only ERR-007 remains (trivial `s`→`seed` rename).
+- **PIPELINE_ERRORS.md**: 4/5 issues resolved (1a, 1b, 5 fixed; 1c `yfinance` still open).
+- **FEAT-007** (unified pipeline runner): fully implemented — dashboard delegates to `PipelineRunner`.
+- **FEAT-001** (temporal UKT): partially done via `DriftMonitor` + `KernelMemory` (different approach than proposed).
+- **FEAT-003** (audit trail): partially done via JSON persistence (no SQLite/queries yet).
+- **FEAT-002, 005, 006, 009, 010**: not started.
+- See `docs/critical-errors-and-future-proposals.md` for full status on all 10 feature proposals.
+
 ---
 
 

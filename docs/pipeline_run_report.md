@@ -1,8 +1,16 @@
 # Hyperspace Pipeline Run Report
 
 **Date**: 2026-02-25
+**Last reviewed**: 2026-03-17
 **Branch**: `claude/predictive-polymath-system-jvl8B`
 **Environment**: Linux 4.4.0, Python 3.11, CPU-only
+
+> **Note (2026-03-17):** This report documents the first pipeline run from 2026-02-25.
+> The architecture has since evolved significantly: feature dimension is now 80 (was 64
+> in this run — Spatial block was not yet added), the pipeline now includes 5 blocks
+> (Finance, Clusters, Graph, Spatial, Agents), and the test suite has grown to 290 tests.
+> Both bugs described below have been fixed. See `PIPELINE_ERRORS.md` and
+> `docs/critical-errors-and-future-proposals.md` for current status.
 
 ---
 
