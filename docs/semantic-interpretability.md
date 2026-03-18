@@ -219,6 +219,13 @@ The tab renders:
 7. **Per-concept semantic narratives** — Each SAE concept shows its Tiny-LLM
    interpretation within its expander.
 
+**Known UI gaps** (see `STRATEGY_UI.md` and `docs/architecture-semantic-interpretability.md`):
+- Reality Regression chart shows feature indices instead of `FEATURE_NAMES` (ERR-009)
+- SAE training not cached between clicks (H-007)
+- Concept labels truncated to 18 chars in heatmap
+- Radar chart dimension labels overlap at default size
+- Advanced Diagnostics expander has no internal navigation (~200 lines)
+
 ---
 
 ## Session State Keys

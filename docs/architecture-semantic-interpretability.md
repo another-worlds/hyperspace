@@ -347,6 +347,23 @@ Polar plot with:
 - SAE loss curve: training convergence
 - Dormant concept list: concepts that never activate (potential overhead)
 
+### Known UI Rendering Gaps
+
+The following issues affect how the interpretability framework is **presented**
+to users, even though the backend produces correct data:
+
+| Issue | Location | Impact |
+|-------|----------|--------|
+| **Feature indices instead of names** | `kernel_viz.plot_reality_regression()` | 80-bar chart shows indices 0–79, not `FEATURE_NAMES`. Breaks interpretability for non-technical users. |
+| **Radar chart label overlap** | `interpreter_tab.py:88–118` | 12 polar axis labels crowd each other at default Plotly layout size. |
+| **Concept label truncation** | `interpreter_tab.py:205–214` | SAE concept labels truncated to 18 chars in heatmap y-axis. |
+| **Advanced Diagnostics unnavigable** | `interpreter_tab.py:316–508` | ~200 lines of charts/tables in one collapsed expander. No sub-navigation or table of contents. |
+| **SAE not cached** | `interpreter_tab.py:48` | `train_sparse_ae(matrix, hidden_dim=16, epochs=100)` re-runs on every "Run Interpretability Scan" click. Should cache by matrix hash. |
+| **Kernel expander threshold hardcoded** | `interpreter_tab.py:282` | `importance > 0.2` determines auto-expand. Should be `KERNEL_EXPANDER_THRESHOLD` in config. |
+| **Per-head attention too small** | `interpreter_tab.py:436–452` | 4 attention heatmaps in a row are narrow and hard to read. |
+
+See `STRATEGY_UI.md` §5 "Tab 5: Semantic Interpreter" for full analysis.
+
 ---
 
 ## Design Principles

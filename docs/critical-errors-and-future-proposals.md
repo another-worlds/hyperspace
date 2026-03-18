@@ -126,6 +126,47 @@ Scorecard computation is now consolidated in `PipelineRunner._compute_scorecard(
 
 ---
 
+---
+
+### ERR-009: Reality Regression Charts Show Feature Indices Instead of Names
+
+**Severity:** HIGH
+**Status:** **OPEN** (identified 2026-03-18)
+**Files:** `hyperspace/viz/kernel_viz.py:plot_reality_regression()`, `hyperspace/pages/interpreter_tab.py:264`, `hyperspace/pages/counterfactual_tab.py:121-166`
+
+**Description:**
+The Reality Regression bar chart — the system's primary feature-importance visualization — displays feature indices 0–79 on the x-axis instead of human-readable names from `FEATURE_NAMES` or `HYPERSPACE_REGISTRY`. `FEATURE_NAMES` exists in `config.py` and is populated in the registry, but `plot_reality_regression()` does not use it. The counterfactual `_plot_rr_diff()` function has the same issue.
+
+This breaks the interpretability promise: the entire provenance chain (raw data → features → kernels → narratives) is intact in the backend, but the UI drops human-readable names at the final rendering step.
+
+**Fix:**
+Pass `FEATURE_NAMES` as `customdata` and use in `hovertemplate`. Optionally add region-grouped axis labels or a "Zoom to Region" selector.
+
+---
+
+### ERR-010: WCAG AA Contrast Failures in Dark Theme CSS
+
+**Severity:** HIGH
+**Status:** **OPEN** (identified 2026-03-18)
+**File:** `hyperspace/config.py:33-194`
+
+**Description:**
+Multiple CSS color definitions fail WCAG AA minimum contrast ratio (4.5:1 for body text) against the dark background (`#070d1a`):
+- Captions: `#2d4a66` ≈ 1.8:1 contrast
+- Metric card labels: `#3d5673` ≈ 2.5:1
+- Inactive tab text: `#3d5673` ≈ 2.5:1
+- Expander summary text: `#567090` ≈ 3.0:1
+- Governance badge amber: `#fbbf24` on `#1c0e00` ≈ 4.2:1 (borderline)
+
+**Fix:**
+Increase lightness of affected color tokens. Suggested replacements:
+- Captions: `#2d4a66` → `#5a8aad`
+- Labels/tabs: `#3d5673` → `#7a9ab8`
+- Expander summary: `#567090` → `#8aa8c0`
+- Badge amber: `#fbbf24` → `#fcd34d`
+
+---
+
 ## Part 2: Future Feature Proposals
 
 ### FEAT-001: Temporal Windowed UKT — Rolling Kernel Analysis
@@ -336,6 +377,44 @@ Dashboard now follows the exact target architecture:
 
 ---
 
+### FEAT-011: UI-Layer Caching for Expensive Computations
+
+**Priority:** HIGH
+**Status:** **NOT IMPLEMENTED** (identified 2026-03-18)
+
+**Rationale:** SAE training (100 epochs, 5–10s), counterfactual baseline SVD (3–8s), UVT training (120 epochs, 10–20s), and USE training (150 epochs, 15–25s) all re-run on every button click. This wastes user time and produces slightly different results due to torch stochastic initialization.
+
+**Proposal:**
+1. Cache SAE results in `session_state` keyed by SHA-256 of `final_matrix.tobytes()`.
+2. Cache counterfactual baseline by reusing `ukt_snapshots[-1]` SVD decomposition.
+3. Cache UVT and USE by UKT snapshot hash.
+4. Add `@st.cache_data` to intermediate DataFrame operations (`.corr()`, `.pivot()`).
+5. Add data freshness indicator to sidebar showing cache age per data block.
+
+**Governance Value:** Eliminates non-determinism from repeated computations. Users get identical results on re-click, supporting reproducibility requirements.
+
+---
+
+### FEAT-012: Mission Control Content Hierarchy and Executive Summary
+
+**Priority:** HIGH
+**Status:** **NOT IMPLEMENTED** (identified 2026-03-18)
+
+**Rationale:** Mission Control (Tab 0) renders 15+ sections in flat scroll with no hierarchy. Policy officers must scroll past kernel evolution charts and alignment comparisons to find governance flags and the interpretability scorecard.
+
+**Proposal:**
+1. Add executive summary at top (plain-English narrative + top 3 findings).
+2. Group content into 4 collapsible sections:
+   - Governance Status (flags + scorecard + faithfulness)
+   - Data Provenance (sources + jurisdictions + freshness)
+   - System Diagnostics (drift + kernel evolution + alignment) — collapsed by default
+   - Export (all formats)
+3. Add "Jump to section" links.
+
+**Governance Value:** Policy officers reach actionable governance outputs within 3 seconds instead of scrolling for 30+.
+
+---
+
 ## Appendix: Error Priority Matrix
 
 | ID | Severity | Effort | Impact if Unfixed | Status |
@@ -348,6 +427,8 @@ Dashboard now follows the exact target architecture:
 | ERR-006 | LOW | Small | Dead code | **RESOLVED** |
 | ERR-007 | LOW | Trivial | Style violation | **OPEN** |
 | ERR-008 | MEDIUM | Trivial | Config not honored in production | **RESOLVED** |
+| ERR-009 | HIGH | Small | Feature-importance chart uninterpretable | **OPEN** |
+| ERR-010 | HIGH | Small | Text unreadable for low-vision users | **OPEN** |
 
 ## Appendix: Feature Priority Matrix
 
@@ -363,3 +444,5 @@ Dashboard now follows the exact target architecture:
 | FEAT-008 | MEDIUM | Small | Machine-readable exports | **PARTIAL** — 5 exports done; zip package not done |
 | FEAT-009 | LOW | Medium | Cross-run semantic tracking | **NOT STARTED** |
 | FEAT-010 | LOW | Large | Real-time operation | **NOT STARTED** |
+| FEAT-011 | HIGH | Medium | Reproducible UI computations | **NOT STARTED** |
+| FEAT-012 | HIGH | Medium | Governance content discoverable | **NOT STARTED** |

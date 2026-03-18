@@ -450,7 +450,7 @@ in-place.
 |----------|---------|
 | `plot_kernel_matrix(snapshot, block_names)` | Heatmap of kernel activations across blocks (RdBu colorscale) |
 | `plot_kernel_importance(snapshot)` | Bar chart of kernel importance (variance explained) |
-| `plot_reality_regression(snapshot)` | Bar chart of reality regression weights per feature |
+| `plot_reality_regression(snapshot)` | Bar chart of reality regression weights per feature (**NOTE:** currently shows feature indices, not names — see ERR-009) |
 | `plot_kernel_evolution(snapshots)` | Line chart tracking kernel importance across pipeline steps |
 | `plot_concept_kernel_map(concept_kernel_map)` | Scatter plot of concept-kernel correspondence |
 
