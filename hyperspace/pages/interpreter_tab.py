@@ -21,7 +21,7 @@ from hyperspace.core.caching import (
     get_cache_stats,
     make_sae_cache_key,
 )
-from hyperspace.core.logging import StructuredLogger, log_sae_training
+from hyperspace.core.logging import log_sae_training
 from hyperspace.models.sparse_ae import train_sparse_ae, map_concepts_to_kernels
 from hyperspace.models.semantic_canvas import CANVAS_DIMENSIONS
 from hyperspace.viz import kernel_viz
@@ -63,17 +63,21 @@ def render() -> None:
 
                     # Use improved caching system with hyperparameter hashing
                     import time
+                    _SAE_LR: float = 0.005  # Must match train_sparse_ae default
                     start_time = time.time()
-                    cache_key = make_sae_cache_key(matrix, 16, 100)
-                    was_cached = f"cache_{cache_key}" in st.session_state
+                    cache_key = make_sae_cache_key(matrix, 16, 100, lr=_SAE_LR)
+                    # was_cached: True only when the cache key exists AND we are not
+                    # force-retraining (force_retrain pops the key before recomputing).
+                    was_cached = not force_retrain and f"cache_{cache_key}" in st.session_state
 
-                    def _train_sae(m, hidden_dim, epochs):
-                        return train_sparse_ae(m, hidden_dim=hidden_dim, epochs=epochs)
+                    def _train_sae(m, hidden_dim, epochs, lr):
+                        return train_sparse_ae(m, hidden_dim=hidden_dim, epochs=epochs, lr=lr)
 
                     sae_result = get_or_compute_sae(
                         matrix,
                         hidden_dim=16,
                         epochs=100,
+                        lr=_SAE_LR,
                         compute_fn=_train_sae,
                         force_retrain=force_retrain,
                     )

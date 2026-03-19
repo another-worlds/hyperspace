@@ -55,7 +55,7 @@ def make_sae_cache_key(
     matrix: np.ndarray,
     hidden_dim: int = 16,
     epochs: int = 100,
-    lr: float = 1e-3,
+    lr: float = 0.005,
     prefix: str = "sae",
 ) -> str:
     """Create a cache key for SAE training.
@@ -92,7 +92,7 @@ def make_stability_cache_key(
     param_hash = hash_params({
         "n_runs": n_runs,
         "noise_std": noise_std,
-        "seed": seed or 0,  # Use 0 for None to make key consistent
+        "seed": seed if seed is not None else "none",
     })
     return f"{prefix}_{matrix_hash}_{param_hash}"
 
@@ -101,7 +101,7 @@ def get_or_compute_sae(
     matrix: np.ndarray,
     hidden_dim: int = 16,
     epochs: int = 100,
-    lr: float = 1e-3,
+    lr: float = 0.005,
     compute_fn: Any = None,
     force_retrain: bool = False,
 ) -> Any:
@@ -111,8 +111,8 @@ def get_or_compute_sae(
         matrix: Input feature matrix
         hidden_dim: SAE hidden dimension
         epochs: Training epochs
-        lr: Learning rate
-        compute_fn: Function to call if cache miss: compute_fn(matrix, hidden_dim, epochs)
+        lr: Learning rate (must match train_sparse_ae default: 0.005)
+        compute_fn: Function to call if cache miss: compute_fn(matrix, hidden_dim, epochs, lr)
         force_retrain: If True, ignore cache and retrain
 
     Returns:
@@ -126,7 +126,7 @@ def get_or_compute_sae(
     # Check if force_retrain button was clicked
     if force_retrain:
         st.session_state.pop(f"cache_{cache_key}", None)
-        return compute_fn(matrix, hidden_dim, epochs)
+        return compute_fn(matrix, hidden_dim, epochs, lr)
 
     # Check session state cache
     cached_key = f"cache_{cache_key}"
@@ -135,7 +135,7 @@ def get_or_compute_sae(
         return st.session_state[cached_key]
 
     # Compute and cache
-    result = compute_fn(matrix, hidden_dim, epochs)
+    result = compute_fn(matrix, hidden_dim, epochs, lr)
     st.session_state[cached_key] = result
     return result
 

@@ -59,7 +59,7 @@ def fetch_all_data_parallel(
     fetch_ohlcv_fn: Callable[..., tuple[pd.DataFrame, str]] | None = None,
     fetch_docs_fn: Callable[..., tuple[list[str], str]] | None = None,
     fetch_political_fn: Callable[..., tuple[Any, pd.DataFrame, str]] | None = None,
-    fetch_spatial_fn: Callable[[], dict] | None = None,
+    fetch_spatial_fn: Callable[[], tuple[dict, str]] | None = None,
     finance_start: datetime | None = None,
     finance_end: datetime | None = None,
     min_year: int | None = None,
@@ -73,7 +73,7 @@ def fetch_all_data_parallel(
         fetch_ohlcv_fn: Function to fetch OHLCV data: () -> (DataFrame, source_name)
         fetch_docs_fn: Function to fetch documents: (start_date, end_date) -> (list[str], source_name)
         fetch_political_fn: Function to fetch political data: (min_year, max_year) -> (any, DataFrame, source_name)
-        fetch_spatial_fn: Function to fetch spatial rasters: () -> dict
+        fetch_spatial_fn: Function to fetch spatial rasters: () -> (dict, source_name)
         finance_start: Start date for document/political fetch alignment
         finance_end: End date for document/political fetch alignment
         min_year: Minimum year for political data
@@ -86,8 +86,8 @@ def fetch_all_data_parallel(
     result = ParallelFetchResult()
 
     if fetch_ohlcv_fn is None:
-        from hyperspace.data.finance import get_financial_data
-        fetch_ohlcv_fn = lambda: get_financial_data(tickers=tickers)
+        from hyperspace.data.finance import get_ohlcv
+        fetch_ohlcv_fn = lambda: get_ohlcv(tickers)
 
     if fetch_docs_fn is None:
         from hyperspace.data.news import get_text_data
@@ -95,7 +95,14 @@ def fetch_all_data_parallel(
 
     if fetch_political_fn is None:
         from hyperspace.data.political import get_political_data
-        fetch_political_fn = lambda: get_political_data(min_year=min_year, max_year=max_year)
+        def _default_political() -> tuple:
+            kwargs: dict = {}
+            if min_year is not None:
+                kwargs["min_year"] = min_year
+            if max_year is not None:
+                kwargs["max_year"] = max_year
+            return get_political_data(**kwargs)
+        fetch_political_fn = _default_political
 
     if fetch_spatial_fn is None:
         from hyperspace.data.spatial import fetch_all_spatial_data
