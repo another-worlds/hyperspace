@@ -216,15 +216,39 @@ conditions below pass.
 
 ---
 
-## Recommended Immediate Actions
+## Phase 0-2 Completion Status (March 2026)
 
-1. Formalize the interpretability interface contract and apply it across all
-   existing model blocks.
-2. Prototype a shared latent projector with contrastive alignment on currently
-   available paired data (finance/news/graph snapshots by time window).
-3. Add a shadow evaluation dashboard comparing:
+### Completed Hardening Work
+
+**Phase 0** focused on governance-first UI redesign and performance optimization (not on learned modality alignment):
+
+✅ **Config Centralization**: All 10 governance thresholds consolidated to `hyperspace/config.py`.
+✅ **WCAG Accessibility**: Run-ID watermark contrast fixed to 4.5:1 ratio.
+✅ **Mission Control Restructure**: 5-section hierarchy with governance outputs first.
+✅ **Intelligent Caching**: Hash-based caching for SAE (5-10s saved), SVD reuse, stability estimation.
+✅ **Parallel Processing**: 4-6× speedup via ThreadPoolExecutor for data fetching, kernel labeling, stability estimation.
+✅ **Structured Logging**: Event-based governance audit trails with text-based execution traces.
+✅ **Counterfactual Scenario Memory**: Last 5 runs stored for side-by-side comparison.
+
+See `docs/vision-compliance.md` §6 and `docs/alpha-1.0-issue-tracker.md` for detailed completion status.
+
+### Recommended Immediate Actions (Updated)
+
+The Phase 0-2 work above addressed **urgent governance and usability issues** (UI rendering layer compliance).
+The research roadmap below remains valid for **Phase 3+ (post-Alpha)** direction:
+
+1. **Feature names in Reality Regression** (Phase 2, READY): Add FEATURE_NAMES to chart x-axis and hovertemplate.
+   FEATURE_NAMES are available in HYPERSPACE_REGISTRY; implementation is straightforward Plotly template update.
+
+2. **Learned modality alignment** (Phase 3, RESEARCH): Formalize the interpretability interface contract and prototype
+   a shared latent projector with contrastive alignment. Keep current UKT as governance-facing baseline; run new path
+   in shadow mode with parity dashboards.
+
+3. **Cross-modal evaluation** (Phase 3): Add shadow evaluation dashboard comparing:
    - legacy UKT kernel quality
-   - shared-latent alignment quality
-   - explanation faithfulness metrics
-4. Only promote the learned UKT path to default once it matches current
-   governance transparency and exceeds current cross-modal utility.
+   - shared-latent alignment quality (InfoNCE contrastive losses on paired windows)
+   - explanation faithfulness metrics (attribution/intervention tests)
+
+4. **Promote shared-latent path** (Phase 3): Only promote the learned UKT path to default once it matches current
+   governance transparency and exceeds current cross-modal utility (measured via kernel coherence, cross-block transfer
+   learning, and explanation stability).
