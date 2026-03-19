@@ -16,6 +16,12 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from hyperspace.config import KERNEL_EXPANDER_THRESHOLD, PLOTLY_LAYOUT
+from hyperspace.core.caching import (
+    get_or_compute_sae,
+    get_cache_stats,
+    make_sae_cache_key,
+)
+from hyperspace.core.logging import log_sae_training
 from hyperspace.models.sparse_ae import train_sparse_ae, map_concepts_to_kernels
 from hyperspace.models.semantic_canvas import CANVAS_DIMENSIONS
 from hyperspace.viz import kernel_viz
@@ -31,36 +37,60 @@ def render() -> None:
         "**What drives the conclusions?** (Feature Importance)"
     )
 
-    interpret_btn = st.button(
-        "Run Interpretability Scan", type="primary", key="interpret_run"
-    )
+    # SAE caching control
+    col1, col2, col3 = st.columns([3, 1, 1])
+    with col1:
+        interpret_btn = st.button(
+            "Run Interpretability Scan", type="primary", key="interpret_run"
+        )
+    with col2:
+        force_retrain = st.button("🔄 Retrain", key="sae_retrain_btn",
+                                 help="Ignore cache and retrain SAE (stochastic mode)")
+    with col3:
+        cache_stats = get_cache_stats()
+        st.metric("Cache Items", cache_stats["total"])
 
     snapshots = st.session_state.get("ukt_snapshots", [])
     sae_result = st.session_state.get("sae_result")
     policy_mode = st.session_state.get("policy_language_mode", False)
 
-    if interpret_btn or sae_result:
-        if interpret_btn:
+    if interpret_btn or sae_result or force_retrain:
+        if interpret_btn or force_retrain:
             with st.spinner("Running concept extraction pipeline..."):
                 if snapshots:
                     final_snap = snapshots[-1]
                     matrix = final_snap["matrix"]
-                    # Cache SAE result keyed by matrix hash to avoid re-training
-                    matrix_hash = hash(matrix.tobytes())
-                    cached_hash = st.session_state.get("sae_matrix_hash")
-                    if cached_hash == matrix_hash and sae_result is not None:
-                        st.toast("Using cached SAE result (matrix unchanged).")
-                    else:
-                        sae_result = train_sparse_ae(
-                            matrix, hidden_dim=16, epochs=100,
+
+                    # Use improved caching system with hyperparameter hashing
+                    import time
+                    _SAE_LR: float = 0.005  # Must match train_sparse_ae default
+                    start_time = time.time()
+                    cache_key = make_sae_cache_key(matrix, 16, 100, lr=_SAE_LR)
+                    # was_cached: True only when the cache key exists AND we are not
+                    # force-retraining (force_retrain pops the key before recomputing).
+                    was_cached = not force_retrain and f"cache_{cache_key}" in st.session_state
+
+                    def _train_sae(m, hidden_dim, epochs, lr):
+                        return train_sparse_ae(m, hidden_dim=hidden_dim, epochs=epochs, lr=lr)
+
+                    sae_result = get_or_compute_sae(
+                        matrix,
+                        hidden_dim=16,
+                        epochs=100,
+                        lr=_SAE_LR,
+                        compute_fn=_train_sae,
+                        force_retrain=force_retrain,
+                    )
+
+                    duration = time.time() - start_time
+                    log_sae_training(cached=was_cached, hidden_dim=16, epochs=100, duration_sec=duration)
+
+                    if sae_result and final_snap:
+                        concept_kernel_map = map_concepts_to_kernels(
+                            sae_result, final_snap,
                         )
-                        if sae_result and final_snap:
-                            concept_kernel_map = map_concepts_to_kernels(
-                                sae_result, final_snap,
-                            )
-                            st.session_state.sae_result = sae_result
-                            st.session_state.concept_kernel_map = concept_kernel_map
-                            st.session_state.sae_matrix_hash = matrix_hash
+                        st.session_state.sae_result = sae_result
+                        st.session_state.concept_kernel_map = concept_kernel_map
                 else:
                     st.warning("Run the full pipeline first to populate the UKT.")
                     return

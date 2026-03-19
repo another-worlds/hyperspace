@@ -78,7 +78,7 @@ def test_dashboard_run_pipeline_hydrates_session_from_runner_payload(monkeypatch
     _stub_module(
         monkeypatch,
         "hyperspace.data.political",
-        get_political_data=lambda min_year, max_year: (None, agreement, "politics_stub"),
+        get_political_data=lambda min_year=None, max_year=None: (None, agreement, "politics_stub"),
     )
     _stub_module(
         monkeypatch,
@@ -107,6 +107,23 @@ def test_dashboard_run_pipeline_hydrates_session_from_runner_payload(monkeypatch
         status=lambda *args, **kwargs: status,
         write=lambda *args, **kwargs: None,
         error=lambda *args, **kwargs: None,
+        warning=lambda *args, **kwargs: None,
+        toast=lambda *args, **kwargs: None,
+        markdown=lambda *args, **kwargs: None,
+        info=lambda *args, **kwargs: None,
+        success=lambda *args, **kwargs: None,
+        caption=lambda *args, **kwargs: None,
+        progress=lambda *args, **kwargs: None,
+        metric=lambda *args, **kwargs: None,
+        columns=lambda n, **kwargs: [types.SimpleNamespace(
+            __enter__=lambda self: self,
+            __exit__=lambda self, *a: None,
+        ) for _ in range(n if isinstance(n, int) else len(n))],
+        spinner=lambda *args, **kwargs: types.SimpleNamespace(
+            __enter__=lambda self: self,
+            __exit__=lambda self, *a: None,
+        ),
+        stop=lambda: None,
     )
     monkeypatch.setattr(dashboard, "st", mock_st)
 

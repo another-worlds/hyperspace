@@ -215,7 +215,7 @@ div[data-testid="stMetricDelta"] { color: #64ffda !important; }
 /* ─── Run ID watermark ──────────────────────────────────────────────── */
 .run-id-watermark {
     font-family: 'JetBrains Mono', 'Fira Code', monospace;
-    font-size: 0.67em; color: #1e3348; padding: 2px 6px;
+    font-size: 0.67em; color: #8ab4cc; padding: 2px 6px;
     letter-spacing: 0.06em;
 }
 
@@ -378,6 +378,9 @@ KERNEL_EXPANDER_THRESHOLD: float = 0.20
 # Counterfactual tab: reality regression cosine stability
 CF_STABILITY_HIGH: float = 0.95
 CF_STABILITY_MODERATE: float = 0.80
+
+# Counterfactual tab: shock injection feature range (structural-centrality region)
+STRUCTURAL_REGION_BOUNDS: tuple[int, int] = (32, 47)
 
 # Feature flags
 FEATURE_FLAGS: dict[str, bool] = {

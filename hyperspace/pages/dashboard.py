@@ -20,6 +20,14 @@ from hyperspace.core.pipeline import PipelineRunner
 from hyperspace.core.drift_monitor import DriftMonitor
 from hyperspace.core.temporal_memory import KernelMemory
 from hyperspace.core.latent_versioning import LatentVersionTrail
+from hyperspace.core.parallel_fetch import fetch_all_data_parallel, fetch_models_parallel
+from hyperspace.core.logging import log_pipeline_step
+from hyperspace.viz.pipeline_progress import (
+    PipelineProgressTracker,
+    StreamlitProgressContext,
+    render_pipeline_progress,
+    render_timing_summary,
+)
 
 
 _DRIFT_PERSIST_PATH = ".hyperspace/drift_history.json"
@@ -136,42 +144,73 @@ def render_landing() -> None:
 
 def run_pipeline() -> None:
     """Execute dashboard pipeline via canonical PipelineRunner orchestration."""
+    # Create progress tracker
+    tracker = PipelineProgressTracker()
+    tracker.add_block("data_fetch", "Gathering market signals, news, geopolitical data, and spatial layers")
+    tracker.add_block("model_training", "Training TFT and BERTopic models")
+    tracker.add_block("core_pipeline", "Running graph, agents, and interpretation analysis")
+    tracker.add_block("governance_analysis", "Computing flags, compliance scorecard, and audit trail")
+
     with st.status("Running Hyperspace Pipeline...", expanded=True) as status:
-        # ---- Step 1: Fetch Data ----
-        st.write("Fetching real data sources...")
-        from hyperspace.data.finance import get_ohlcv
-        from hyperspace.data.news import get_text_data
-        from hyperspace.data.political import get_political_data
+        # ---- Step 1: Fetch Data in Parallel ----
+        with StreamlitProgressContext(
+            tracker, "data_fetch", "Fetching data sources in parallel..."
+        ) as block:
+            st.write("📥 Fetching real data sources (finance, news, political, spatial) in parallel...")
+            tickers = st.session_state.get("tickers", DEFAULT_TICKERS) or DEFAULT_TICKERS
+            fetch_start = time.time()
 
-        tickers = st.session_state.get("tickers", DEFAULT_TICKERS) or DEFAULT_TICKERS
-        try:
-            ohlcv_df, fin_src = get_ohlcv(tickers)
-        except RuntimeError as exc:
-            status.update(label="Pipeline blocked: finance data unavailable", state="error")
-            st.error(str(exc))
-            return
+            from hyperspace.data.finance import get_ohlcv
+            def fetch_ohlcv_wrapper():
+                return get_ohlcv(tickers)
 
+            # Parallel fetch all data sources
+            fetch_result = fetch_all_data_parallel(
+                tickers=tuple(tickers),
+                fetch_ohlcv_fn=fetch_ohlcv_wrapper,
+                max_workers=4,
+            )
+
+            # Report any per-source errors
+            if fetch_result.errors:
+                for source, error in fetch_result.errors.items():
+                    log_pipeline_step(f"data_fetch_{source}", "failed", error_msg=str(error))
+                    st.warning(f"⚠️ {source.upper()}: {error}")
+
+            # Abort if required data is missing
+            if not fetch_result.is_complete():
+                missing = fetch_result.get_missing()
+                status.update(
+                    label=f"Pipeline blocked: missing {', '.join(missing)}",
+                    state="error"
+                )
+                st.error(f"Cannot proceed without: {', '.join(missing)}")
+                block.fail(f"Missing: {', '.join(missing)}")
+                return
+
+            fetch_duration = time.time() - fetch_start
+            st.write(f"✓ Data fetching complete ({fetch_duration:.1f}s): {fetch_result.ohlcv_source} | {fetch_result.docs_source} | {fetch_result.agreement_source}")
+            log_pipeline_step("data_fetch", "completed", duration_sec=fetch_duration)
+            block.complete(f"Fetched from {fetch_result.ohlcv_source}, {fetch_result.docs_source}, {fetch_result.agreement_source}")
+
+        # Extract fetched data
+        ohlcv_df = fetch_result.ohlcv_df
+        docs = fetch_result.docs
+        docs_src = fetch_result.docs_source
+        agreement = fetch_result.agreement
+        pol_src = fetch_result.agreement_source
+        fin_src = fetch_result.ohlcv_source
+        raw_spatial = fetch_result.spatial_data
+
+        # Compute timeframe from finance data
         finance_start = None
         finance_end = None
         if "Date" in ohlcv_df.columns and len(ohlcv_df) > 0:
             finance_start = pd.to_datetime(ohlcv_df["Date"]).min().to_pydatetime()
             finance_end = pd.to_datetime(ohlcv_df["Date"]).max().to_pydatetime()
 
-        try:
-            docs, docs_src = get_text_data(start_date=finance_start, end_date=finance_end)
-        except RuntimeError as exc:
-            status.update(label="Pipeline blocked: no live news source", state="error")
-            st.error(str(exc))
-            return
-
         min_year = finance_start.year if finance_start else 2000
         max_year = finance_end.year if finance_end else None
-        try:
-            _, agreement, pol_src = get_political_data(min_year=min_year, max_year=max_year)
-        except RuntimeError as exc:
-            status.update(label="Pipeline blocked: political data unavailable", state="error")
-            st.error(str(exc))
-            return
 
         timeframe_context = {
             "start_date": finance_start.date().isoformat() if finance_start else None,
@@ -182,60 +221,63 @@ def run_pipeline() -> None:
         st.session_state.raw_ohlcv = ohlcv_df
         st.session_state.raw_docs = docs
         st.session_state.timeframe_context = timeframe_context
-        st.write(f"Data fetched: {fin_src} | {docs_src} | {pol_src}")
 
-        # ---- Step 2: Build precomputed block inputs ----
-        st.write("Training Temporal Fusion Transformer (3 epochs, CPU)...")
-        from hyperspace.models.tft_forecast import fit_tft
+        # ---- Step 2: Train Models in Parallel ----
+        with StreamlitProgressContext(
+            tracker, "model_training", "Training TFT and BERTopic models in parallel..."
+        ) as block:
+            st.write("⚙️ Training models (TFT, BERTopic) in parallel...")
+            model_start = time.time()
 
-        tft_result = fit_tft(
-            tickers=tuple(tickers),
-            hidden=32, encoder_len=48, prediction_len=12,
-        )
-        if tft_result is None:
-            status.update(label="Pipeline blocked: TFT fitting failed", state="error")
-            st.error(
-                "TFT fitting failed. Check the error above — common causes: "
-                "missing pytorch-forecasting/lightning packages, or unreachable market data."
+            model_results = fetch_models_parallel(
+                tickers=tuple(tickers),
+                docs=docs,
+                docs_source=docs_src,
+                max_workers=2,
             )
-            return
 
-        st.write("Fitting BERTopic on real documents...")
-        from hyperspace.models.topic_model import fit_topic_model
-        import hashlib
+            # Check model training results
+            tft_result = model_results.get("tft_result")
+            cluster_result = model_results.get("bertopic_result")
 
-        docs_hash = hashlib.md5("".join(docs[:5]).encode()).hexdigest()[:8]
-        cluster_result = fit_topic_model(docs_hash, docs=docs, data_source=docs_src)
-        if cluster_result is None:
-            status.update(label="Pipeline blocked: BERTopic unavailable", state="error")
-            st.error("BERTopic is unavailable; cluster fallback was intentionally removed.")
-            return
+            if "tft_error" in model_results:
+                status.update(label="Pipeline blocked: TFT fitting failed", state="error")
+                st.error(f"TFT fitting failed: {model_results['tft_error']}")
+                log_pipeline_step("tft_training", "failed", error_msg=str(model_results.get("tft_error")))
+                block.fail(str(model_results.get("tft_error")))
+                return
 
-        st.write("Fetching multimodal spatial rasters (elevation, climate, economics, conflict)...")
-        from hyperspace.data.spatial import fetch_all_spatial_data
+            if "bertopic_error" in model_results:
+                status.update(label="Pipeline blocked: BERTopic unavailable", state="error")
+                st.error(f"BERTopic fitting failed: {model_results['bertopic_error']}")
+                log_pipeline_step("bertopic_fitting", "failed", error_msg=str(model_results.get("bertopic_error")))
+                block.fail(str(model_results.get("bertopic_error")))
+                return
 
-        try:
-            raw_spatial = fetch_all_spatial_data()
-        except RuntimeError as exc:
-            status.update(label="Pipeline blocked: spatial data unavailable", state="error")
-            st.error(str(exc))
-            return
+            model_duration = time.time() - model_start
+            st.write(f"✓ Model training complete ({model_duration:.1f}s)")
+            log_pipeline_step("model_training", "completed", duration_sec=model_duration)
+            block.complete("TFT and BERTopic models trained successfully")
 
         # ---- Step 3: Canonical orchestration (single path) ----
-        st.write("Running canonical pipeline runner for graph/spatial/agents/interpreter...")
-        runner = PipelineRunner(
-            drift_monitor=_get_drift_monitor(),
-            kernel_memory=_get_kernel_memory(),
-            version_trail=_get_version_trail(),
-        )
-        result = runner.run(
-            finance_result=tft_result,
-            cluster_result=cluster_result,
-            agreement_matrix=agreement,
-            spatial_data=raw_spatial,
-            timeframe_context=timeframe_context,
-            compute_cross_block=True,
-        )
+        with StreamlitProgressContext(
+            tracker, "core_pipeline", "Graph and agent simulation analysis underway..."
+        ) as block:
+            st.write("Running canonical pipeline runner for graph/spatial/agents/interpreter...")
+            runner = PipelineRunner(
+                drift_monitor=_get_drift_monitor(),
+                kernel_memory=_get_kernel_memory(),
+                version_trail=_get_version_trail(),
+            )
+            result = runner.run(
+                finance_result=tft_result,
+                cluster_result=cluster_result,
+                agreement_matrix=agreement,
+                spatial_data=raw_spatial,
+                timeframe_context=timeframe_context,
+                compute_cross_block=True,
+            )
+            block.complete("Core pipeline executed successfully")
 
         st.session_state.run_id = result.get("run_id")
         st.session_state.run_timestamp = result.get("run_timestamp")
@@ -266,10 +308,21 @@ def run_pipeline() -> None:
         st.session_state.kernel_evolution = result.get("kernel_evolution")
         st.session_state.latent_version = result.get("latent_version")
 
-        # Persist drift history, kernel memory, and version trail to disk
-        _save_drift_monitor()
-        _save_kernel_memory()
-        _save_version_trail()
+        # ---- Step 4: Governance Analysis ----
+        with StreamlitProgressContext(
+            tracker, "governance_analysis", "Computing compliance scorecard and audit trail..."
+        ) as block:
+            # Persist drift history, kernel memory, and version trail to disk
+            _save_drift_monitor()
+            _save_kernel_memory()
+            _save_version_trail()
+            block.complete("Governance analysis complete")
+
+        # Finalize progress tracking and display block status + timing summary
+        tracker.finalize()
+        st.markdown("---")
+        render_pipeline_progress(tracker)
+        render_timing_summary(tracker)
 
         status.update(label="Pipeline complete!", state="complete")
         st.session_state.pipeline_complete = True

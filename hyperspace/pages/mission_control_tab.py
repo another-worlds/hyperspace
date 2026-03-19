@@ -1,8 +1,14 @@
-"""Mission Control tab (Tab 0): system overview, live metrics, pipeline status.
+"""Mission Control tab (Tab 0): system overview with governance-first organization.
 
-Provides a single-page summary of the Hyperspace system state: data source
-health, UKT kernel status, governance scorecard, and semantic canvas snapshot.
-Designed as the first tab a delegate or analyst sees after the pipeline runs.
+Restructured for policy stakeholders: governance outputs first (flags, scorecard, compliance),
+then data provenance, then technical diagnostics (collapsed by default).
+
+This redesign implements the vision hierarchy:
+1. Executive Summary (top)
+2. Governance Status (prominent, governance-focused)
+3. Data Provenance (for auditing)
+4. Technical Diagnostics (collapsed, for experts)
+5. Export options (sticky/prominent)
 """
 from __future__ import annotations
 
@@ -13,11 +19,12 @@ from hyperspace.viz.charts import source_badge
 
 
 def render() -> None:
-    """Render the Mission Control tab: system overview, metrics, status."""
+    """Render Mission Control with governance-first hierarchy."""
     st.markdown("## Mission Control")
     st.markdown(
-        "System overview and governance health dashboard. All metrics update "
-        "after each pipeline run."
+        "**System overview and accountability dashboard.** All metrics update after each pipeline run. "
+        "This page is designed for policy officers, auditors, and governance stakeholders. "
+        "[View technical diagnostics below](#technical-diagnostics)"
     )
 
     snapshots = st.session_state.get("ukt_snapshots", [])
@@ -36,167 +43,250 @@ def render() -> None:
         return
 
     final_snap = snapshots[-1]
-
-    # ── Run identity ──────────────────────────────────────────────────
     run_id = st.session_state.get("run_id", "—")
     run_ts = st.session_state.get("run_timestamp", "")
-    st.caption(f"Run ID: {run_id}  ·  {run_ts}")
 
-    # ── Key metrics row ───────────────────────────────────────────────
-    st.markdown("### System Status")
-    m1, m2, m3, m4, m5 = st.columns(5)
-    m1.metric("Pipeline Blocks", str(len(snapshots)),
-              help="Number of data domains successfully processed")
+    # ═══════════════════════════════════════════════════════════════════════
+    # SECTION 1: EXECUTIVE SUMMARY
+    # ═══════════════════════════════════════════════════════════════════════
 
-    data_live = sum(
-        1 for v in data_sources.values()
-        if "Live" in v or ("Offline" in v and "Synthetic" not in v)
-    )
-    m2.metric("Live Data Sources", f"{data_live}/{len(data_sources)}",
-              help="Data blocks drawing from real sources vs. synthetic fallbacks")
+    with st.container(border=True):
+        st.markdown("### 🎯 Executive Summary")
+        summary_cols = st.columns([2, 3, 1])
 
-    if sae_result:
-        m3.metric(
-            "Interpretable Concepts",
-            f"{sae_result['active_concepts']}/{sae_result['total_concepts']}",
-            help="Named concepts discovered by the Sparse Autoencoder — higher = more interpretable",
-        )
-    else:
-        m3.metric("Interpretable Concepts", "—")
+        with summary_cols[0]:
+            st.metric("Run ID", run_id, label_visibility="collapsed")
+            st.caption(f"Timestamp: {run_ts}")
 
-    pass_count = sum(1 for v in scorecard.values() if v.get("passed"))
-    total_sc = len(scorecard)
-    m4.metric(
-        "Accountability Score",
-        f"{pass_count}/{total_sc} PASS" if total_sc else "—",
-        help="Number of interpretability criteria passing the minimum governance threshold",
-    )
+        with summary_cols[1]:
+            pass_count = sum(1 for v in scorecard.values() if v.get("passed"))
+            total_sc = len(scorecard)
+            status_text = f"{pass_count}/{total_sc} Governance Criteria PASS"
+            if pass_count == total_sc and total_sc > 0:
+                st.success(f"✓ {status_text}")
+            elif pass_count >= total_sc * 0.75:
+                st.warning(f"⚠ {status_text}")
+            else:
+                st.error(f"✗ {status_text}")
 
-    contract_rate = float(contract_summary.get("compliance_rate", 0.0))
-    contract_label = "—"
-    if contract_summary:
-        contract_label = f"{contract_rate:.0%}"
-    m5.metric(
-        "Contract Compliance",
-        contract_label,
-        help="Share of core modules passing interpretability contract interface + payload checks",
-    )
+            flag_status = "No governance flags detected" if not gov_flags else f"{len(gov_flags)} flag(s) raised"
+            st.caption(f"Governance Flags: {flag_status}")
 
-    st.caption(
-        "v3.0 — These vitals reflect the current governance health of the system. "
-        "All four dimensions are traced to specific data sources and are included "
-        "in the exported governance report."
-    )
-
-    st.markdown("---")
-
-    # ── Data source health ────────────────────────────────────────────
-    st.markdown("### Data Source Status")
-    src_cols = st.columns(len(data_sources) or 1)
-    for i, (block, src) in enumerate(data_sources.items()):
-        with src_cols[i % len(src_cols)]:
-            is_live = "Live" in src or "Offline" in src
-            status_icon = "+" if is_live else "!"
-            st.markdown(f"**{block}**")
-            st.markdown(source_badge(src), unsafe_allow_html=True)
-
-    st.caption(
-        "v3.0 — Full feature provenance requires tracing every UKT dimension "
-        "back to its raw data source. This panel shows whether each pipeline "
-        "block drew from live or fallback data, which is recorded in the "
-        "governance flags below."
-    )
-
-    st.markdown("---")
-
-    # ── Governance flags ──────────────────────────────────────────────
-    st.markdown("### Governance Flags")
-    if gov_flags:
-        for flag in gov_flags:
-            severity = flag.get("severity", "warning")
-            icon = "!" if severity == "warning" else "i"
-            st.warning(
-                f"**[{flag.get('code', '?')}] {flag.get('label', '?')}** — "
-                f"{flag.get('detail', flag.get('description', ''))}"
+        with summary_cols[2]:
+            data_live = sum(
+                1 for v in data_sources.values()
+                if "Live" in v or ("Offline" in v and "Synthetic" not in v)
             )
-    else:
-        st.success("No governance flags detected.")
-
-    st.caption(
-        "v3.0 — Governance flags are auto-generated alerts for modality "
-        "imbalance, temporal coverage gaps, centrality skew, low concept "
-        "coverage, and synthetic data usage. They support the contestability "
-        "guarantee by surfacing potential issues before conclusions are cited."
-    )
+            st.metric("Data Sources", f"{data_live}/{len(data_sources)}", label_visibility="collapsed")
+            st.caption(f"Live: {data_live}; Synthetic: {len(data_sources) - data_live}")
 
     st.markdown("---")
 
-    # ── Scorecard summary ─────────────────────────────────────────────
-    if scorecard:
-        st.markdown("### Interpretability Score Card")
-        sc_rows = []
-        for key, item in scorecard.items():
-            passed = item.get("passed", False)
-            sc_rows.append({
-                "Dimension": item.get("label", key),
-                "Value": f"{item.get('value', '—')}{item.get('unit', '')}",
-                "Threshold": f"\u2265{item.get('threshold', '—')}{item.get('unit', '')}",
-                "Status": "PASS" if passed else "WARN",
-            })
-        sc_df = pd.DataFrame(sc_rows)
+    # ═══════════════════════════════════════════════════════════════════════
+    # SECTION 2: GOVERNANCE STATUS (Prominent, Expanded by Default)
+    # ═══════════════════════════════════════════════════════════════════════
 
-        def _style_status(val: str) -> str:
-            if "PASS" in val:
-                return "color: #64ffda; font-weight: bold"
-            return "color: #ffaa00; font-weight: bold"
+    with st.expander("🔒 **Governance Status** (Accountability Scorecard)", expanded=True):
+        gov_cols = st.columns([1, 3])
 
-        try:
-            styled = sc_df.style.map(_style_status, subset=["Status"])
-        except AttributeError:
-            styled = sc_df.style.applymap(_style_status, subset=["Status"])
-        st.dataframe(styled, use_container_width=True, hide_index=True)
+        with gov_cols[0]:
+            st.markdown("**Governance Flags:**")
+            if gov_flags:
+                for flag in gov_flags:
+                    severity = flag.get("severity", "warning")
+                    code = flag.get("code", "?")
+                    label = flag.get("label", "?")
+                    detail = flag.get("detail", flag.get("description", ""))
 
-        pass_count = sum(1 for v in scorecard.values() if v.get("passed"))
-        total = len(scorecard)
-        if pass_count == total:
-            st.success(f"All {total} criteria pass.")
+                    if severity == "warning":
+                        st.warning(f"**{code}** — {label}\n\n{detail}")
+                    else:
+                        st.info(f"**{code}** — {label}\n\n{detail}")
+            else:
+                st.success("✓ No governance flags detected.")
+
+        with gov_cols[1]:
+            st.markdown("**Accountability Score Card:**")
+            if scorecard:
+                sc_rows = []
+                for key, item in scorecard.items():
+                    passed = item.get("passed", False)
+                    sc_rows.append({
+                        "Criterion": item.get("label", key),
+                        "Current": f"{item.get('value', '—')}{item.get('unit', '')}",
+                        "Threshold": f"\u2265{item.get('threshold', '—')}{item.get('unit', '')}",
+                        "Status": "✓ PASS" if passed else "✗ WARN",
+                    })
+                sc_df = pd.DataFrame(sc_rows)
+
+                def _style_status(val: str) -> str:
+                    if "PASS" in val:
+                        return "color: #34d399; font-weight: bold"
+                    return "color: #ff6b6b; font-weight: bold"
+
+                styled_df = sc_df.style.applymap(_style_status, subset=["Status"])
+                st.dataframe(styled_df, use_container_width=True, hide_index=True)
+
+                # Contract compliance
+                st.markdown("**Interpretability Contract:**")
+                contract_rate = float(contract_summary.get("compliance_rate", 0.0))
+                col1, col2, col3 = st.columns([1, 2, 1])
+                with col1:
+                    st.metric("Compliance Rate", f"{contract_rate:.0%}", label_visibility="collapsed")
+                with col2:
+                    st.progress(contract_rate, text=f"{contract_rate:.0%} modules pass interface checks")
+                with col3:
+                    if contract_rate >= 0.9:
+                        st.success("Strong")
+                    elif contract_rate >= 0.7:
+                        st.warning("Moderate")
+                    else:
+                        st.error("Weak")
+
+            else:
+                st.info("Run the pipeline to generate scorecard.")
+
+    st.markdown("---")
+
+    # ═══════════════════════════════════════════════════════════════════════
+    # SECTION 3: DATA PROVENANCE (For Auditing)
+    # ═══════════════════════════════════════════════════════════════════════
+
+    with st.expander("📊 **Data Provenance** (Source Integrity & Coverage)", expanded=True):
+        st.markdown("**Pipeline Block Status:**")
+        st.metric(
+            "Pipeline Blocks Processed",
+            str(len(snapshots)),
+            help="Number of data domains successfully integrated"
+        )
+
+        st.markdown("**Data Source Status:**")
+        src_cols = st.columns(min(4, len(data_sources) or 1))
+        for i, (block, src) in enumerate(data_sources.items()):
+            with src_cols[i % len(src_cols)]:
+                st.markdown(f"**{block}**")
+                st.markdown(source_badge(src), unsafe_allow_html=True)
+
+        st.markdown("**Key Metrics:**")
+        metric_cols = st.columns(3)
+        with metric_cols[0]:
+            st.metric(
+                "Live Data Sources",
+                f"{sum(1 for v in data_sources.values() if 'Live' in v or ('Offline' in v and 'Synthetic' not in v))}/{len(data_sources)}",
+                help="Blocks drawing from real sources vs. synthetic fallbacks"
+            )
+        with metric_cols[1]:
+            if sae_result:
+                st.metric(
+                    "Interpretable Concepts",
+                    f"{sae_result['active_concepts']}/{sae_result['total_concepts']}",
+                    help="Named concepts discovered by Sparse Autoencoder"
+                )
+            else:
+                st.metric("Interpretable Concepts", "—")
+        with metric_cols[2]:
+            st.metric(
+                "UKT Dimensions",
+                "80",
+                help="Features in the shared Universal Knowledge Tensor"
+            )
+
+    st.markdown("---")
+
+    # ═══════════════════════════════════════════════════════════════════════
+    # SECTION 4: TECHNICAL DIAGNOSTICS (Collapsed, For Experts)
+    # ═══════════════════════════════════════════════════════════════════════
+
+    with st.expander("🔬 **Technical Diagnostics** (Expert View)", expanded=False):
+        st.markdown("### Kernel Evolution")
+        kernel_evolution = st.session_state.get("kernel_evolution", {})
+        if kernel_evolution:
+            with st.container():
+                evo_cols = st.columns(2)
+                with evo_cols[0]:
+                    st.markdown("**Kernel Stability Over Blocks:**")
+                    stability_info = kernel_evolution.get("stability_trend", [])
+                    if stability_info:
+                        st.line_chart({
+                            "Mean Cosine": [s.get("mean", 0) for s in stability_info],
+                            "Min Cosine": [s.get("min", 0) for s in stability_info],
+                        })
+                with evo_cols[1]:
+                    st.markdown("**Kernel Count and Importance:**")
+                    kernel_counts = kernel_evolution.get("kernel_counts", [])
+                    if kernel_counts:
+                        st.bar_chart({"Kernels": kernel_counts})
         else:
-            st.warning(f"{pass_count}/{total} criteria pass — review flagged items.")
+            st.info("Kernel evolution data not available.")
 
-        st.caption(
-            "v3.0 — The score card is a formal pass/fail audit against minimum "
-            "interpretability thresholds. It operationalises the traceability "
-            "guarantee by quantifying feature coverage, kernel stability, concept "
-            "activation, and data diversity."
-        )
+        st.markdown("### Reconstruction Error")
+        if final_snap:
+            recon_error = final_snap.get("reconstruction_error", 0)
+            st.metric("SVD Reconstruction Error", f"{recon_error:.6f}", help="Lower = better kernel fit")
 
+        st.markdown("### Stability Metrics")
+        stability = st.session_state.get("ukt_multirun_stability", {})
+        if stability:
+            stab_cols = st.columns(3)
+            with stab_cols[0]:
+                st.metric(
+                    "Mean Cosine Similarity",
+                    f"{stability.get('mean_cosine', 0):.3f}",
+                    help="Reality regression stability across 8 noise runs"
+                )
+            with stab_cols[1]:
+                st.metric(
+                    "Min Cosine Similarity",
+                    f"{stability.get('min_cosine', 0):.3f}",
+                )
+            with stab_cols[2]:
+                st.metric(
+                    "Std Dev",
+                    f"{stability.get('std_cosine', 0):.3f}",
+                )
 
-    if alignment_metrics:
-        st.markdown("---")
-        st.markdown("### Shadow Alignment Metrics")
-        legacy = alignment_metrics.get("legacy", {})
-        shared = alignment_metrics.get("shared_latent", {})
-        parity = alignment_metrics.get("parity_delta", {})
-        a1, a2, a3 = st.columns(3)
-        a1.metric("Legacy Retrieval@1", f"{legacy.get('retrieval_at_1', 0.0):.3f}")
-        a2.metric("Shared Retrieval@1", f"{shared.get('retrieval_at_1', 0.0):.3f}")
-        a3.metric("Shared Probe Cosine", f"{shared.get('probe_cosine', 0.0):.3f}")
-        st.caption(
-            "Shadow-only prototype comparison. Production decision path remains legacy UKT "
-            f"(retrieval delta {parity.get('retrieval_at_1', 0.0):+.3f})."
-        )
+        st.markdown("### Drift Monitoring")
+        drift_result = st.session_state.get("drift_result", {})
+        if drift_result:
+            with st.container():
+                drift_cols = st.columns(2)
+                with drift_cols[0]:
+                    st.markdown("**Drift Summary:**")
+                    st.write(f"Detection: {drift_result.get('alert_type', 'None')}")
+                    st.write(f"Severity: {drift_result.get('severity', 'N/A')}")
+                with drift_cols[1]:
+                    st.markdown("**Metrics:**")
+                    metrics = drift_result.get("drift_metrics", {})
+                    for k, v in metrics.items():
+                        st.metric(k, f"{v:.3f}", label_visibility="collapsed")
 
-    contract = st.session_state.get("interpretability_contract", {})
-    if contract:
-        st.markdown("### Interpretability Contract Compliance")
-        rows = []
-        for module_name, report in contract.items():
-            rows.append({
-                "Module": module_name,
-                "Compliant": "YES" if report.get("compliant") else "NO",
-                "Interface Issues": len(report.get("interface_issues", [])),
-                "Payload Issues": len(report.get("payload_issues", [])),
-            })
-        st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
+        st.markdown("### Alignment Metrics")
+        if alignment_metrics:
+            st.json(alignment_metrics)
 
+    st.markdown("---")
 
+    # ═══════════════════════════════════════════════════════════════════════
+    # SECTION 5: EXPORT & ACTIONS (Sticky/Prominent)
+    # ═══════════════════════════════════════════════════════════════════════
+
+    st.markdown("### 💾 Export & Actions")
+    export_cols = st.columns([1, 1, 1])
+    with export_cols[0]:
+        if st.button("📄 Export Governance Report", use_container_width=True):
+            st.info("Governance report export would be generated here (full implementation pending).")
+
+    with export_cols[1]:
+        if st.button("📋 Download Raw Data", use_container_width=True):
+            st.info("Raw snapshot data download pending implementation.")
+
+    with export_cols[2]:
+        if st.button("🔄 Refresh Metrics", use_container_width=True):
+            st.rerun()
+
+    st.caption(
+        "**v3.0 Governance Promise:** Every metric on this page traces back to specific "
+        "data sources and is auditable. The scorecard, flags, and provenance chain "
+        "enable contestability: any governance decision can be challenged by examining "
+        "the evidence, and the system provides mechanistic explanations."
+    )
