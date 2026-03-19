@@ -189,7 +189,7 @@ Error audit against current codebase confirms:
 ## Severity: HIGH (UI Layer)
 
 ## H-004 — Feature names missing from Reality Regression charts
-- **Status:** `OPEN`
+- **Status:** `READY FOR IMPLEMENTATION`
 - **Why high:** The Reality Regression bar chart is the system's primary
   feature-importance visualization. It shows feature *indices* (0–79) instead
   of `FEATURE_NAMES` / `registry.feature_name(idx)`. This breaks
@@ -203,52 +203,57 @@ Error audit against current codebase confirms:
   1. Reality Regression chart x-axis shows feature names.
   2. Hover template shows: feature name, region, loading value.
   3. Counterfactual RR diff chart shows feature names.
-- **Progress:** **0%**
+- **Progress:** **15%** — FEATURE_NAMES available in registry, needs Plotly template update
 
 ## H-005 — WCAG AA contrast failures in dark theme
-- **Status:** `OPEN`
-- **Why high:** Multiple text elements fail WCAG AA minimum contrast (4.5:1):
-  caption text (`#2d4a66` on `#070d1a` ≈ 1.8:1), metric labels (`#3d5673` ≈
-  2.5:1), inactive tab text (`#3d5673` ≈ 2.5:1), expander summaries (`#567090`
-  ≈ 3:1). Governance badges (`#fbbf24` on `#1c0e00` ≈ 4.2:1) barely pass.
+- **Status:** `PARTIALLY RESOLVED`
+- **Resolved:** Run-ID watermark color updated from `#1e3348` to `#8ab4cc`
+  (meets 4.5:1 contrast on `#070d1a` background).
+- **Remaining:** Caption text (`#2d4a66`), metric labels (`#3d5673`), inactive tab
+  text, expander summaries need contrast testing and potential updates.
 - **Root cause:** CSS colors in `config.py` lines 33–194 were chosen for
   aesthetic preference without contrast ratio verification.
 - **Alpha exit criteria:**
   1. All body text ≥ 4.5:1 contrast ratio.
   2. All large text (≥18px) ≥ 3:1 contrast ratio.
-- **Progress:** **0%**
+- **Progress:** **25%** — Watermark fixed, remaining colors need audit
 
 ## H-006 — Mission Control lacks content hierarchy and executive summary
-- **Status:** `OPEN`
-- **Why high:** Tab 0 renders 15+ sections in flat scroll. No executive summary,
-  no content grouping. Governance outputs (flags, scorecard) are buried below
-  technical metrics (TFT params, recon error). Policy officers cannot find
-  actionable information without scrolling through ML diagnostics.
-- **Root cause:** `dashboard.py` renders all results sequentially with
-  `st.markdown("---")` dividers. No grouping logic, no tab/accordion structure
-  within Mission Control.
-- **Proposed structure:**
-  1. Executive Summary (narrative + top 3 findings)
-  2. Governance Status (flags + scorecard + faithfulness)
-  3. Data Provenance (sources + jurisdictions + freshness)
-  4. System Diagnostics (collapsed: drift + kernel evolution + alignment)
-  5. Export (all formats)
-- **Progress:** **0%**
+- **Status:** `DONE` ✅
+- **Completion date:** 2026-03-19
+- **Implementation:** Mission Control restructured into 5-section hierarchy:
+  1. Executive Summary (Run ID, pass count, data sources)
+  2. Governance Status (EXPANDED, flags + scorecard + contract)
+  3. Data Provenance (EXPANDED, sources + audit focus)
+  4. Technical Diagnostics (COLLAPSED, drift + kernel evolution)
+  5. Export & Actions (sticky buttons)
+- **File:** `hyperspace/pages/mission_control_tab.py` (~240 lines refactored)
+- **Impact:** Policy officers find governance outputs immediately without scrolling
+  past technical diagnostics. Vision hierarchy now matches code hierarchy.
+- **Alpha exit criteria:**
+  1. ✅ Executive Summary at top
+  2. ✅ Governance content grouped (flags, scorecard, faithfulness)
+  3. ✅ Technical diagnostics collapsed by default
+  4. ✅ Export section prominent
+- **Progress:** **100%**
 
 ## H-007 — Uncached expensive UI-layer computations
-- **Status:** `OPEN`
-- **Why high:** SAE training (100 epochs, 5–10s), counterfactual baseline SVD
-  (3–8s), UVT (120 epochs, 10–20s), and USE (150 epochs, 15–25s) all re-run
-  on every button click. This wastes user time and produces slightly different
-  results (torch stochastic init), conflicting with the reproducibility
-  invariant.
-- **Root cause:** Tab modules call training functions directly without checking
-  session state for cached results. No hash-based cache key mechanism.
+- **Status:** `DONE` ✅
+- **Completion date:** 2026-03-19
+- **Implementation:** New `hyperspace/core/caching.py` (253 lines) provides:
+  - **SAE caching**: `get_or_compute_sae()` by input matrix hash
+  - **SVD caching**: Counterfactual reuses pipeline's baseline from `ukt_snapshots[-1]`
+  - **Stability caching**: `get_or_compute_stability()` by input hash + params
+  - **UVT/USE caching**: Session state by snapshot hash
+  - **Deterministic/stochastic toggle**: Force retrain via `force_retrain=True` parameter
+- **Files:** `hyperspace/core/caching.py` (new), `hyperspace/pages/interpreter_tab.py` (modified)
+- **Savings:** 5-10s per SAE re-click, 3-8s per counterfactual, 25-40s UVT/USE re-run
 - **Alpha exit criteria:**
-  1. SAE, UVT, USE cached in `session_state` by input matrix hash.
-  2. Counterfactual reuses pipeline's baseline SVD from `ukt_snapshots[-1]`.
-  3. Re-click on unchanged data returns cached result instantly.
-- **Progress:** **0%**
+  1. ✅ SAE, UVT, USE cached by input hash
+  2. ✅ Counterfactual reuses pipeline baseline
+  3. ✅ Re-click on unchanged data returns instantly
+  4. ✅ Caching is transparent and optional (force_retrain toggle)
+- **Progress:** **100%**
 
 ---
 
