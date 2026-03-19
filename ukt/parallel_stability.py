@@ -118,7 +118,7 @@ def estimate_joint_stability_parallel(
     """
     results = []
 
-    def compute_kernel_stability(run_idx: int) -> tuple[int, np.ndarray]:
+    def compute_kernel_stability(run_idx: int) -> tuple[int, np.ndarray | None]:
         """Compute kernel orientations for one noisy sample."""
         if seed is not None:
             rng = np.random.default_rng(seed + run_idx)

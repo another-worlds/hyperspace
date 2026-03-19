@@ -21,7 +21,7 @@ from hyperspace.core.drift_monitor import DriftMonitor
 from hyperspace.core.temporal_memory import KernelMemory
 from hyperspace.core.latent_versioning import LatentVersionTrail
 from hyperspace.core.parallel_fetch import fetch_all_data_parallel, fetch_models_parallel
-from hyperspace.core.logging import StructuredLogger, log_pipeline_step
+from hyperspace.core.logging import log_pipeline_step
 from hyperspace.viz.pipeline_progress import (
     PipelineProgressTracker,
     StreamlitProgressContext,
@@ -157,27 +157,27 @@ def run_pipeline() -> None:
             tracker, "data_fetch", "Fetching data sources in parallel..."
         ) as block:
             st.write("📥 Fetching real data sources (finance, news, political, spatial) in parallel...")
-        tickers = st.session_state.get("tickers", DEFAULT_TICKERS) or DEFAULT_TICKERS
-        import time
-        fetch_start = time.time()
+            tickers = st.session_state.get("tickers", DEFAULT_TICKERS) or DEFAULT_TICKERS
+            fetch_start = time.time()
 
-        from hyperspace.data.finance import get_ohlcv
-        def fetch_ohlcv_wrapper():
-            return get_ohlcv(tickers)
+            from hyperspace.data.finance import get_ohlcv
+            def fetch_ohlcv_wrapper():
+                return get_ohlcv(tickers)
 
-        # Parallel fetch all data sources
-        fetch_result = fetch_all_data_parallel(
-            tickers=tuple(tickers),
-            fetch_ohlcv_fn=fetch_ohlcv_wrapper,
-            max_workers=4,
-        )
+            # Parallel fetch all data sources
+            fetch_result = fetch_all_data_parallel(
+                tickers=tuple(tickers),
+                fetch_ohlcv_fn=fetch_ohlcv_wrapper,
+                max_workers=4,
+            )
 
-        # Check for errors and report
-        if fetch_result.errors:
-            for source, error in fetch_result.errors.items():
-                log_pipeline_step(f"data_fetch_{source}", "failed", error_msg=str(error))
-                st.warning(f"⚠️ {source.upper()}: {error}")
+            # Report any per-source errors
+            if fetch_result.errors:
+                for source, error in fetch_result.errors.items():
+                    log_pipeline_step(f"data_fetch_{source}", "failed", error_msg=str(error))
+                    st.warning(f"⚠️ {source.upper()}: {error}")
 
+            # Abort if required data is missing
             if not fetch_result.is_complete():
                 missing = fetch_result.get_missing()
                 status.update(
@@ -318,9 +318,10 @@ def run_pipeline() -> None:
             _save_version_trail()
             block.complete("Governance analysis complete")
 
-        # Finalize progress tracking and display summary
+        # Finalize progress tracking and display block status + timing summary
         tracker.finalize()
         st.markdown("---")
+        render_pipeline_progress(tracker)
         render_timing_summary(tracker)
 
         status.update(label="Pipeline complete!", state="complete")

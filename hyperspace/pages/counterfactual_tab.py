@@ -20,7 +20,7 @@ from hyperspace.config import (
     POLICY_KERNEL_NAMES,
     STRUCTURAL_REGION_BOUNDS,
 )
-from hyperspace.core.caching import get_or_compute_svd, make_svd_cache_key
+from hyperspace.core.caching import get_or_compute_svd
 from hyperspace.models.knowledge_matrix import (
     FEATURE_REGION_LABELS,
     estimate_reality_regression_stability,
@@ -83,8 +83,8 @@ def _run_counterfactual_ukt(
 
     kept_names = [block_names[i] for i in kept_indices]
 
-    # SVD
-    decomposition = decompose_svd(sub_matrix)
+    # SVD (with caching to avoid recomputation on UI reruns for the same sub-matrix)
+    decomposition = get_or_compute_svd(sub_matrix, compute_fn=decompose_svd)
     n_kernels = decomposition.n_kernels
 
     # SAE on reduced matrix
