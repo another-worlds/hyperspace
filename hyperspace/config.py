@@ -379,9 +379,6 @@ KERNEL_EXPANDER_THRESHOLD: float = 0.20
 CF_STABILITY_HIGH: float = 0.95
 CF_STABILITY_MODERATE: float = 0.80
 
-# Counterfactual tab: shock injection feature range (structural-centrality region)
-STRUCTURAL_REGION_BOUNDS: tuple[int, int] = (32, 47)
-
 # Feature flags
 FEATURE_FLAGS: dict[str, bool] = {
     # Shared-latent prototype remains shadow-only until parity + governance
