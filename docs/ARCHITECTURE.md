@@ -7,13 +7,14 @@ Hyperspace is a Python 3.11+ application built on Streamlit, using Plotly for vi
 ```
 Data Sources (32+ keyless APIs)
        │
-       ├── Finance (10 APIs)   → TFT forecasting       → UKT region  0-15
-       ├── News    (11 srcs)   → BERTopic clustering    → UKT region 16-31
-       ├── Political (10 src)  → Graph engine (NetworkX) → UKT region 32-47
-       ├── Spatial (12 srcs)   → SVD spatial kernels     → UKT region 64-79
-       └── Agent simulation    → Resource/alliance sim   → UKT region 48-63
+       ├── Finance (10 APIs)   → TFT forecasting        ┐
+       ├── News    (11 srcs)   → BERTopic clustering    │
+       ├── Political (10 src)  → Graph engine (NetworkX)├→ Monolithic UKT
+       ├── Spatial (12 srcs)   → Spatial kernels        │   (80-dim feature space)
+       └── Agent simulation    → Resource/alliance sim  ┘   [Blocks couple freely]
                                         │
-                            Universal Knowledge Tensor (80-dim)
+                            Universal Knowledge Tensor
+                              (block-agnostic discovery)
                                         │
                         ┌───────────────┼───────────────┐
                         │               │               │
@@ -64,15 +65,19 @@ Data Sources (32+ keyless APIs)
 
 ```
 1. Validate block result (required keys)
-2. Extract 80-dim feature vector
+2. Extract native feature vector from block model
 3. UKT.add_block():
-   a. Pad/truncate to 80 dims
+   a. Pad/truncate to 80 dims (monolithic space)
    b. Store raw features
-   c. Per-region [0,1] normalization
-   d. Observe in SharedProjection → rebuild P
+   c. Global min-max normalization (all 80 dims at once)
+   d. Observe full 80-dim normalized vector in SharedProjection → rebuild P
+      - Projection couples blocks via rank-1 outer products across full space
+      - Coupling strength: data-driven (energy ratio)
+      - Coupling direction: normalized outer product v_tgt ⊗ v_src
+      - Fallback: random orthogonal basis when coupling weak
    e. Re-project ALL blocks through updated P
    f. Stack into matrix → SVD decomposition
-   g. Label all kernels (region analysis + top features)
+   g. Label all kernels (block scores via block_feature_ranges + source_block provenance)
    h. Reset + replay Semantic Canvas for all blocks
    i. Generate kernel narratives
    j. Return snapshot

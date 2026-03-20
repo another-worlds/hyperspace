@@ -12,11 +12,11 @@ The system exists to prove that **AI accountability and analytical power are not
 
 1. **Emergence over prescription.** The system does not define what patterns exist. It creates the conditions for patterns to emerge from data, then reports what it discovers. Kernels, couplings, and cross-domain links are never hardcoded — they are computed from evidence.
 
-2. **Interpretability as first-class architecture.** Interpretability is not a post-hoc overlay. It is woven into every layer: the feature space is named and regionalized, projections are inspectable, kernels carry structured labels, and narratives are generated from measured quantities — not templates.
+2. **Interpretability as first-class architecture.** Interpretability is not a post-hoc overlay. It is woven into every layer: the feature space is monolithic with block-level provenance labels, projections are inspectable, kernels carry structured labels, and narratives are generated from measured quantities — not templates.
 
 3. **Governance by design.** Every output is traceable from high-level narrative back to specific feature values, through documented mathematical transformations, with inspectable intermediate states. An auditor can reconstruct any conclusion from stored snapshots without re-running the system.
 
-4. **Faithful representation.** Explanations must reflect actual computation, not plausible-sounding approximations. Narratives cite specific loadings, region scores, and feature evidence. Reconstruction error is reported as an honesty signal. The system admits when its model is a poor fit.
+4. **Faithful representation.** Explanations must reflect actual computation, not plausible-sounding approximations. Narratives cite specific loadings, block scores, and feature evidence. Reconstruction error is reported as an honesty signal. The system admits when its model is a poor fit.
 
 5. **Graceful degradation.** When data sources fail, the system continues with reduced scope rather than crashing or producing silent errors. Missing modalities decouple automatically through energy-based gating; no special-case handling is required.
 
@@ -34,9 +34,9 @@ The Pipeline executes heterogeneous model blocks in sequence, each using domain-
 
 ### The Universal Knowledge Tensor — Emergent Structure Discovery
 
-The UKT is the central analytical engine. It standardizes heterogeneous features into a shared space, applies adaptive cross-region projection to create genuine feature mixing, then decomposes the result via SVD to discover emergent kernels — principal directions of variance that span multiple domains.
+The UKT is the central analytical engine. It standardizes heterogeneous features into a monolithic 80-dim space with block-level provenance labels, applies adaptive cross-block projection to create genuine feature mixing, then decomposes the result via SVD to discover emergent kernels — principal directions of variance that span multiple blocks.
 
-**The Emergence Contract:** Kernels are NOT pre-defined. They emerge from the structure in the data. The pipeline does not name them, the regions do not determine them, and the projection topology does not restrict which regions can couple. The only structural prior is the region layout (which features belong to which domain); everything else — coupling strength, coupling direction, kernel count, kernel importance — comes from the data.
+**The Emergence Contract:** Kernels are NOT pre-defined. They emerge from the structure in the data. The pipeline does not name them, the blocks do not determine them, and the projection topology does not restrict which blocks can couple. The only structural prior is the block feature allocation (which features belong to which block for provenance); everything else — coupling strength, coupling direction, kernel count, kernel importance — comes from the data.
 
 ### The Semantic Interpretability Framework — Human Translation
 
@@ -50,15 +50,17 @@ The Interpretability Framework sits downstream of the UKT and translates emergen
 
 These properties must hold in every version of the system. Violating any of them undermines the core promise.
 
-1. **Normalize before project.** Per-region normalization scales each block's features to comparable ranges before they enter the mixing space. Normalizing after projection would re-isolate regions and erase cross-region energy ratios.
+1. **Normalize before project.** Global min-max normalization scales the full 80-dim feature vector to comparable ranges before projection. This ensures coupling reflects genuine cross-block interactions, not just per-block energy differences. Normalizing after projection would destroy the holistic structure.
 
-2. **Open topology.** All region pairs can couple. Coupling strength is gated by data-driven energy ratios, never by hardcoded topology restrictions.
+2. **Open topology.** All block pairs can couple. Coupling strength is gated by data-driven energy ratios, never by hardcoded topology restrictions.
 
-3. **Data-driven blend.** The ratio between data-driven coupling direction and random orthogonal fallback tracks coupling strength. Strong signals get data-driven coupling; weak signals get safe fallback.
+3. **Data-driven blend.** The ratio between data-driven coupling direction and random orthogonal fallback tracks coupling strength. Strong signals get data-driven coupling (rank-1 outer product); weak signals get safe fallback.
 
 4. **Full replay after each block.** When a new block arrives and the projection matrix is rebuilt, ALL blocks are re-projected through the updated matrix. No block retains stale coordinates from an earlier projection epoch.
 
-5. **Faithful narratives.** Every claim in a kernel narrative is backed by a measured quantity from the SVD decomposition. Narrative shape reflects kernel complexity (single-region, two-region coupling, multi-domain pattern).
+5. **Faithful narratives.** Every claim in a kernel narrative is backed by a measured quantity from the SVD decomposition. Narrative shape reflects kernel complexity (single-block, two-block coupling, multi-block pattern).
+
+8. **Regions are provenance metadata only.** Block-to-feature-range mappings exist for provenance tracking and feature naming, never for structural enforcement. No block "owns" reserved indices; the feature space is monolithic.
 
 6. **Counterfactual contestability.** Removing a data source rebuilds the ENTIRE pipeline — including the projection matrix — from remaining blocks' raw features. Impact is measured with mathematical precision, not approximation.
 
