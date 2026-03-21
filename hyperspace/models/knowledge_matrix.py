@@ -206,6 +206,10 @@ class UniversalKnowledgeTensor:
                 feature_meta=self.global_feature_meta,
                 timeframe_context=timeframe_context,
             )
+            # Enrich with dominant_region (feature-space region name) derived
+            # from the block-level dominant_feature_block via _BLOCK_TO_REGION.
+            dfb = label.get("dominant_feature_block", "")
+            label["dominant_region"] = _BLOCK_TO_REGION.get(dfb, "unknown")
             kernel_labels.append(label)
 
         # Semantic Canvas: reset and replay ALL blocks with the current
