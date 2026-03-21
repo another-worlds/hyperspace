@@ -177,7 +177,7 @@ def run_pipeline() -> None:
                     log_pipeline_step(f"data_fetch_{source}", "failed", error_msg=str(error))
                     st.warning(f"⚠️ {source.upper()}: {error}")
 
-            # Abort if required data is missing
+            # Abort if hard-required data is missing
             if not fetch_result.is_complete():
                 missing = fetch_result.get_missing()
                 status.update(
@@ -188,10 +188,27 @@ def run_pipeline() -> None:
                 block.fail(f"Missing: {', '.join(missing)}")
                 return
 
+            # Warn about soft-optional sources that failed
+            soft_warnings = fetch_result.get_warnings()
+            if soft_warnings:
+                for w in soft_warnings:
+                    st.warning(
+                        f"⚠️ Optional data source unavailable: **{w}**. "
+                        f"Pipeline proceeds with degraded capabilities. "
+                        f"See governance flag GOV-006."
+                    )
+                    log_pipeline_step(
+                        f"data_fetch_{w.replace(' ', '_')}", "degraded",
+                        error_msg=f"{w} unavailable; pipeline continues without it",
+                    )
+
             fetch_duration = time.time() - fetch_start
-            st.write(f"✓ Data fetching complete ({fetch_duration:.1f}s): {fetch_result.ohlcv_source} | {fetch_result.docs_source} | {fetch_result.agreement_source}")
+            sources_summary = f"{fetch_result.ohlcv_source} | {fetch_result.docs_source} | {fetch_result.agreement_source}"
+            if fetch_result.spatial_source:
+                sources_summary += f" | {fetch_result.spatial_source}"
+            st.write(f"✓ Data fetching complete ({fetch_duration:.1f}s): {sources_summary}")
             log_pipeline_step("data_fetch", "completed", duration_sec=fetch_duration)
-            block.complete(f"Fetched from {fetch_result.ohlcv_source}, {fetch_result.docs_source}, {fetch_result.agreement_source}")
+            block.complete(f"Fetched from {sources_summary}")
 
         # Extract fetched data
         ohlcv_df = fetch_result.ohlcv_df
