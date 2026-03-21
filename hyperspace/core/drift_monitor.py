@@ -19,6 +19,12 @@ from typing import Any
 
 import numpy as np
 
+from hyperspace.config import (
+    DRIFT_IMPORTANCE_COSINE_THRESHOLD,
+    DRIFT_REGRESSION_COSINE_THRESHOLD,
+    DRIFT_STABILITY_DELTA_THRESHOLD,
+)
+
 
 @dataclass
 class DriftRecord:
@@ -58,13 +64,13 @@ class DriftAlert:
     threshold: float
 
 
-# Default alerting thresholds
+# Default alerting thresholds (values imported from config.py for auditability)
 DRIFT_THRESHOLDS: dict[str, dict[str, Any]] = {
     "DRIFT-001": {
         "label": "Reality Regression Drift",
         "metric": "regression_cosine",
         "direction": "below",
-        "threshold": 0.85,
+        "threshold": DRIFT_REGRESSION_COSINE_THRESHOLD,
         "severity": "warning",
         "description": (
             "Cosine similarity between current and prior-window reality "
@@ -75,7 +81,7 @@ DRIFT_THRESHOLDS: dict[str, dict[str, Any]] = {
         "label": "Kernel Importance Redistribution",
         "metric": "importance_cosine",
         "direction": "below",
-        "threshold": 0.80,
+        "threshold": DRIFT_IMPORTANCE_COSINE_THRESHOLD,
         "severity": "warning",
         "description": (
             "Kernel importance distribution shifted significantly between "
@@ -86,7 +92,7 @@ DRIFT_THRESHOLDS: dict[str, dict[str, Any]] = {
         "label": "Stability Degradation",
         "metric": "stability_delta",
         "direction": "below",
-        "threshold": -0.10,
+        "threshold": DRIFT_STABILITY_DELTA_THRESHOLD,
         "severity": "warning",
         "description": (
             "Multi-run kernel stability dropped by more than the allowed "

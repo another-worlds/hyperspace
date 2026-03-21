@@ -22,7 +22,15 @@ def render() -> None:
         "*Backbone: BERTopic + sentence-transformers.*"
     )
 
-    cluster_btn = st.button("Fit Topic Model", type="primary", key="cluster_fit")
+    col_btn1, col_btn2 = st.columns([3, 1])
+    with col_btn1:
+        cluster_btn = st.button("Fit Topic Model", type="primary", key="cluster_fit")
+    with col_btn2:
+        force_retrain = st.button("🔄 Retrain", key="cluster_retrain",
+                                  help="Clear cached topics and refit BERTopic model")
+    if force_retrain:
+        st.session_state.pop("cluster_result", None)
+        cluster_btn = True
 
     # Use pipeline result if available
     cluster_result = st.session_state.get("cluster_result")
@@ -70,6 +78,9 @@ def render() -> None:
                     x=[str(x) for x in tc.index], y=tc.values,
                     color=tc.values, color_continuous_scale="Viridis",
                     title="Document Count per Topic",
+                )
+                fig.update_traces(
+                    hovertemplate="<b>Topic %{x}</b><br>Documents: %{y}<extra></extra>",
                 )
                 fig.update_layout(**PLOTLY_LAYOUT, height=350)
                 st.plotly_chart(fig, use_container_width=True, key="clusters_topic_distribution")

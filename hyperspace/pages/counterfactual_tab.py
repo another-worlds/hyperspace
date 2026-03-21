@@ -205,10 +205,12 @@ def _plot_kernel_importance_diff(
     fig.add_trace(go.Bar(
         x=x, y=orig_padded, name="Original",
         marker_color="#64ffda", opacity=0.8,
+        hovertemplate="<b>%{x}</b><br>Importance: %{y:.3f}<extra>Original</extra>",
     ))
     fig.add_trace(go.Bar(
         x=x, y=cf_padded, name="Counterfactual",
         marker_color="#ff6b6b", opacity=0.8,
+        hovertemplate="<b>%{x}</b><br>Importance: %{y:.3f}<extra>Counterfactual</extra>",
     ))
     fig.update_layout(
         **PLOTLY_LAYOUT,

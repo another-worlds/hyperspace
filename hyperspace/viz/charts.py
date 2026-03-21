@@ -21,6 +21,7 @@ def candlestick_chart(df, ticker: str) -> go.Figure:
         increasing_line_color="#64ffda", decreasing_line_color="#f87171",
         increasing_fillcolor="rgba(100,255,218,0.25)",
         decreasing_fillcolor="rgba(248,113,113,0.25)",
+        hoverinfo="x+y",
     )])
     fig.update_layout(**dark_layout(
         title=f"{ticker} — Price History",
@@ -45,12 +46,14 @@ def forecast_chart(x_axis, q10, q50, q90, title: str = "Forecast") -> go.Figure:
         y=q90_list + q10_list[::-1],
         fill="toself", fillcolor="rgba(100,255,218,0.10)",
         line=dict(width=0), name="80% CI", showlegend=True,
+        hovertemplate="Step: %{x}<br>Value: %{y:.2f}<extra>80% CI</extra>",
     ))
     # Median forecast line
     fig.add_trace(go.Scatter(
         x=x_list, y=q50_list, mode="lines",
         name="Median forecast",
         line=dict(color="#64ffda", width=2.5),
+        hovertemplate="Step: %{x}<br>Forecast: %{y:.2f}<extra>Median</extra>",
     ))
     fig.update_layout(**dark_layout(
         title=title, height=320,

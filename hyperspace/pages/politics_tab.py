@@ -24,7 +24,15 @@ def render() -> None:
         "community detection, and optional UN voting data integration."
     )
 
-    graph_btn = st.button("Build & Analyze Graph", type="primary", key="graph_build")
+    col_btn1, col_btn2 = st.columns([3, 1])
+    with col_btn1:
+        graph_btn = st.button("Build & Analyze Graph", type="primary", key="graph_build")
+    with col_btn2:
+        force_rebuild = st.button("🔄 Rebuild", key="graph_rebuild",
+                                  help="Clear cached graph and rebuild from fresh data")
+    if force_rebuild:
+        st.session_state.pop("graph_result", None)
+        graph_btn = True
 
     graph_result = st.session_state.get("graph_result")
 
@@ -106,6 +114,9 @@ def render() -> None:
                 cent_df.melt(id_vars="Node", var_name="Metric", value_name="Score"),
                 x="Node", y="Score", color="Metric", barmode="group",
                 title="Influence Measures by Actor",
+            )
+            fig.update_traces(
+                hovertemplate="<b>%{x}</b><br>%{data.name}: %{y:.3f}<extra></extra>",
             )
             fig.update_layout(**PLOTLY_LAYOUT, height=400)
             st.plotly_chart(fig, use_container_width=True, key="politics_centrality_bar")
