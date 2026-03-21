@@ -50,7 +50,16 @@ class KernelEvolution:
 
 
 def _cosine(a: np.ndarray, b: np.ndarray) -> float:
-    """Cosine similarity with zero-guard."""
+    """Cosine similarity with zero-guard and length-mismatch handling.
+
+    When importance vectors differ in length (e.g. a run with Spatial block
+    vs one without), the shorter vector is zero-padded.  Missing kernels
+    contribute zero importance, so padding preserves semantic correctness.
+    """
+    if a.shape != b.shape:
+        size = max(len(a), len(b))
+        a = np.pad(a, (0, size - len(a)))
+        b = np.pad(b, (0, size - len(b)))
     na, nb = np.linalg.norm(a), np.linalg.norm(b)
     if na < 1e-12 or nb < 1e-12:
         return 0.0
