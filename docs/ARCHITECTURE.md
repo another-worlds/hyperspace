@@ -169,6 +169,8 @@ Open-Elevation, Open-Meteo, USGS earthquake feeds, NOAA climate data, and derive
 | SAE caching by input hash | 5-10s savings per iteration; deterministic/stochastic toggle |
 | Structured event logging | Governance-compliant audit trails |
 | Counterfactual scenario memory | Store last 5 runs for side-by-side comparison |
+| Hovertemplates on every chart | Human-readable hover labels for non-technical stakeholders |
+| Per-tab retrain buttons | Users can invalidate cached results without full pipeline reset |
 
 ---
 
@@ -182,21 +184,23 @@ Open-Elevation, Open-Meteo, USGS earthquake feeds, NOAA climate data, and derive
 - **Weak knowledge reuse.** Kernels summarize variance per run but are not versioned, distilled, or transferred as reusable modules.
 - **Uneven interpretability coverage upstream.** UKT and semantic layers are interpretable, but several upstream model blocks lack standardized concept interfaces.
 
-### UI Gaps (Phase 2 remaining)
+### UI Gaps (Phase 3 remaining)
 
 - Cross-tab navigation links and breadcrumb trail not yet implemented
 - Advanced diagnostics section (~200 lines) needs reorganization into sub-tabs
-- Per-tab "Retrain" button for cache invalidation not yet exposed
-- Policy language mode (jargon-to-plain-English toggle) not yet built
 
-### Resolved (Phase 0-2)
+### Resolved (Phase 0-3)
 
-- WCAG contrast compliance (fixed)
+- WCAG contrast compliance (fixed, including sidebar subtitle)
 - Governance-first Mission Control hierarchy (implemented)
 - Computation caching for SAE and expensive ops (implemented)
-- Centralized governance thresholds (completed)
+- Centralized governance thresholds, including drift monitoring (completed)
 - Pipeline progress visualization with per-block timing (implemented)
 - Parallel data fetching, model training, kernel labeling, stability estimation (implemented)
+- Hovertemplates on all Plotly charts with human-readable field names (Phase 3)
+- Mission Control native Streamlit charts replaced with interactive Plotly (Phase 3)
+- Per-tab retrain/rebuild buttons for cache invalidation (Phase 3)
+- Agent simulation parameter-hash caching (Phase 3)
 
 ---
 
@@ -206,8 +210,6 @@ Open-Elevation, Open-Meteo, USGS earthquake feeds, NOAA climate data, and derive
 
 - Cross-tab navigation with contextual links between related outputs
 - Advanced diagnostics reorganization into collapsible sub-tabs
-- Per-tab cache control ("Retrain" buttons)
-- Policy language mode for non-technical stakeholders
 
 ### Medium-Term (Architectural Evolution)
 
