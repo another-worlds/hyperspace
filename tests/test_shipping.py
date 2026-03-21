@@ -267,8 +267,8 @@ class TestRegressionGuards:
         assert len(CANVAS_DIMENSIONS) == 12
 
     def test_five_governance_flag_codes(self):
-        assert len(GOVERNANCE_FLAG_CODES) == 5
-        for i in range(1, 6):
+        assert len(GOVERNANCE_FLAG_CODES) == 6
+        for i in range(1, 7):
             assert f"GOV-{i:03d}" in GOVERNANCE_FLAG_CODES
 
     def test_normalization_idempotent(self):

@@ -632,6 +632,17 @@ class PipelineRunner:
                 detail=f"Blocks using synthetic data: {', '.join(synthetic_blocks)}.",
             ))
 
+        # GOV-006: Spatial data unavailable
+        if "Spatial" not in data_sources:
+            code_info = GOVERNANCE_FLAG_CODES["GOV-006"]
+            flags.append(GovernanceFlag(
+                code="GOV-006",
+                label=code_info["label"],
+                description=code_info["description"],
+                severity=code_info["severity"],
+                detail="Spatial raster fetch failed. Block 4 (Spatial) was skipped.",
+            ))
+
         return flags
 
     # ------------------------------------------------------------------ #

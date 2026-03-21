@@ -32,16 +32,19 @@ class ParallelFetchResult:
         self.timings: dict[str, float] = {}
 
     def is_complete(self) -> bool:
-        """Check if all required data was fetched successfully."""
+        """Check if all hard-required data was fetched successfully.
+
+        Spatial data is soft-required: the pipeline can proceed without it
+        (pipeline.py Block 4 and agent_sim already handle spatial_data=None).
+        """
         return (
             self.ohlcv_df is not None
             and self.docs is not None
             and self.agreement is not None
-            and self.spatial_data is not None
         )
 
     def get_missing(self) -> list[str]:
-        """Return list of missing data sources."""
+        """Return list of missing hard-required data sources."""
         missing = []
         if self.ohlcv_df is None:
             missing.append("finance")
@@ -49,9 +52,22 @@ class ParallelFetchResult:
             missing.append("documents")
         if self.agreement is None:
             missing.append("political agreement")
-        if self.spatial_data is None:
-            missing.append("spatial rasters")
         return missing
+
+    def get_warnings(self) -> list[str]:
+        """Return list of soft-optional data sources that failed.
+
+        These sources are not required for pipeline execution but their
+        absence degrades output quality and triggers governance flags.
+        """
+        warnings = []
+        if self.spatial_data is None:
+            warnings.append("spatial rasters")
+        return warnings
+
+    def is_fully_complete(self) -> bool:
+        """Check if ALL data sources (required + optional) succeeded."""
+        return self.is_complete() and len(self.get_warnings()) == 0
 
 
 def fetch_all_data_parallel(

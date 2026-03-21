@@ -684,7 +684,7 @@ GLOSSARY: dict[str, str] = {
     "Governance Flag": (
         "An automatically generated warning raised when the system detects a potential "
         "data quality issue, analytical bias, or coverage gap. Flags are machine-readable "
-        "(coded GOV-001 through GOV-005) and included in all exported reports."
+        "(coded GOV-001 through GOV-006) and included in all exported reports."
     ),
     "Provenance Chain": (
         "The complete documented history of a single data point: what it measures, "
@@ -742,5 +742,15 @@ GOVERNANCE_FLAG_CODES: dict[str, dict] = {
             "inputs are illustrative only and must not be treated as empirical findings."
         ),
         severity="info",
+    ),
+    "GOV-006": dict(
+        label="Spatial Data Unavailable",
+        description=(
+            "Spatial raster data (elevation, climate, World Bank indicators, "
+            "environmental layers) could not be fetched. The pipeline proceeded "
+            "without spatial enrichment. Geospatial kernel analysis and spatial "
+            "block outputs are absent from this run."
+        ),
+        severity="warning",
     ),
 }
