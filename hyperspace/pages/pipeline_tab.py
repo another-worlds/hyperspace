@@ -4,6 +4,7 @@ from __future__ import annotations
 import pandas as pd
 import streamlit as st
 
+from hyperspace.config import KERNEL_EXPANDER_THRESHOLD
 from hyperspace.viz import kernel_viz
 from hyperspace.viz.charts import source_badge
 
@@ -42,7 +43,7 @@ def render() -> None:
     if policy_mode:
         st.info(
             "🗂️ **Governance Language Mode is active.** "
-            "Visit the Semantic Interpreter tab to see policy-language kernel briefings."
+            "Kernel narratives below use policy-friendly language."
         )
 
     # Data source summary
@@ -134,6 +135,61 @@ def render() -> None:
     fig_evo = kernel_viz.plot_kernel_evolution(snapshots)
     st.plotly_chart(fig_evo, use_container_width=True, key="pipeline_kernel_evolution")
 
+    # ── Semantic Kernel Narratives ────────────────────────────────────
+    # Each UKT kernel gets a short (data-grounded) and extended (LLM-
+    # generated) narrative explanation, surfaced with full governance
+    # widgets for contestability and stakeholder annotation.
+    final_snap = snapshots[-1] if snapshots else None
+    if final_snap and final_snap.get("kernel_labels"):
+        st.markdown("---")
+        st.markdown("### Semantic Kernel Narratives")
+        st.caption(
+            "Each kernel is a cross-domain covariance pattern discovered by SVD "
+            "decomposition of the Universal Knowledge Tensor. The short narrative "
+            "is data-grounded — every claim backed by a measured quantity. The "
+            "extended interpretation provides richer semantic context generated "
+            "by the Tiny-LLM narrator when available."
+        )
+
+        if policy_mode:
+            from hyperspace.pages.governance import render_kernel_policy_mode
+            render_kernel_policy_mode(final_snap["kernel_labels"])
+        else:
+            stability = st.session_state.get("ukt_multirun_stability")
+            from hyperspace.pages.governance import (
+                render_contest_popover,
+                render_annotation_widget,
+            )
+            for kl in final_snap["kernel_labels"]:
+                with st.expander(
+                    kl["label"],
+                    expanded=kl["importance"] > KERNEL_EXPANDER_THRESHOLD,
+                ):
+                    # Short narrative (data-grounded, always present)
+                    st.markdown(kl["narrative"])
+
+                    # Extended narrative (semantic, LLM-generated, optional)
+                    if kl.get("semantic_narrative"):
+                        with st.expander(
+                            "Extended Semantic Interpretation", expanded=False
+                        ):
+                            st.info(kl["semantic_narrative"])
+
+                    # Governance widgets: contest + annotate
+                    st.markdown("---")
+                    col_contest, col_annotate = st.columns([1, 2])
+                    with col_contest:
+                        render_contest_popover(
+                            kl, stability=stability,
+                            key_suffix=f"pipeline_{kl['kernel_id']}",
+                        )
+                    with col_annotate:
+                        render_annotation_widget(
+                            kernel_id=kl["kernel_id"],
+                            label=kl.get("label", kl["kernel_id"]),
+                            key_suffix=f"pipeline_{kl['kernel_id']}",
+                        )
+
     # ── Governance Narrative ─────────────────────────────────────────
     canvas_narrative = st.session_state.get("canvas_narrative")
     reality_narrative = st.session_state.get("reality_narrative")
@@ -189,6 +245,19 @@ def render() -> None:
     report_lines.append("## Pipeline Reports")
     for snap in snapshots:
         report_lines.append(snap["report"])
+
+    # Include kernel narratives (short + extended)
+    if final_snap and final_snap.get("kernel_labels"):
+        report_lines.append("")
+        report_lines.append("## Kernel Narratives")
+        for kl in final_snap["kernel_labels"]:
+            report_lines.append(f"### {kl.get('label', kl['kernel_id'])}")
+            report_lines.append(kl.get("narrative", ""))
+            if kl.get("semantic_narrative"):
+                report_lines.append(
+                    f"\n**Semantic interpretation:** {kl['semantic_narrative']}"
+                )
+            report_lines.append("")
 
     # Include annotations
     if annotations:
