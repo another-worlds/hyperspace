@@ -42,7 +42,7 @@ with st.sidebar:
         '<div style="font-family:Inter,sans-serif; font-size:1.25em; font-weight:700; '
         'color:#dce8f0; letter-spacing:-0.01em; line-height:1.2;">Hyperspace</div>'
         '<div style="font-family:Inter,sans-serif; font-size:0.68em; font-weight:600; '
-        'color:#3d5673; letter-spacing:0.12em; text-transform:uppercase; margin-top:4px;">'
+        'color:#8ab4cc; letter-spacing:0.12em; text-transform:uppercase; margin-top:4px;">'
         'AI Accountability Infrastructure</div>'
         '</div>',
         unsafe_allow_html=True,

@@ -379,6 +379,11 @@ KERNEL_EXPANDER_THRESHOLD: float = 0.20
 CF_STABILITY_HIGH: float = 0.95
 CF_STABILITY_MODERATE: float = 0.80
 
+# Drift monitoring thresholds (from core/drift_monitor.py)
+DRIFT_REGRESSION_COSINE_THRESHOLD: float = 0.85
+DRIFT_IMPORTANCE_COSINE_THRESHOLD: float = 0.80
+DRIFT_STABILITY_DELTA_THRESHOLD: float = -0.10
+
 # Feature flags
 FEATURE_FLAGS: dict[str, bool] = {
     # Shared-latent prototype remains shadow-only until parity + governance

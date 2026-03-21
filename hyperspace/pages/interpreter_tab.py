@@ -130,6 +130,7 @@ def render() -> None:
                 name="Accumulated (all domains)",
                 line=dict(color="#64ffda", width=3),
                 fillcolor="rgba(100, 255, 218, 0.15)",
+                hovertemplate="<b>%{theta}</b><br>Score: %{r:.3f}<extra>Accumulated</extra>",
             ))
             colors = ["#3498db", "#e67e22", "#e74c3c", "#2ecc71", "#9b59b6"]
             for i, entry in enumerate(canvas_state["entries"]):
@@ -140,6 +141,7 @@ def render() -> None:
                     name=entry.block_name,
                     line=dict(color=colors[i % len(colors)], dash="dot", width=1.5),
                     opacity=0.6,
+                    hovertemplate="<b>%{theta}</b><br>Score: %{r:.3f}<extra>" + entry.block_name + "</extra>",
                 ))
             fig_radar.update_layout(
                 **PLOTLY_LAYOUT,
@@ -256,6 +258,9 @@ def render() -> None:
                     y=block_names[:act.shape[0]],
                     color_continuous_scale="Viridis",
                     title="Concept Activations — Data Domain × Named Concept",
+                )
+                fig_act.update_traces(
+                    hovertemplate="Block: %{y}<br>Concept: %{x}<br>Activation: %{z:.3f}<extra></extra>",
                 )
                 fig_act.update_layout(
                     **PLOTLY_LAYOUT,
@@ -391,6 +396,9 @@ def render() -> None:
                             color_continuous_scale="Viridis",
                             title="Canvas Evolution per Step",
                         )
+                        fig_traj.update_traces(
+                            hovertemplate="Block: %{y}<br>Dimension: %{x}<br>Value: %{z:.3f}<extra></extra>",
+                        )
                         fig_traj.update_layout(**PLOTLY_LAYOUT, height=280)
                         st.plotly_chart(fig_traj, use_container_width=True,
                                         key="interp_adv_canvas_trajectory")
@@ -414,6 +422,9 @@ def render() -> None:
                     fig_loss = px.line(
                         x=list(range(len(loss_hist))), y=loss_hist,
                         title="SAE Training Loss Curve",
+                    )
+                    fig_loss.update_traces(
+                        hovertemplate="Epoch: %{x}<br>Loss: %{y:.4f}<extra></extra>",
                     )
                     fig_loss.update_layout(
                         **PLOTLY_LAYOUT, height=220,
@@ -463,6 +474,9 @@ def render() -> None:
                     title="Cross-Block Coupling Matrix (Attention Weights)",
                     text_auto=".3f",
                 )
+                fig_coup.update_traces(
+                    hovertemplate="Source: %{x}<br>Target: %{y}<br>Weight: %{z:.4f}<extra></extra>",
+                )
                 fig_coup.update_layout(**PLOTLY_LAYOUT, height=350)
                 st.plotly_chart(fig_coup, use_container_width=True,
                                 key="interp_adv_uvt_coupling")
@@ -481,6 +495,9 @@ def render() -> None:
                                     title=f"Head {h}",
                                     text_auto=".2f",
                                 )
+                                fig_h.update_traces(
+                                    hovertemplate="Source: %{x}<br>Target: %{y}<br>Attention: %{z:.3f}<extra>Head " + str(h) + "</extra>",
+                                )
                                 fig_h.update_layout(
                                     **PLOTLY_LAYOUT, height=250,
                                     coloraxis_showscale=False,
@@ -495,6 +512,7 @@ def render() -> None:
                         y=[cl["variance_explained"] for cl in coupling_labels],
                         marker_color=["#64ffda" if cl["variance_explained"] > KERNEL_EXPANDER_THRESHOLD
                                       else "#3498db" for cl in coupling_labels],
+                        hovertemplate="<b>%{x}</b><br>Variance Explained: %{y:.3f}<extra></extra>",
                     ))
                     fig_var.update_layout(
                         **PLOTLY_LAYOUT, height=220,
@@ -519,6 +537,8 @@ def render() -> None:
                     x=list(range(len(encoding))),
                     y=encoding,
                     marker_color=colors_use,
+                    customdata=dim_labels_use,
+                    hovertemplate="<b>%{customdata}</b> (dim %{x})<br>Value: %{y:.3f}<extra></extra>",
                 ))
                 fig_enc.update_layout(
                     **PLOTLY_LAYOUT, height=260,
@@ -533,6 +553,9 @@ def render() -> None:
                     fig_use_loss = px.line(
                         x=list(range(len(use_loss))), y=use_loss,
                         title="USE Training Loss",
+                    )
+                    fig_use_loss.update_traces(
+                        hovertemplate="Epoch: %{x}<br>Loss: %{y:.4f}<extra></extra>",
                     )
                     fig_use_loss.update_layout(**PLOTLY_LAYOUT, height=200)
                     st.plotly_chart(fig_use_loss, use_container_width=True,

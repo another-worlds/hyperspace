@@ -13,8 +13,10 @@ This redesign implements the vision hierarchy:
 from __future__ import annotations
 
 import pandas as pd
+import plotly.graph_objects as go
 import streamlit as st
 
+from hyperspace.config import PLOTLY_LAYOUT
 from hyperspace.viz.charts import source_badge
 
 
@@ -207,15 +209,48 @@ def render() -> None:
                     st.markdown("**Kernel Stability Over Blocks:**")
                     stability_info = kernel_evolution.get("stability_trend", [])
                     if stability_info:
-                        st.line_chart({
-                            "Mean Cosine": [s.get("mean", 0) for s in stability_info],
-                            "Min Cosine": [s.get("min", 0) for s in stability_info],
-                        })
+                        steps = list(range(1, len(stability_info) + 1))
+                        mean_vals = [s.get("mean", 0) for s in stability_info]
+                        min_vals = [s.get("min", 0) for s in stability_info]
+                        fig_stab = go.Figure()
+                        fig_stab.add_trace(go.Scatter(
+                            x=steps, y=mean_vals, mode="lines+markers",
+                            name="Mean Cosine", line=dict(color="#64ffda", width=2),
+                            hovertemplate="Step %{x}<br>Mean Cosine: %{y:.3f}<extra></extra>",
+                        ))
+                        fig_stab.add_trace(go.Scatter(
+                            x=steps, y=min_vals, mode="lines+markers",
+                            name="Min Cosine", line=dict(color="#ff6b6b", width=2),
+                            hovertemplate="Step %{x}<br>Min Cosine: %{y:.3f}<extra></extra>",
+                        ))
+                        fig_stab.update_layout(
+                            **PLOTLY_LAYOUT, height=280,
+                            title="Kernel Stability Over Blocks",
+                            xaxis_title="Block Step", yaxis_title="Cosine Similarity",
+                            margin=dict(l=20, r=20, t=40, b=20),
+                        )
+                        st.plotly_chart(fig_stab, use_container_width=True,
+                                        key="mc_kernel_stability")
                 with evo_cols[1]:
                     st.markdown("**Kernel Count and Importance:**")
                     kernel_counts = kernel_evolution.get("kernel_counts", [])
                     if kernel_counts:
-                        st.bar_chart({"Kernels": kernel_counts})
+                        steps = list(range(1, len(kernel_counts) + 1))
+                        fig_kc = go.Figure(go.Bar(
+                            x=steps, y=kernel_counts,
+                            marker_color="#64ffda",
+                            text=[str(k) for k in kernel_counts],
+                            textposition="auto",
+                            hovertemplate="Step %{x}<br>Kernels: %{y}<extra></extra>",
+                        ))
+                        fig_kc.update_layout(
+                            **PLOTLY_LAYOUT, height=280,
+                            title="Kernel Count per Block",
+                            xaxis_title="Block Step", yaxis_title="Kernel Count",
+                            margin=dict(l=20, r=20, t=40, b=20),
+                        )
+                        st.plotly_chart(fig_kc, use_container_width=True,
+                                        key="mc_kernel_counts")
         else:
             st.info("Kernel evolution data not available.")
 

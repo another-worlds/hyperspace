@@ -23,6 +23,9 @@ def plot_kernel_matrix(snapshot: dict, block_names: list[str] | None = None) -> 
         color_continuous_scale="RdBu_r",
         text_auto=".2f",
     )
+    fig.update_traces(
+        hovertemplate="Block: %{y}<br>Kernel: %{x}<br>Activation: %{z:.3f}<extra></extra>",
+    )
     fig.update_layout(
         **PLOTLY_LAYOUT,
         title="Universal Kernel Matrix (Cross-Block Feature Decomposition)",
@@ -41,6 +44,7 @@ def plot_kernel_importance(snapshot: dict) -> go.Figure:
         marker_color="#64ffda",
         text=[f"{v:.1%}" for v in importance],
         textposition="auto",
+        hovertemplate="<b>%{x}</b><br>Variance Explained: %{y:.3f} (%{text})<extra></extra>",
     ))
     fig.update_layout(
         **PLOTLY_LAYOUT,
@@ -133,6 +137,8 @@ def plot_kernel_evolution(snapshots: list[dict]) -> go.Figure:
             fig.add_trace(go.Scatter(
                 x=x_vals, y=y_vals, mode="lines+markers",
                 name=f"K{k}", line=dict(width=2),
+                hovertemplate="<b>K%{k}</b><br>%{x}<br>Importance: %{y:.3f}<extra></extra>"
+                .replace("%{k}", str(k)),
             ))
 
     fig.update_layout(
@@ -164,6 +170,11 @@ def plot_concept_kernel_map(concept_kernel_rows: list[dict]) -> go.Figure:
             text=[r["concept"] for r in active],
             textposition="top center",
             name="Active Concepts",
+            hovertemplate=(
+                "<b>%{text}</b><br>"
+                "Coherence: %{x:.3f}<br>"
+                "Mean Activation: %{y:.3f}<extra>Active</extra>"
+            ),
         ))
     if inactive:
         fig.add_trace(go.Scatter(
@@ -172,6 +183,12 @@ def plot_concept_kernel_map(concept_kernel_rows: list[dict]) -> go.Figure:
             mode="markers",
             marker=dict(size=8, color="#555555", symbol="circle"),
             name="Inactive Concepts",
+            customdata=[r["concept"] for r in inactive],
+            hovertemplate=(
+                "<b>%{customdata}</b><br>"
+                "Coherence: %{x:.3f}<br>"
+                "Mean Activation: %{y:.3f}<extra>Inactive</extra>"
+            ),
         ))
 
     fig.update_layout(

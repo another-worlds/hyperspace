@@ -923,6 +923,7 @@ def render_results() -> None:
                             name=block_name,
                             line=dict(width=2),
                             marker=dict(size=6),
+                            hovertemplate="<b>" + block_name + "</b><br>Run: %{x}<br>Recon Error: %{y:.6f}<extra></extra>",
                         ))
                 if _recon_traces:
                     _recon_fig = go.Figure(data=_recon_traces)
@@ -939,6 +940,11 @@ def render_results() -> None:
                         ),
                     )
                     st.plotly_chart(_recon_fig, use_container_width=True)
+                    st.caption(
+                        "v3.0 — Reconstruction error measures how well the SVD kernel "
+                        "decomposition captures the full feature matrix. Decreasing "
+                        "trends indicate the latent space is stabilising across runs."
+                    )
 
                 # Importance stability chart
                 _imp_traces = []
@@ -959,6 +965,7 @@ def render_results() -> None:
                             name=block_name,
                             line=dict(width=2),
                             marker=dict(size=6),
+                            hovertemplate="<b>" + block_name + "</b><br>Run: %{x}<br>Cosine: %{y:.4f}<extra></extra>",
                         ))
                 if _imp_traces:
                     _imp_fig = go.Figure(data=_imp_traces)
@@ -982,6 +989,11 @@ def render_results() -> None:
                         annotation_font_color="rgba(248,113,113,0.8)",
                     )
                     st.plotly_chart(_imp_fig, use_container_width=True)
+                    st.caption(
+                        "v3.0 — Cosine similarity between consecutive kernel importance "
+                        "vectors measures structural stability. Values above 0.80 indicate "
+                        "the system's analytical conclusions are robust across runs."
+                    )
 
                 with st.expander("Reconstruction error trends"):
                     trend_rows = []

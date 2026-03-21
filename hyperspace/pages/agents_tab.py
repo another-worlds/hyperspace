@@ -1,6 +1,8 @@
 """Agentic Simulation tab: data-driven multi-agent resource/alliance sim."""
 from __future__ import annotations
 
+import hashlib
+
 import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
@@ -34,12 +36,27 @@ def render() -> None:
     alliance_fluidity = sc3.slider("Alliance Fluidity", 0.1, 1.0, 0.5, key="sim_af")
     shock_prob = sc4.slider("Shock Probability", 0.0, 0.3, 0.1, key="sim_sp")
 
-    sim_btn = st.button("Run Simulation", type="primary", key="sim_run")
+    col_btn1, col_btn2 = st.columns([3, 1])
+    with col_btn1:
+        sim_btn = st.button("Run Simulation", type="primary", key="sim_run")
+    with col_btn2:
+        force_rerun = st.button("🔄 Rerun", key="sim_rerun",
+                                help="Clear cached simulation and rerun with current parameters")
+    if force_rerun:
+        st.session_state.pop("sim_result", None)
+        st.session_state.pop("_sim_param_key", None)
+        sim_btn = True
 
     sim_result = st.session_state.get("sim_result")
 
+    # Cache key based on slider parameters
+    _param_key = hashlib.md5(
+        f"{sim_steps}_{resource_flow}_{alliance_fluidity}_{shock_prob}".encode()
+    ).hexdigest()[:8]
+    _cached_key = st.session_state.get("_sim_param_key")
+
     if sim_btn or sim_result:
-        if sim_btn:
+        if sim_btn and _param_key != _cached_key:
             with st.spinner("Running agent simulation..."):
                 # Get graph analysis for data-driven init
                 graph_result = st.session_state.get("graph_result")
@@ -62,6 +79,9 @@ def render() -> None:
                     features_for_ukt=features, feature_meta=feature_meta,
                 )
                 st.session_state.sim_result = sim_result
+                st.session_state._sim_param_key = _param_key
+        elif sim_btn:
+            st.toast("Using cached simulation result (same parameters).")
 
         if sim_result:
             agents = sim_result["agents"]
@@ -75,6 +95,7 @@ def render() -> None:
                 fig.add_trace(go.Scatter(
                     y=agent.history, mode="lines",
                     name=name, line=dict(color=color, width=2),
+                    hovertemplate="<b>" + name + "</b><br>Step: %{x}<br>Resources: %{y:.1f}<extra></extra>",
                 ))
             fig.update_layout(
                 **PLOTLY_LAYOUT, title="Resource Evolution Over Time",
@@ -94,6 +115,7 @@ def render() -> None:
             colors = [GEOPOLITICAL_NODES.get(n, {}).get("color", "#888") for n in names]
             fig = go.Figure(go.Bar(
                 x=names, y=resources, marker_color=colors,
+                hovertemplate="<b>%{x}</b><br>Resources: %{y:.1f}<extra></extra>",
             ))
             fig.update_layout(**PLOTLY_LAYOUT, title="Final Resources", height=350)
             st.plotly_chart(fig, use_container_width=True, key="agents_final_resources")
@@ -116,6 +138,9 @@ def render() -> None:
                 alliance_mat, x=node_names, y=node_names,
                 color_continuous_scale="RdBu_r", text_auto=".2f",
                 title="Alliance Strengths After Simulation",
+            )
+            fig.update_traces(
+                hovertemplate="Actor: %{y}<br>Partner: %{x}<br>Alliance: %{z:.3f}<extra></extra>",
             )
             fig.update_layout(**PLOTLY_LAYOUT, height=400)
             st.plotly_chart(fig, use_container_width=True, key="agents_alliance_matrix")

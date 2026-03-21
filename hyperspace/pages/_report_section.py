@@ -14,7 +14,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 
-from hyperspace.config import PLOTLY_LAYOUT
+from hyperspace.config import KERNEL_NARRATOR_IMPORTANCE_MIN, PLOTLY_LAYOUT
 
 # UKT block-name → (region label, feature start, feature end, color)
 _BLOCK_REGIONS: dict[str, tuple[str, int, int, str]] = {
@@ -82,6 +82,7 @@ def render_interpretability_report(block_name: str) -> None:
                     marker_color=color,
                     text=[f"{v:+.3f}" for v in activations],
                     textposition="auto",
+                    hovertemplate="<b>%{x}</b><br>Activation: %{y:+.4f}<extra>" + block_name + "</extra>",
                 ))
                 fig.update_layout(
                     **PLOTLY_LAYOUT, height=260,
@@ -100,6 +101,7 @@ def render_interpretability_report(block_name: str) -> None:
                     marker_color="#64ffda",
                     text=[f"{v:.1%}" for v in importance],
                     textposition="auto",
+                    hovertemplate="<b>%{x}</b><br>Variance: %{y:.3f} (%{text})<extra></extra>",
                 ))
                 fig_imp.update_layout(
                     **PLOTLY_LAYOUT, height=260,
@@ -139,6 +141,7 @@ def render_interpretability_report(block_name: str) -> None:
             marker_color=region_colors,
             text=[f"{v:.1%}" for v in region_energies],
             textposition="auto",
+            hovertemplate="<b>%{x}</b><br>Energy Share: %{y:.3f} (%{text})<extra></extra>",
         ))
         fig_re.update_layout(
             **PLOTLY_LAYOUT, height=260,
@@ -174,7 +177,7 @@ def render_interpretability_report(block_name: str) -> None:
 
     # --- Kernel narratives relevant to this block ---
     for kl in kernel_labels:
-        if kl.get("semantic_narrative") and kl["importance"] > 0.15:
+        if kl.get("semantic_narrative") and kl["importance"] > KERNEL_NARRATOR_IMPORTANCE_MIN:
             with st.expander(f"{kl['label']} — narrative"):
                 st.markdown(kl["narrative"])
                 if kl.get("semantic_narrative"):

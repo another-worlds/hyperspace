@@ -32,7 +32,15 @@ def render() -> None:
     prediction_length = sc2.slider("Prediction Length", 6, 30, 12, key="finance_pred_len")
     hidden_size = sc3.slider("Hidden Size", 16, 64, 32, key="finance_hidden_size")
 
-    compute_tft = st.button("Compute TFT Forecast", type="primary", key="finance_compute")
+    col_btn1, col_btn2 = st.columns([3, 1])
+    with col_btn1:
+        compute_tft = st.button("Compute TFT Forecast", type="primary", key="finance_compute")
+    with col_btn2:
+        force_retrain = st.button("🔄 Retrain", key="finance_retrain",
+                                  help="Clear cached forecast and refit TFT model")
+    if force_retrain:
+        st.session_state.pop("finance_result", None)
+        compute_tft = True
 
     # Show results from pipeline if available
     finance_result = st.session_state.get("finance_result")
@@ -117,6 +125,9 @@ def render() -> None:
                 fig = px.imshow(
                     corr, text_auto=".2f", color_continuous_scale="RdBu_r",
                     title="Cross-Ticker Correlation Matrix",
+                )
+                fig.update_traces(
+                    hovertemplate="Ticker X: %{x}<br>Ticker Y: %{y}<br>Correlation: %{z:.3f}<extra></extra>",
                 )
                 fig.update_layout(**PLOTLY_LAYOUT, height=350)
                 st.plotly_chart(fig, use_container_width=True, key="finance_correlation_heatmap")
