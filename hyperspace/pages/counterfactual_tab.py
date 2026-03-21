@@ -18,7 +18,6 @@ from hyperspace.config import (
     FEATURE_NAMES,
     PLOTLY_LAYOUT,
     POLICY_KERNEL_NAMES,
-    STRUCTURAL_REGION_BOUNDS,
 )
 from hyperspace.core.caching import get_or_compute_svd
 from hyperspace.models.knowledge_matrix import (
@@ -44,9 +43,8 @@ def _run_counterfactual_ukt(
     or None if not enough blocks remain.
     """
     from hyperspace.models.knowledge_matrix import (
-        HYPERSPACE_REGISTRY,
-        BLOCK_REGION_MAP,
         _normalize_features,
+        _DEFAULT_BLOCK_FEATURE_RANGES,
     )
     from ukt.projection import SharedProjection
     from ukt.kernels import decompose_svd
@@ -66,14 +64,13 @@ def _run_counterfactual_ukt(
         sub_matrix = full_matrix[kept_indices, :]
     else:
         # Rebuild projection from scratch with only the remaining blocks
-        projection = SharedProjection(HYPERSPACE_REGISTRY)
+        # Use block names for the new projection topology
+        kept_block_names = [block_names[i] for i in kept_indices]
+        projection = SharedProjection(block_names=kept_block_names)
         for idx in kept_indices:
             bn = block_names[idx]
-            ri = BLOCK_REGION_MAP.get(bn)
-            if ri is not None:
-                rname, lo, hi = ri
-                normalized = _normalize_features(raw_features[idx])
-                projection.observe(rname, normalized[lo:hi])
+            normalized = _normalize_features(raw_features[idx])
+            projection.observe(bn, normalized)
 
         # Re-project remaining blocks through the rebuilt projection
         rows = []
@@ -272,28 +269,30 @@ def render() -> None:
         )
 
     # Optional: shock injection
-    with st.expander("⚡ Optional: Inject a structural shock", expanded=False):
+    with st.expander("⚡ Optional: Inject a feature shock", expanded=False):
         st.caption(
-            "In addition to removing a block, you can flip the sign of a specific geopolitical "
-            "relationship in the graph features (indices 32–47). This simulates a sudden alliance "
-            "reversal or adversarial shift."
+            "In addition to removing a block, you can flip the sign of any feature "
+            "in the feature matrix. This simulates an exogenous shock to that modality."
         )
-        inject_shock = st.checkbox("Inject sign flip on structural features", key="cf_inject_shock")
+        inject_shock = st.checkbox("Inject sign flip on a feature", key="cf_inject_shock")
         if inject_shock:
-            lo, hi = STRUCTURAL_REGION_BOUNDS
-            shock_feature = st.slider(
-                f"Feature index to flip (structural region: {lo}–{hi}):",
-                min_value=lo, max_value=hi, value=(lo + hi) // 2,
-                key="cf_shock_feature",
+            # Let user select from available feature names
+            shock_feature_name = st.selectbox(
+                "Feature to flip:",
+                options=FEATURE_NAMES,
+                key="cf_shock_feature_name",
             )
+            # Get the index of the selected feature
+            shock_feature = FEATURE_NAMES.index(shock_feature_name)
             st.caption(
-                f"Feature {shock_feature} will have its sign flipped in the counterfactual matrix."
+                f"Feature {shock_feature} ('{shock_feature_name}') will have its sign flipped."
             )
 
     if run_cf:
         # Cache key: (removed block, shock config) to avoid recomputing identical scenarios
         shock_on = st.session_state.get("cf_inject_shock", False)
-        shock_f_val = st.session_state.get("cf_shock_feature", 35) if shock_on else None
+        shock_f_name = st.session_state.get("cf_shock_feature_name") if shock_on else None
+        shock_f_val = FEATURE_NAMES.index(shock_f_name) if shock_f_name else None
         cf_cache_key = (removed_block, shock_on, shock_f_val)
         cached_key = st.session_state.get("cf_cache_key")
         if cached_key == cf_cache_key and st.session_state.get("counterfactual_result") is not None:
@@ -309,7 +308,8 @@ def render() -> None:
 
                 # Apply shock if requested
                 if st.session_state.get("cf_inject_shock"):
-                    shock_f = st.session_state.get("cf_shock_feature", 35)
+                    shock_f_name = st.session_state.get("cf_shock_feature_name")
+                    shock_f = FEATURE_NAMES.index(shock_f_name) if shock_f_name else 35
                     cf_result["sub_matrix"][:, shock_f] *= -1.0
                     # Re-run SVD after shock
                     sub_matrix = cf_result["sub_matrix"]

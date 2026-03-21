@@ -2,13 +2,12 @@
 semantic_interpreter framework.
 
 This module preserves the existing Hyperspace API (CANVAS_DIMENSIONS,
-REGION_TO_CANVAS, SemanticCanvas, StageSAE, train_stage_sae, CanvasEntry)
+BLOCK_TO_CANVAS, SemanticCanvas, StageSAE, train_stage_sae, CanvasEntry)
 while delegating to the standalone ``semantic_interpreter`` package.
 
-The canvas is **registry-aware**: semantic dimensions and region-to-canvas
-projection mappings are defined per-region in REGION_SEMANTIC_SPEC, so adding
-a new region to the UKT feature registry automatically adds its canvas
-dimensions and projection. No hardcoded dimension count or region list.
+The canvas is **block-aware**: semantic dimensions and block-to-canvas
+projection mappings are defined per-block in BLOCK_SEMANTIC_SPEC, derived
+from the underlying region semantic specs.
 """
 from __future__ import annotations
 
@@ -26,17 +25,73 @@ from semantic_interpreter.sae import (
 )
 
 # --------------------------------------------------------------------------- #
-# Per-region semantic specification                                            #
-#                                                                              #
-# Each region declares:                                                        #
-#   - "dimensions": list of (key, label, desc) for canvas axes it introduces   #
-#   - "primary":    list of own dimension keys at weight 1.0                   #
-#   - "coupling":   list of (dim_key, weight) for cross-domain signals         #
-#                                                                              #
-# The overall canvas is assembled by iterating all regions in registry order.  #
+# Block-to-region mapping and block semantic specification                     #
 # --------------------------------------------------------------------------- #
+# Each block owns one region; semantic specs are region-keyed but mapped to blocks
+BLOCK_TO_REGION: dict[str, str] = {
+    "Finance": "temporal-pattern",
+    "Clusters": "semantic-embedding",
+    "Graph": "structural-centrality",
+    "Agents": "dynamic-agent",
+    "Spatial": "geospatial-kernel",
+}
 
-REGION_SEMANTIC_SPEC: dict[str, dict] = {
+def _build_canvas_from_blocks(
+    block_order: list[str] | None = None,
+):
+    """Build CANVAS_DIMENSIONS and BLOCK_TO_CANVAS dynamically from blocks.
+
+    Args:
+        block_order: Ordered list of block names. If None, uses the
+            canonical order from BLOCK_TO_REGION keys.
+
+    Returns:
+        (dimensions_list, block_to_canvas_dict, canvas_dim_count)
+    """
+    if block_order is None:
+        block_order = list(BLOCK_TO_REGION.keys())
+
+    # 1. Collect all unique dimensions in block order (via their regions)
+    seen_keys: set[str] = set()
+    dimensions: list[dict[str, str]] = []
+    key_to_index: dict[str, int] = {}
+
+    for block_name in block_order:
+        region_name = BLOCK_TO_REGION.get(block_name)
+        if region_name is None:
+            continue
+        spec = REGION_SEMANTIC_SPEC.get(region_name)
+        if spec is None:
+            continue
+        for key, label, desc in spec["dimensions"]:
+            if key not in seen_keys:
+                key_to_index[key] = len(dimensions)
+                dimensions.append({"key": key, "label": label, "desc": desc})
+                seen_keys.add(key)
+
+    # 2. Build block-to-canvas projection mapping (same as region-to-canvas)
+    block_to_canvas: dict[str, list[tuple[int, float]]] = {}
+    for block_name in block_order:
+        region_name = BLOCK_TO_REGION.get(block_name)
+        if region_name is None:
+            continue
+        spec = REGION_SEMANTIC_SPEC.get(region_name)
+        if spec is None:
+            continue
+        links: list[tuple[int, float]] = []
+        # Primary dims at weight 1.0
+        for dim_key in spec["primary"]:
+            if dim_key in key_to_index:
+                links.append((key_to_index[dim_key], 1.0))
+        # Cross-domain coupling
+        for dim_key, weight in spec["coupling"]:
+            if dim_key in key_to_index:
+                links.append((key_to_index[dim_key], weight))
+        block_to_canvas[block_name] = links
+
+    return dimensions, block_to_canvas, len(dimensions)
+
+REGION_SEMANTIC_SPEC: dict[str, dict] = {  # Keyed by region name (for backward compat)
     "temporal-pattern": {
         "dimensions": [
             ("market_momentum", "Market Momentum",
@@ -94,62 +149,15 @@ REGION_SEMANTIC_SPEC: dict[str, dict] = {
     },
 }
 
+# Build at import time using the canonical block order
+CANVAS_DIMENSIONS, BLOCK_TO_CANVAS, CANVAS_DIM = _build_canvas_from_blocks()
 
-def _build_canvas_from_spec(
-    region_order: list[str] | None = None,
-):
-    """Build CANVAS_DIMENSIONS and REGION_TO_CANVAS dynamically from the
-    region semantic spec.
-
-    Args:
-        region_order: Ordered list of region names. If None, uses the
-            canonical order from REGION_SEMANTIC_SPEC keys.
-
-    Returns:
-        (dimensions_list, region_to_canvas_dict, canvas_dim_count)
-    """
-    if region_order is None:
-        region_order = list(REGION_SEMANTIC_SPEC.keys())
-
-    # 1. Collect all unique dimensions in region order
-    seen_keys: set[str] = set()
-    dimensions: list[dict[str, str]] = []
-    key_to_index: dict[str, int] = {}
-
-    for region_name in region_order:
-        spec = REGION_SEMANTIC_SPEC.get(region_name)
-        if spec is None:
-            continue
-        for key, label, desc in spec["dimensions"]:
-            if key not in seen_keys:
-                key_to_index[key] = len(dimensions)
-                dimensions.append({"key": key, "label": label, "desc": desc})
-                seen_keys.add(key)
-
-    # 2. Build region-to-canvas projection mapping
-    region_to_canvas: dict[str, list[tuple[int, float]]] = {}
-    for region_name in region_order:
-        spec = REGION_SEMANTIC_SPEC.get(region_name)
-        if spec is None:
-            continue
-        links: list[tuple[int, float]] = []
-        # Primary dims at weight 1.0
-        for dim_key in spec["primary"]:
-            if dim_key in key_to_index:
-                links.append((key_to_index[dim_key], 1.0))
-        # Cross-domain coupling
-        for dim_key, weight in spec["coupling"]:
-            if dim_key in key_to_index:
-                links.append((key_to_index[dim_key], weight))
-        region_to_canvas[region_name] = links
-
-    return dimensions, region_to_canvas, len(dimensions)
-
-
-# Build at import time using the canonical spec order.
-# When the registry is available, SemanticCanvas.__init__ will rebuild
-# using the actual registry order (which may differ if regions are added).
-CANVAS_DIMENSIONS, REGION_TO_CANVAS, CANVAS_DIM = _build_canvas_from_spec()
+# Backward compatibility: REGION_TO_CANVAS maps regions to dimensions
+# (used by knowledge_matrix.py in canvas replay)
+REGION_TO_CANVAS: dict[str, list[tuple[int, float]]] = {}
+for block_name, region_name in BLOCK_TO_REGION.items():
+    if block_name in BLOCK_TO_CANVAS:
+        REGION_TO_CANVAS[region_name] = BLOCK_TO_CANVAS[block_name]
 
 
 def _build_hyperspace_dimensions() -> list[SemanticDimension]:
@@ -161,31 +169,24 @@ def _build_hyperspace_dimensions() -> list[SemanticDimension]:
 
 
 class SemanticCanvas(_StandaloneCanvas):
-    """Hyperspace-configured Semantic Canvas with registry-derived dimensions.
+    """Hyperspace-configured Semantic Canvas with block-derived dimensions.
 
-    Dimensions and region-to-canvas projection are auto-built from
-    REGION_SEMANTIC_SPEC. When the UKT registry is available, the canvas
-    uses registry order to ensure consistency. Adding a new region with
-    a semantic spec entry automatically extends the canvas.
+    Dimensions and block-to-canvas projection are auto-built from
+    BLOCK_SEMANTIC_SPEC (derived from regional specs). Canvas maps each block
+    to its semantic dimensions via BLOCK_TO_CANVAS.
     """
 
     def __init__(self) -> None:
-        # Try to use registry order if available (avoids circular import
-        # by deferring the import to instantiation time)
+        # Use block order from BLOCK_TO_REGION
         dims = CANVAS_DIMENSIONS
-        mapping = REGION_TO_CANVAS
-        try:
-            from hyperspace.models.knowledge_matrix import HYPERSPACE_REGISTRY
-            region_order = [r.name for r in HYPERSPACE_REGISTRY.ordered_regions]
-            dims, mapping, _ = _build_canvas_from_spec(region_order)
-        except ImportError:
-            pass  # Standalone usage without knowledge_matrix
+        mapping = BLOCK_TO_CANVAS
         super().__init__(
             dimensions=[
                 SemanticDimension(key=d["key"], label=d["label"], description=d["desc"])
                 for d in dims
             ],
-            region_mapping=mapping,
+            region_mapping=mapping,  # Note: still called region_mapping for backward compat,
+                                      # but now contains block→dimensions mapping
         )
 
     # ------------------------------------------------------------------ #
@@ -235,11 +236,11 @@ class SemanticCanvas(_StandaloneCanvas):
         self,
         reference_modalities: list[str] | None = None,
     ) -> dict[str, object]:
-        """Export modality→dimension mapping as an alignment report."""
+        """Export block→dimension mapping as an alignment report."""
         del reference_modalities  # Not used for canvas-level mapping.
         mapping: dict[str, list[dict[str, object]]] = {}
-        for region, links in self.region_mapping.items():
-            mapping[region] = [
+        for block_name, links in self.region_mapping.items():  # Now block→dimension mapping
+            mapping[block_name] = [
                 {
                     "dimension_key": self.dimensions[idx].key,
                     "weight": float(weight),
@@ -249,7 +250,7 @@ class SemanticCanvas(_StandaloneCanvas):
             ]
 
         return {
-            "region_to_dimensions": mapping,
+            "block_to_dimensions": mapping,
             "n_entries": len(self.entries),
         }
 

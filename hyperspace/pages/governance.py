@@ -85,22 +85,27 @@ def _build_feature_chain(
     else:
         chain["feature_name"] = f"feature_{feature_idx}"
 
-    # Region
-    if feature_idx < 16:
-        chain["region"] = "temporal-pattern"
-        chain["region_description"] = "Financial time-series attention weights (TFT)"
-    elif feature_idx < 32:
-        chain["region"] = "semantic-embedding"
-        chain["region_description"] = "News/document topic distribution (BERTopic)"
-    elif feature_idx < 48:
-        chain["region"] = "structural-centrality"
-        chain["region_description"] = "Geopolitical network centrality (NetworkX)"
-    elif feature_idx < 64:
-        chain["region"] = "dynamic-agent"
-        chain["region_description"] = "Agent simulation resource/alliance dynamics"
-    else:
-        chain["region"] = "geospatial-kernel"
-        chain["region_description"] = "Multimodal spatial raster kernels (elevation, climate, World Bank)"
+    # Source block (derived from feature index ranges)
+    from hyperspace.models.knowledge_matrix import _DEFAULT_BLOCK_FEATURE_RANGES
+    source_block = "unknown"
+    block_description = "Unknown data source"
+    for block_name, (start, end) in _DEFAULT_BLOCK_FEATURE_RANGES.items():
+        if start <= feature_idx < end:
+            source_block = block_name
+            break
+
+    # Map block to description
+    block_descriptions = {
+        "Finance": "Financial time-series attention weights (TFT)",
+        "Clusters": "News/document topic distribution (BERTopic)",
+        "Graph": "Geopolitical network centrality (NetworkX)",
+        "Agents": "Agent simulation resource/alliance dynamics",
+        "Spatial": "Multimodal spatial raster kernels (elevation, climate, World Bank)",
+    }
+    block_description = block_descriptions.get(source_block, block_description)
+
+    chain["source_block"] = source_block
+    chain["block_description"] = block_description
 
     # Metadata from final snapshot
     if snapshots:
@@ -201,12 +206,12 @@ def render_provenance_panel(snapshots: list[dict]) -> None:
     st.markdown("---")
     st.markdown(f"**Feature {feature_idx}: `{chain['feature_name']}`**")
 
-    # Region
+    # Source Block
     st.markdown(
-        f'<span class="concept-badge">{chain["region"]}</span>',
+        f'<span class="concept-badge">{chain["source_block"]}</span>',
         unsafe_allow_html=True,
     )
-    st.caption(chain.get("region_description", ""))
+    st.caption(chain.get("block_description", ""))
 
     # Source metadata
     jur = chain.get("jurisdiction", {})
@@ -223,7 +228,7 @@ def render_provenance_panel(snapshots: list[dict]) -> None:
         f"- **Entity:** {chain.get('entity', 'N/A')}\n"
         f"- **Metric:** {chain.get('metric', 'N/A')}\n"
         f"- **Time scope:** {chain.get('time_scope', 'N/A')}\n"
-        f"- **Region:** {chain.get('region', 'N/A')}"
+        f"- **Source Block:** {chain.get('source_block', 'N/A')}"
     )
 
     # Kernel loadings
@@ -287,9 +292,9 @@ def render_kernel_policy_mode(kernel_labels: list[dict]) -> None:
     )
 
     for i, kl in enumerate(kernel_labels):
-        dominant_region = kl.get("dominant_region", "")
+        dominant_feature_block = kl.get("dominant_feature_block", "")
         importance = kl.get("importance", 0.0)
-        policy_name = POLICY_KERNEL_NAMES.get(dominant_region, f"Pattern {i + 1}")
+        policy_name = POLICY_KERNEL_NAMES.get(dominant_feature_block, f"Pattern {i + 1}")
         conf_label, conf_explanation = _confidence_label(importance)
 
         with st.expander(
@@ -312,8 +317,8 @@ def render_kernel_policy_mode(kernel_labels: list[dict]) -> None:
             st.markdown(f"**Primary data domain:** {dominant_block}")
             st.markdown(
                 f"**What this finding represents:** "
-                f"This pattern draws primarily from {dominant_region.replace('-', ' ')} "
-                f"signals. {_policy_region_description(dominant_region)}"
+                f"This pattern draws primarily from {dominant_feature_block.replace('-', ' ')} "
+                f"signals. {_policy_block_description(dominant_feature_block)}"
             )
 
             if top_features:
@@ -322,18 +327,18 @@ def render_kernel_policy_mode(kernel_labels: list[dict]) -> None:
                     direction = "positively" if tf.get("loading", 0) > 0 else "negatively"
                     st.markdown(
                         f"  - `{tf.get('name', 'unknown')}` contributes {direction} "
-                        f"(from {tf.get('region', 'unknown').replace('-', ' ')} domain)"
+                        f"(from {tf.get('source_block', 'unknown')} block)"
                     )
 
-            region_scores = kl.get("region_scores", {})
-            if region_scores:
-                total = sum(region_scores.values()) + 1e-8
-                st.markdown("**Cross-domain signal breakdown:**")
-                for region, score in sorted(region_scores.items(), key=lambda x: x[1], reverse=True):
+            block_scores = kl.get("block_scores", {})
+            if block_scores:
+                total = sum(block_scores.values()) + 1e-8
+                st.markdown("**Cross-block signal breakdown:**")
+                for block_name, score in sorted(block_scores.items(), key=lambda x: x[1], reverse=True):
                     share = score / total
-                    policy_r = POLICY_KERNEL_NAMES.get(region, region.replace("-", " "))
+                    policy_b = POLICY_KERNEL_NAMES.get(block_name, block_name.replace("-", " "))
                     bar = "█" * int(share * 20) + "░" * (20 - int(share * 20))
-                    st.caption(f"{policy_r}: {bar} {share:.0%}")
+                    st.caption(f"{policy_b}: {bar} {share:.0%}")
 
             # Copy-ready briefing text
             briefing = (
@@ -353,32 +358,32 @@ def render_kernel_policy_mode(kernel_labels: list[dict]) -> None:
             )
 
 
-def _policy_region_description(region: str) -> str:
-    """Return a one-sentence policy-friendly description of a region."""
+def _policy_block_description(block_name: str) -> str:
+    """Return a one-sentence policy-friendly description of a block."""
     descriptions = {
-        "temporal-pattern": (
+        "Finance": (
             "Financial market attention patterns reveal which historical time horizons "
             "the forecasting model considers most relevant to current conditions."
         ),
-        "semantic-embedding": (
+        "Clusters": (
             "The informational landscape — dominant themes in global news and reporting — "
             "shapes this pattern through discourse concentration and topic salience."
         ),
-        "structural-centrality": (
+        "Graph": (
             "The architecture of alliances and rivalries among major geopolitical actors "
             "determines which nodes hold structural power in the international system."
         ),
-        "dynamic-agent": (
+        "Agents": (
             "The distribution of resources and stability of alliances after simulated "
             "bounded-rational interactions among state actors reveals equilibrium tendencies."
         ),
-        "geospatial-kernel": (
+        "Spatial": (
             "Physical geography (elevation, climate) and macroeconomic indicators (GDP, "
             "military spending, political stability) co-vary across the six geopolitical "
             "nodes, revealing structural constraints on state capacity and conflict risk."
         ),
     }
-    return descriptions.get(region, "Signals from multiple data domains contribute to this pattern.")
+    return descriptions.get(block_name, "Signals from multiple data domains contribute to this pattern.")
 
 
 # --------------------------------------------------------------------------- #

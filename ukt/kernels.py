@@ -1,9 +1,9 @@
 """SVD kernel decomposition, labeling, and narrative generation.
 
-Kernels are the emergent cross-domain patterns discovered by SVD on the UKT
+Kernels are the emergent cross-block patterns discovered by SVD on the UKT
 feature matrix. They are not pre-defined — they emerge automatically from
 the structure in the data. Each kernel explains a portion of total variance
-and can be traced back to specific feature regions and data sources.
+and can be traced back to specific feature blocks and data sources.
 
 This module is network-agnostic: it operates on the (blocks x features) matrix
 regardless of which neural network produced the features.
@@ -14,8 +14,6 @@ from dataclasses import dataclass
 from typing import Any
 
 import numpy as np
-
-from ukt.registry import FeatureRegionRegistry
 
 
 @dataclass
@@ -71,7 +69,8 @@ def decompose_svd(matrix: np.ndarray) -> KernelDecomposition:
 
 def describe_top_features(
     vt_row: np.ndarray,
-    registry: FeatureRegionRegistry,
+    block_feature_ranges: dict[str, tuple[int, int]],
+    feature_names: list[str],
     feature_meta: dict[int, dict] | None = None,
     top_n: int = 5,
 ) -> list[dict]:
@@ -79,28 +78,35 @@ def describe_top_features(
 
     Args:
         vt_row: (feature_dim,) — one row of Vt (feature loadings for a kernel).
-        registry: Feature region registry for name/region lookup.
+        block_feature_ranges: Mapping of block name to (start, end) feature indices.
+        feature_names: List of feature names by index.
         feature_meta: Optional per-feature metadata from the data pipeline.
         top_n: How many top features to return.
 
     Returns:
-        List of dicts with index, name, region, loading, and metadata.
+        List of dicts with index, name, source_block, loading, and metadata.
     """
     indices = np.argsort(np.abs(vt_row))[-top_n:][::-1]
     descriptions = []
+
+    # Build reverse mapping: index -> block_name
+    idx_to_block = {}
+    for block_name, (start, end) in block_feature_ranges.items():
+        for idx in range(start, end):
+            idx_to_block[idx] = block_name
+
     for idx in indices:
         idx = int(idx)
         meta = feature_meta.get(idx, {}) if feature_meta else {}
-        region = registry.region_for_index(idx)
-        region_name = region.name if region else "unknown"
+        source_block = idx_to_block.get(idx, "unknown")
 
-        # Prefer metadata label, fall back to registry name
-        name = meta.get("label") or registry.feature_name(idx)
+        # Use feature_names list for feature name
+        name = feature_names[idx] if idx < len(feature_names) else f"feat_{idx}"
 
         descriptions.append(dict(
             index=idx,
             name=name,
-            region=region_name,
+            source_block=source_block,
             loading=float(vt_row[idx]),
             abs_loading=float(abs(vt_row[idx])),
             entity=meta.get("entity"),
@@ -111,64 +117,66 @@ def describe_top_features(
     return descriptions
 
 
-def compute_region_scores(
+def compute_block_scores(
     vt_row: np.ndarray,
-    registry: FeatureRegionRegistry,
+    block_feature_ranges: dict[str, tuple[int, int]],
 ) -> dict[str, float]:
-    """Compute per-region absolute loading scores for a kernel.
+    """Compute per-block absolute loading scores for a kernel.
 
     Args:
         vt_row: (feature_dim,) — feature loadings for one kernel.
-        registry: Feature region registry.
+        block_feature_ranges: Mapping of block name to (start, end) feature indices.
 
     Returns:
-        {region_name: total_absolute_loading}
+        {block_name: total_absolute_loading}
     """
     scores = {}
-    for name, region in registry.regions.items():
-        scores[name] = float(np.abs(vt_row[region.start:region.end]).sum())
+    for block_name, (start, end) in block_feature_ranges.items():
+        scores[block_name] = float(np.abs(vt_row[start:end]).sum())
     return scores
 
 
 def label_kernel(
     k_idx: int,
     decomposition: KernelDecomposition,
-    registry: FeatureRegionRegistry,
+    block_feature_ranges: dict[str, tuple[int, int]],
+    feature_names: list[str],
     block_names: list[str],
     feature_meta: dict[int, dict] | None = None,
     timeframe_context: dict | None = None,
 ) -> dict:
     """Generate a semantic label for a single kernel.
 
-    In a shared projection space, kernels genuinely span multiple regions.
-    The label reflects this: when two or more regions each contribute >15%
-    of total loading, the label names the cross-domain coupling pattern.
+    In a shared projection space, kernels genuinely span multiple blocks.
+    The label reflects this: when two or more blocks each contribute >15%
+    of total loading, the label names the cross-block coupling pattern.
 
     Args:
         k_idx: Kernel index.
         decomposition: SVD decomposition result.
-        registry: Feature region registry.
+        block_feature_ranges: Mapping of block name to (start, end) feature indices.
+        feature_names: List of feature names by index.
         block_names: Names of blocks (rows) in the UKT matrix.
         feature_meta: Optional per-feature metadata.
         timeframe_context: Optional temporal context for narrative.
 
     Returns:
-        Dict with kernel_id, label, narrative, importance, region_scores, etc.
+        Dict with kernel_id, label, narrative, importance, block_scores, etc.
     """
     vt_row = decomposition.Vt[k_idx]
     u_col = decomposition.U[:, k_idx]
     importance = float(decomposition.importance[k_idx])
 
-    region_scores = compute_region_scores(vt_row, registry)
-    total_score = sum(region_scores.values()) + 1e-8
+    block_scores = compute_block_scores(vt_row, block_feature_ranges)
+    total_score = sum(block_scores.values()) + 1e-8
 
-    sorted_regions = sorted(region_scores.items(), key=lambda x: -x[1])
-    dominant_region = sorted_regions[0][0] if sorted_regions else "unknown"
+    sorted_blocks = sorted(block_scores.items(), key=lambda x: -x[1])
+    dominant_block = sorted_blocks[0][0] if sorted_blocks else "unknown"
 
-    # Identify contributing regions (>15% of total loading)
-    contributing = [
+    # Identify contributing blocks (>15% of total loading)
+    contributing_blocks = [
         (name, score / total_score)
-        for name, score in sorted_regions
+        for name, score in sorted_blocks
         if score / total_score > 0.15
     ]
 
@@ -180,63 +188,63 @@ def label_kernel(
     block_contribs.sort(key=lambda x: -x[1])
 
     dominant_block_idx = int(np.argmax(np.abs(u_col)))
-    dominant_block = (block_names[dominant_block_idx]
+    dominant_block_from_u = (block_names[dominant_block_idx]
                       if dominant_block_idx < len(block_names) else "unknown")
 
-    top_features = describe_top_features(vt_row, registry, feature_meta, top_n=5)
+    top_features = describe_top_features(vt_row, block_feature_ranges, feature_names, feature_meta, top_n=5)
     top_feat_name = top_features[0]["name"] if top_features else "?"
 
-    # Build the label: show cross-domain coupling when present
-    _short = lambda name: name.replace("-", " ").split()[0]
-    if len(contributing) >= 3:
-        region_tag = " × ".join(_short(r) for r, _ in contributing[:3])
-    elif len(contributing) == 2:
-        region_tag = f"{_short(contributing[0][0])} × {_short(contributing[1][0])}"
+    # Build the label: show cross-block coupling when present
+    _short = lambda name: name.replace("-", " ").replace("_", " ").split()[0]
+    if len(contributing_blocks) >= 3:
+        block_tag_label = " × ".join(_short(b) for b, _ in contributing_blocks[:3])
+    elif len(contributing_blocks) == 2:
+        block_tag_label = f"{_short(contributing_blocks[0][0])} × {_short(contributing_blocks[1][0])}"
     else:
-        region_tag = dominant_region.replace("-", " ")
+        block_tag_label = dominant_block.replace("-", " ").replace("_", " ")
 
-    block_tag = "+".join(bn for bn, _ in block_contribs[:2]) if block_contribs else dominant_block
-    short_label = f"K{k_idx}: {block_tag} — {region_tag} ({importance:.1%} var, lead: {top_feat_name})"
+    block_tag = "+".join(bn for bn, _ in block_contribs[:2]) if block_contribs else dominant_block_from_u
+    short_label = f"K{k_idx}: {block_tag} — {block_tag_label} ({importance:.1%} var, lead: {top_feat_name})"
 
     narrative = generate_kernel_narrative(
-        k_idx, dominant_block, dominant_region, importance,
-        top_features, block_names, u_col, registry, timeframe_context,
+        k_idx, dominant_block_from_u, dominant_block, importance,
+        top_features, block_names, u_col, block_feature_ranges, timeframe_context,
     )
 
     return dict(
         kernel_id=f"K{k_idx}",
-        dominant_block=dominant_block,
-        dominant_region=dominant_region,
-        contributing_regions=contributing,
+        dominant_block=dominant_block_from_u,
+        dominant_feature_block=dominant_block,
+        contributing_blocks=contributing_blocks,
         block_contributions=[(bn, round(v, 4)) for bn, v in block_contribs],
         importance=importance,
         top_features=top_features,
         top_feature_indices=[f["index"] for f in top_features],
         label=short_label,
         narrative=narrative,
-        region_scores={k: round(v, 4) for k, v in region_scores.items()},
+        block_scores={k: round(v, 4) for k, v in block_scores.items()},
     )
 
 
 def generate_kernel_narrative(
     k_idx: int,
     dominant_block: str,
-    dominant_region: str,
+    dominant_feature_block: str,
     importance: float,
     top_features: list[dict],
     block_names: list[str],
     u_col: np.ndarray,
-    registry: FeatureRegionRegistry,
+    block_feature_ranges: dict[str, tuple[int, int]],
     timeframe_context: dict | None = None,
 ) -> str:
     """Generate a data-grounded narrative for a kernel.
 
     Narrative structure adapts to kernel complexity:
-    - Single-region kernels: brief, factual — one block dominates.
-    - Two-region coupling: highlight the cross-domain link and what it means.
-    - Three+ regions: emphasize the emergent multi-domain pattern.
+    - Single-block kernels: brief, factual — one block dominates.
+    - Two-block coupling: highlight the cross-block link and what it means.
+    - Three+ blocks: emphasize the emergent multi-block pattern.
     """
-    # Block contributions
+    # Block contributions from U column
     block_contributions = []
     for i, bn in enumerate(block_names):
         if i < len(u_col):
@@ -246,12 +254,12 @@ def generate_kernel_narrative(
     block_contributions.sort(key=lambda x: -x[1])
     block_strs = [f"{bn} ({c:.2f})" for bn, c in block_contributions]
 
-    # Feature evidence grouped by region
-    region_groups: dict[str, list[dict]] = {}
+    # Feature evidence grouped by source_block
+    block_groups: dict[str, list[dict]] = {}
     for f in top_features:
-        region_groups.setdefault(f["region"], []).append(f)
+        block_groups.setdefault(f["source_block"], []).append(f)
 
-    n_regions = len(region_groups)
+    n_blocks = len(block_groups)
     feature_strs = [f"{f['name']} ({f['loading']:+.3f})" for f in top_features[:3]]
 
     timeframe_line = ""
@@ -263,54 +271,49 @@ def generate_kernel_narrative(
 
     lines = [f"Kernel K{k_idx} explains {importance:.1%} of total variance."]
 
-    if n_regions >= 3:
-        # Multi-domain emergent pattern — the most interesting case
-        region_names = list(region_groups.keys())
+    if n_blocks >= 3:
+        # Multi-block emergent pattern — the most interesting case
+        block_names_list = list(block_groups.keys())
         lines.append(
-            f"Emergent cross-domain pattern spanning {n_regions} regions: "
-            f"{', '.join(r.replace('-', ' ') for r in region_names)}."
+            f"Emergent cross-block pattern spanning {n_blocks} blocks: "
+            f"{', '.join(b.replace('-', ' ').replace('_', ' ') for b in block_names_list)}."
         )
         lines.append(
             f"Contributing blocks: {', '.join(block_strs) if block_strs else 'mixed'}."
         )
         lines.append(f"Key evidence features: {', '.join(feature_strs)}.")
-        # Detail each region's contribution
-        for rname, feats in region_groups.items():
-            region = registry.regions.get(rname)
+        # Detail each block's contribution
+        for bname, feats in block_groups.items():
             feat_detail = ", ".join(f"{f['name']}={f['loading']:+.3f}" for f in feats[:2])
             lines.append(
-                f"  {rname.replace('-', ' ')}: {feat_detail}"
-                + (f" — {region.description[:80]}" if region and region.description else "")
+                f"  {bname.replace('-', ' ').replace('_', ' ')}: {feat_detail}"
             )
-    elif n_regions == 2:
-        # Two-region coupling — highlight the cross-domain link
-        r1, r2 = list(region_groups.keys())
+    elif n_blocks == 2:
+        # Two-block coupling — highlight the cross-block link
+        b1, b2 = list(block_groups.keys())
         lines.append(
-            f"Cross-domain coupling between {r1.replace('-', ' ')} and "
-            f"{r2.replace('-', ' ')}."
+            f"Cross-block coupling between {b1.replace('-', ' ').replace('_', ' ')} and "
+            f"{b2.replace('-', ' ').replace('_', ' ')}."
         )
         lines.append(
             f"Primary driver: {block_contributions[0][0] if block_contributions else dominant_block} block."
         )
         lines.append(f"Evidence features: {', '.join(feature_strs)}.")
-        f1 = region_groups[r1][0]
-        f2 = region_groups[r2][0]
+        f1 = block_groups[b1][0]
+        f2 = block_groups[b2][0]
         lines.append(
             f"Coupling signature: {f1['name']} ({f1['loading']:+.3f}) "
             f"co-varies with {f2['name']} ({f2['loading']:+.3f})."
         )
     else:
-        # Single-region dominant — brief and factual
-        region = registry.regions.get(dominant_region)
-        region_desc = region.description if region else dominant_region
+        # Single-block dominant — brief and factual
         lines.append(
-            f"Single-domain pattern: {dominant_block} block, "
-            f"{dominant_region.replace('-', ' ')} region."
+            f"Single-block pattern: {dominant_block} block, "
+            f"{dominant_feature_block.replace('-', ' ').replace('_', ' ')} feature block."
         )
         lines.append(f"Top features: {', '.join(feature_strs)}.")
-        lines.append(f"Context: {region_desc}")
 
-    if block_contributions and n_regions < 3:
+    if block_contributions and n_blocks < 3:
         lines.append(f"Block contributions: {', '.join(block_strs)}.")
 
     if timeframe_line:

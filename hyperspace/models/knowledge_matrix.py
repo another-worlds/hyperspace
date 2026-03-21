@@ -24,7 +24,7 @@ from ukt.registry import FeatureRegionRegistry
 from ukt.kernels import (
     decompose_svd,
     describe_top_features,
-    generate_kernel_narrative as _standalone_generate_kernel_narrative,
+    label_kernel as _standalone_label_kernel,
 )
 from ukt.projection import SharedProjection
 from ukt.stability import estimate_regression_stability
@@ -81,23 +81,19 @@ FEATURE_REGION_LABELS: dict[tuple[int, int], str] = {
 }
 
 
-def _normalize_features(arr: np.ndarray, registry: FeatureRegionRegistry | None = None) -> np.ndarray:
-    """Normalize each region of a feature vector to [0, 1] range.
+def _normalize_features(arr: np.ndarray) -> np.ndarray:
+    """Normalize feature vector to [-1, 1] range using symmetric scaling.
 
-    Uses the registry to discover region boundaries dynamically — no
-    hardcoded indices.
+    In the monolithic feature space, normalization is global (no region boundaries).
+    Uses min-max scaling across the entire vector for comparable block scales.
     """
-    reg = registry or HYPERSPACE_REGISTRY
     out = arr.copy()
-    for region in reg.ordered_regions:
-        lo, hi = region.start, region.end
-        if hi > len(out):
-            continue
-        segment = out[lo:hi]
-        rng = segment.max() - segment.min()
-        if rng > 1e-8:
-            out[lo:hi] = (segment - segment.min()) / rng
-    return out
+    arr_min = np.min(arr)
+    arr_max = np.max(arr)
+    rng = arr_max - arr_min
+    if rng > 1e-8:
+        out = 2.0 * (arr - arr_min) / rng - 1.0  # Scale to [-1, 1]
+    return np.clip(out, -1.0, 1.0)
 
 
 def estimate_reality_regression_stability(
@@ -123,119 +119,7 @@ def _region_for_index(idx: int) -> str:
     return region.name if region else "unknown"
 
 
-def _describe_top_features(
-    vt_row: np.ndarray,
-    feature_meta: dict[int, dict] | None = None,
-    top_n: int = 5,
-) -> list[dict]:
-    """Return descriptions for the top-N loaded features."""
-    return describe_top_features(vt_row, HYPERSPACE_REGISTRY, feature_meta, top_n)
-
-
-def _generate_kernel_narrative(
-    k_idx: int,
-    dominant_block: str,
-    dominant_region: str,
-    importance: float,
-    top_features: list[dict],
-    block_names: list[str],
-    u_col: np.ndarray,
-    timeframe_context: dict | None,
-) -> str:
-    """Generate a data-grounded narrative for a kernel."""
-    return _standalone_generate_kernel_narrative(
-        k_idx, dominant_block, dominant_region, importance,
-        top_features, block_names, u_col, HYPERSPACE_REGISTRY,
-        timeframe_context,
-    )
-
-
-def _label_kernel(
-    k_idx: int,
-    vt_row: np.ndarray,
-    u_col: np.ndarray,
-    block_names: list[str],
-    importance: float,
-    feature_meta: dict[int, dict] | None,
-    timeframe_context: dict | None,
-) -> dict:
-    """Generate a semantic label for a single kernel.
-
-    In the shared projection space, kernels genuinely span multiple regions.
-    The label reflects this: when two or more regions each contribute >15%
-    of total loading, the label names the cross-domain coupling pattern
-    rather than a single dominant region.
-    """
-    region_scores = {}
-    for region in HYPERSPACE_REGISTRY.ordered_regions:
-        lo, hi = region.start, region.end
-        if hi <= len(vt_row):
-            region_scores[region.name] = float(np.abs(vt_row[lo:hi]).sum())
-    total_score = sum(region_scores.values()) + 1e-8
-
-    # Sort regions by loading contribution
-    sorted_regions = sorted(region_scores.items(), key=lambda x: -x[1])
-    dominant_region = sorted_regions[0][0] if sorted_regions else "unknown"
-
-    # Identify contributing regions above threshold
-    contributing = [
-        (name, score / total_score)
-        for name, score in sorted_regions
-        if score / total_score > KERNEL_CONTRIBUTING_REGION_THRESHOLD
-    ]
-
-    # Block contributions from U column
-    block_contribs = []
-    for i, bn in enumerate(block_names):
-        if i < len(u_col) and abs(float(u_col[i])) > KERNEL_BLOCK_CONTRIBUTION_MIN:
-            block_contribs.append((bn, abs(float(u_col[i]))))
-    block_contribs.sort(key=lambda x: -x[1])
-
-    dominant_block_idx = int(np.argmax(np.abs(u_col)))
-    dominant_block = (block_names[dominant_block_idx]
-                      if dominant_block_idx < len(block_names) else "unknown")
-
-    top_features = _describe_top_features(vt_row, feature_meta=feature_meta, top_n=5)
-    top_feat_name = top_features[0]["name"] if top_features else "?"
-
-    # Build the label: show cross-domain coupling when present
-    _short = lambda name: name.replace("-", " ").split()[0]  # "temporal-pattern" → "temporal"
-    if len(contributing) >= 3:
-        region_tag = " × ".join(_short(r) for r, _ in contributing[:3])
-    elif len(contributing) == 2:
-        region_tag = f"{_short(contributing[0][0])} × {_short(contributing[1][0])}"
-    else:
-        region_tag = dominant_region.replace("-", " ")
-
-    block_tag = "+".join(bn for bn, _ in block_contribs[:2]) if block_contribs else dominant_block
-    short_label = f"K{k_idx}: {block_tag} — {region_tag} ({importance:.1%} var, lead: {top_feat_name})"
-
-    narrative = _generate_kernel_narrative(
-        k_idx, dominant_block, dominant_region, importance,
-        top_features, block_names, u_col, timeframe_context,
-    )
-
-    return dict(
-        kernel_id=f"K{k_idx}",
-        dominant_block=dominant_block,
-        dominant_region=dominant_region,
-        contributing_regions=contributing,
-        block_contributions=[(bn, round(v, 4)) for bn, v in block_contribs],
-        importance=float(importance),
-        top_features=top_features,
-        top_feature_indices=[f["index"] for f in top_features],
-        label=short_label,
-        narrative=narrative,
-        region_scores={k: round(v, 4) for k, v in region_scores.items()},
-    )
-
-
-# Block-to-region mapping — auto-derived from the registry.
-# Each block name maps to (region_name, start, end).
-# Adding a new block only requires registering its region in the registry.
-BLOCK_REGION_MAP: dict[str, tuple[str, int, int]] = {}
-
-# Default block→region assignment (configurable)
+# Block-to-feature-range mapping — hard-coded defaults, can be overridden per instance
 _BLOCK_TO_REGION: dict[str, str] = {
     "Finance":  "temporal-pattern",
     "Clusters": "semantic-embedding",
@@ -244,10 +128,12 @@ _BLOCK_TO_REGION: dict[str, str] = {
     "Spatial":  "geospatial-kernel",
 }
 
+# Build default block_feature_ranges from the registry
+_DEFAULT_BLOCK_FEATURE_RANGES: dict[str, tuple[int, int]] = {}
 for _block_name, _region_name in _BLOCK_TO_REGION.items():
     if _region_name in HYPERSPACE_REGISTRY.regions:
         _r = HYPERSPACE_REGISTRY.regions[_region_name]
-        BLOCK_REGION_MAP[_block_name] = (_region_name, _r.start, _r.end)
+        _DEFAULT_BLOCK_FEATURE_RANGES[_block_name] = (_r.start, _r.end)
 
 
 class UniversalKnowledgeTensor:
@@ -268,7 +154,12 @@ class UniversalKnowledgeTensor:
         self.snapshots: list[dict] = []
         self.global_feature_meta: dict[int, dict] = {}
         self.canvas = SemanticCanvas()
-        self.projection = SharedProjection(HYPERSPACE_REGISTRY)
+        # Block feature ranges: maps block name to (start, end) indices in 80-dim space
+        self._block_feature_ranges: dict[str, tuple[int, int]] = _DEFAULT_BLOCK_FEATURE_RANGES.copy()
+        # Initialize projection without registry — only block names needed for coupling topology
+        self.projection = SharedProjection(
+            block_names=list(self._block_feature_ranges.keys())
+        )
 
     def add_block(
         self,
@@ -284,17 +175,17 @@ class UniversalKnowledgeTensor:
         raw = _pad_or_truncate(features, self.feature_dim)
         self._raw_features.append(raw)
 
-        # Feed this block's NORMALIZED native features to the adaptive projection
-        # so direction estimation sees clean [0,1] data, not raw magnitudes.
+        # Normalize BEFORE projection: bring each feature to [-1, 1] so blocks
+        # enter the shared space on comparable scales. Then project — the
+        # cross-block structure P creates is preserved for SVD.
         normalized_raw = _normalize_features(raw)
-        region_info = BLOCK_REGION_MAP.get(name)
-        if region_info is not None:
-            region_name, lo, hi = region_info
-            self.projection.observe(region_name, normalized_raw[lo:hi])
 
-        # Normalize BEFORE projection: bring each region to [0,1] so blocks
-        # enter the shared space on comparable scales.  Then project — the
-        # cross-region structure P creates is preserved for SVD.
+        # Feed full 80-dim normalized vector to the adaptive projection
+        # The projection couples blocks via their full vectors, not sliced regions
+        if name in self._block_feature_ranges:
+            self.projection.observe(name, normalized_raw)
+
+        # Project all raw features through the current projection matrix
         self.rows = [
             self.projection.project(_normalize_features(r))
             for r in self._raw_features
@@ -306,14 +197,14 @@ class UniversalKnowledgeTensor:
 
         kernel_labels = []
         for k in range(n_kernels):
-            label = _label_kernel(
+            label = _standalone_label_kernel(
                 k,
-                decomposition.Vt[k],
-                decomposition.U[:, k],
+                decomposition,
+                self._block_feature_ranges,
+                FEATURE_NAMES,
                 self.block_names,
-                float(decomposition.importance[k]),
-                self.global_feature_meta,
-                timeframe_context,
+                feature_meta=self.global_feature_meta,
+                timeframe_context=timeframe_context,
             )
             kernel_labels.append(label)
 
@@ -325,11 +216,15 @@ class UniversalKnowledgeTensor:
         self.canvas = SemanticCanvas()
         canvas_entry = None
         for step_idx, (bn, row) in enumerate(zip(self.block_names, self.rows)):
-            ri = BLOCK_REGION_MAP.get(bn)
-            if ri is None:
+            # Get block feature range from _block_feature_ranges
+            if bn not in self._block_feature_ranges:
                 continue
-            rname, lo, hi = ri
+            lo, hi = self._block_feature_ranges[bn]
             region_features = row[lo:hi]
+            # Get region name from registry for canvas (used as region_name parameter)
+            region = HYPERSPACE_REGISTRY.region_for_index(lo)
+            rname = region.name if region else bn
+
             entry = self.canvas.project_block(
                 block_name=bn,
                 step=step_idx + 1,
@@ -516,7 +411,7 @@ class UniversalKnowledgeTensor:
         """Return a modality alignment summary from latest kernel structure."""
         latest = self.get_latest_snapshot()
         if latest is None:
-            return {"modalities": [], "kernel_region_coverage": {}, "n_kernels": 0}
+            return {"modalities": [], "kernel_block_coverage": {}, "n_kernels": 0}
 
         labels = latest.get("kernel_labels", [])
         modalities = sorted({k.get("dominant_block", "unknown") for k in labels})
@@ -524,16 +419,16 @@ class UniversalKnowledgeTensor:
             allowed = set(reference_modalities)
             modalities = [m for m in modalities if m in allowed]
 
-        region_coverage: dict[str, float] = {}
+        block_coverage: dict[str, float] = {}
         for k in labels:
-            region = k.get("dominant_region", "unknown")
-            region_coverage[region] = region_coverage.get(region, 0.0) + float(
+            block = k.get("dominant_feature_block", "unknown")
+            block_coverage[block] = block_coverage.get(block, 0.0) + float(
                 k.get("importance", 0.0),
             )
 
         return {
             "modalities": modalities,
-            "kernel_region_coverage": region_coverage,
+            "kernel_block_coverage": block_coverage,
             "n_kernels": int(latest.get("n_kernels", 0)),
         }
 

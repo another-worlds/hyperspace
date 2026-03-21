@@ -1,52 +1,97 @@
-# Session Progress — 2026-03-19
+# Session Progress — 2026-03-20
 
 ## Session Goals
 
-- [x] Delete all legacy documentation (16 files, ~5,200 lines)
-- [x] Create strict 3-layer documentation hierarchy
-- [x] Write DOCS_GUIDELINES.md (operational truth for doc management)
-- [x] Write VISION.md (distilled from vision-compliance.md, vision-assessment-and-redesign.md)
-- [x] Write ARCHITECTURE.md (distilled from architecture-*.md, README.md, STRATEGY_UI.md, issue trackers)
-- [ ] Proceed to implementation work (pending — awaiting direction)
+- [x] Implement monolithic UKT architecture (region-coupling → block-coupling)
+- [x] Complete UKT-semantic coherence across all interpretability layers
+- [x] Remove fallback behaviors and region-based structural enforcement
+- [x] Update documentation to reflect new architecture
 
-## Implementation Notes
+## Implementation Summary
 
-### Documentation Reorganization (completed)
+### Phase 1: Monolithic UKT Architecture Refactoring
 
-Replaced 16 scattered documentation files with a strict 4-file hierarchy:
+**Commits:** b772437, a19a504
 
-**Deleted (15 files):**
-- `/docs/` — 12 files (alpha-1.0-issue-tracker, architecture-pipeline, architecture-semantic-interpretability, architecture-ukt, critical-errors-and-future-proposals, integration-testing, news_semantics_resources_proposal, pipeline_run_report, semantic-interpretability, universal-knowledge-tensor, vision-assessment-and-redesign, vision-compliance)
-- Root — 3 files (README.md, PIPELINE_ERRORS.md, STRATEGY_UI.md)
+**Core architectural changes:**
 
-**Created (4 files):**
-- `docs/DOCS_GUIDELINES.md` — reading order, layer rules, templates, migration protocol
-- `docs/VISION.md` — mission, philosophy, three pillars, invariants, end-state
-- `docs/ARCHITECTURE.md` — system design, components, data flow, decisions, roadmap
-- `docs/SESSION_PROGRESS.md` — this file
+1. **ukt/projection.py**: Refactored from region-coupling to block-coupling
+   - Observe full 80-dim vectors instead of sliced regions
+   - Projection builds rank-1 outer products across full space
+   - Fallback bases: 80×80 orthogonal per block pair
+   - Removed registry dependency from projection core
 
-**Content distillation strategy:**
-- Vision-level content (invariants, emergence contract, philosophical principles) → VISION.md
-- Architectural content (system design, data flow, component map, technical decisions) → ARCHITECTURE.md
-- Tactical content (error resolutions, test counts, line numbers, file-level details) → discarded (captured in CLAUDE.md or code comments where relevant)
+2. **ukt/kernels.py**: Block-based kernel labeling and scoring
+   - `compute_block_scores(block_feature_ranges)` replaces region scores
+   - Features tracked by `source_block` provenance
+   - Narratives describe single-block, two-block, multi-block patterns
 
-## Issues Encountered
+3. **hyperspace/models/knowledge_matrix.py**: Monolithic normalization
+   - Global min-max normalization (entire 80-dim, no region boundaries)
+   - Removed `BLOCK_REGION_MAP` and regional segmentation
+   - Added `_block_feature_ranges` dict for block ownership tracking
 
-None.
+4. **hyperspace/config.py**: Removed `STRUCTURAL_REGION_BOUNDS` constant
 
-## Design Experiments
+5. **hyperspace/pages/counterfactual_tab.py**: Feature-name-based shock injection
 
-None this session.
+### Phase 2: Complete UKT-Semantic Coherence
 
-## Discoveries
+**Unified block-based terminology:**
+- **semantic_canvas.py**: `BLOCK_TO_CANVAS` mapping
+- **kernel_viz.py**: Block-based feature coloring and annotations
+- **governance.py**: Block-level provenance tracking and policy descriptions
 
-None this session.
+### Phase 3: Documentation Updates
 
-## Migration Checklist
+**Updated ARCHITECTURE.md:**
+- System Overview: Monolithic UKT diagram
+- Data Flow: Global normalization + rank-1 coupling details
 
-- [x] What changed that should be remembered forever? → Documentation hierarchy established (recorded in DOCS_GUIDELINES.md)
-- [ ] New components or interfaces created? → No code changes
-- [ ] Key technical decisions made? → Documentation structure decision (recorded in DOCS_GUIDELINES.md)
-- [ ] New constraints or trade-offs discovered? → No
-- [ ] New technical debt to track? → No
-- [ ] Vision refinements needed? → No
+**Updated VISION.md:**
+- Core Philosophy: "monolithic with block-level provenance labels"
+- Critical Invariants: Block-based terminology (1-5)
+- **New Invariant 8**: "Regions are provenance metadata only"
+
+## Key Technical Decisions
+
+1. **Normalization Strategy**: Global min-max on full 80-dim vector
+   - Ensures coupling reflects genuine cross-block interactions
+   - Avoids per-region scaling artifacts
+
+2. **Projection Coupling**: Rank-1 outer products across full space
+   - Enables open topology; blocks can couple any feature to any
+   - Data-driven strength gates weak couplings (no hardcoded topology restrictions)
+
+3. **Region Metadata Retention**: Kept for provenance/naming only
+   - No structural effect on normalization, projection, or coupling
+   - Backward compatible with feature naming and UI interpretability
+
+4. **Block Feature Ranges**: Lightweight `dict[str, tuple[int, int]]` in knowledge_matrix.py
+   - Extensible for custom block allocations
+   - No global state pollution
+
+## Verification Checklist
+
+- [x] All 8 Critical Invariants from VISION.md still hold
+- [x] Monolithic feature space (no region-owned slots)
+- [x] Global normalization (not per-region)
+- [x] Rank-1 outer product coupling across full vectors
+- [x] Block scores computed via block_feature_ranges
+- [x] Feature provenance via source_block labels
+- [x] UI terminology: "Source Block" throughout system
+- [x] Governance: block-level energy metrics
+- [x] Counterfactual: feature selection by name
+- [x] Canvas: block-to-dimension mapping
+- [x] Documentation aligned with code implementation
+
+## End-of-Session Checklist
+
+- [x] What changed that should be remembered? → Monolithic UKT architecture; open topology enforced by data, not structure
+- [x] New components? → No; all changes evolutionary
+- [x] Key decisions? → Global normalization, rank-1 coupling, block metadata strategy
+- [x] New constraints? → None; architecture is cleaner with fewer constraints
+- [x] New technical debt? → None; block model optimization deferred but not urgent
+- [x] Vision refinements? → Invariant 8 added; regions clarified as metadata-only
+
+**Status**: Implementation complete. All documentation updated. Ready for merge.
