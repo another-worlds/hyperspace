@@ -125,6 +125,112 @@ When modifying UI code, follow these rules in addition to the style guide:
 5. **Progressive disclosure** — Technical diagnostics collapsed by default; governance outputs prominent and early in the page ✅ (IMPLEMENTED: Mission Control redesign)
 6. **Hover templates** — Every Plotly chart must have a `hovertemplate` with human-readable field names, not just default Plotly hover ✅ (IMPLEMENTED: all ~25 charts across kernel_viz.py, charts.py, all 8 tabs, _report_section.py, dashboard.py)
 
+### Architecture Specifications (Pending Implementation)
+
+#### SPEC-1: Extended Data Caching Layer
+
+**Goal**: Fill caching gaps for derived data, visualizations, and narrative outputs. Currently, external API calls, model weights, SAE/SVD/stability computations are cached. The following are NOT cached and recompute on every tab render.
+
+**Gaps to address:**
+
+| Data Type | Current State | Target | Files Affected |
+|-----------|--------------|--------|----------------|
+| Derived dataframes | NOT CACHED | Session-state, keyed by `(source_data_hash, transform_params)` | `finance_tab.py` (pivot tables, correlation matrices), other tabs |
+| Plotly chart objects | NOT CACHED | Session-state, keyed by `(data_hash, chart_params)` | ~25 charts across 10 files |
+| Graph centrality measures | NOT CACHED | Session-state, keyed by `(adjacency_matrix_hash, node_set_hash)` | `graph_engine.py`, `politics_tab.py` |
+| BERTopic transform predictions | NOT CACHED | Session-state, keyed by `(docs_hash, model_version)` | `topic_model.py`, `clusters_tab.py` |
+| Kernel narratives | NOT CACHED | Session-state, keyed by `(kernel_set_hash, policy_language_mode)` | `semantic_narrator.py`, `_report_section.py` |
+
+**Implementation approach:**
+- Extend `hyperspace/core/caching.py` with new `get_or_compute_*` helpers for each gap
+- Use same SHA-256 hash-keyed pattern as existing SAE/SVD/stability caching
+- Add `force_recompute` flags tied to existing "Retrain"/"Rerun" buttons
+- Add cache stats for new categories to `get_cache_stats()`
+- Plotly charts: wrap `go.Figure` creation in caching helper; invalidate when underlying data changes
+
+**Constraints:**
+- Session-state only (no disk persistence for derived data — too volatile)
+- Must not break existing retrain/invalidation flows
+- Chart caching must respect `policy_language_mode` toggle (narratives differ)
+
+#### SPEC-2: Sidebar Kanban Progress Tracker
+
+**Goal**: Replace the current sidebar's post-pipeline status display with a live kanban-style card system that shows per-block progress before, during, and after pipeline execution.
+
+**Current sidebar layout** (`app.py` lines 38–142):
+1. Header & branding
+2. Policy Language Mode toggle
+3. Finance Tickers selector
+4. Run ID + timestamp (post-pipeline only)
+5. Data sources badges (post-pipeline only)
+6. Jurisdiction badges
+7. Governance flags summary
+8. Feature provenance panel
+9. Glossary expander
+10. Footer
+
+**New sidebar layout:**
+1. Header & branding (keep)
+2. Policy Language Mode toggle (keep)
+3. Finance Tickers selector (keep)
+4. **→ NEW: Kanban Progress Cards** (replaces items 4–5)
+5. Governance flags summary (keep, move below cards)
+6. Feature provenance panel (keep)
+7. Glossary expander (keep)
+8. Footer (keep)
+
+**Kanban card design (per pipeline block):**
+
+```
+┌─────────────────────────────┐
+│ ● Finance-Neural Block      │  ← block name + status icon
+│ ─────────────────────────── │
+│ Status: ✓ Complete (2.3s)   │  ← status + timing
+│ Source: Yahoo Finance (Live) │  ← data source badge
+│ Governance: No flags        │  ← per-block governance
+└─────────────────────────────┘
+```
+
+**Status icons:**
+- `○` PENDING (muted gray `#4a5568`)
+- `◉` RUNNING (pulsing blue `#4da6ff` with CSS animation)
+- `●` COMPLETE (green `#48bb78`)
+- `✗` FAILED (red `#f56565`)
+- `⊘` SKIPPED (dim `#718096`)
+
+**5 cards for 5 pipeline blocks:**
+1. **Data Fetch** — "Gathering market, news, political, spatial data"
+2. **Model Training** — "Training TFT + BERTopic"
+3. **Core Pipeline** — "Graph, agents, interpretation analysis"
+4. **Governance** — "Flags, compliance, audit trail"
+5. **Visualization** — "Charts, narratives, export"
+
+**Behavior:**
+- **Pre-pipeline**: All cards show PENDING state with governance context descriptions
+- **During pipeline**: Cards update in real-time via `st.session_state` as `PipelineProgressTracker` advances blocks
+- **Post-pipeline**: Cards show final status, timing, data sources, and per-block governance flags
+- **On error**: Failed card shows error message in red; subsequent cards show SKIPPED
+
+**Implementation approach:**
+- New module: `hyperspace/viz/sidebar_kanban.py`
+- CSS classes: `.kanban-card`, `.kanban-card-pending`, `.kanban-card-running`, `.kanban-card-complete`, `.kanban-card-failed`
+- Integrate with existing `PipelineProgressTracker` from `hyperspace/viz/pipeline_progress.py`
+- Cards rendered via `st.markdown()` with HTML/CSS (consistent with existing badge pattern in `app.py`)
+- Running card uses `@keyframes pulse` CSS animation for the status icon
+- Each card is a `st.container()` for Streamlit rerun compatibility
+
+**WCAG compliance:**
+- All status text meets 4.5:1 contrast against card background
+- Card background: `#0d1b2a` (slightly lighter than page `#070d1a`)
+- Border: `1px solid #1a3a5c`
+- Running state animation must not flash faster than 3Hz (accessibility)
+
+**Integration with existing `PipelineProgressTracker`:**
+- Read `BlockStatus` enum values from tracker
+- Map tracker block names to card display names
+- Pull timing from `BlockProgress.duration_sec`
+- Pull governance context from `BlockProgress.governance_context`
+
 ### Development Commands
 ```bash
 pip install -r requirements.txt

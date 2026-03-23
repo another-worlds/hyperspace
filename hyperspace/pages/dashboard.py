@@ -150,6 +150,7 @@ def run_pipeline() -> None:
     tracker.add_block("model_training", "Training TFT and BERTopic models")
     tracker.add_block("core_pipeline", "Running graph, agents, and interpretation analysis")
     tracker.add_block("governance_analysis", "Computing flags, compliance scorecard, and audit trail")
+    st.session_state.pipeline_tracker = tracker
 
     with st.status("Running Hyperspace Pipeline...", expanded=True) as status:
         # ---- Step 1: Fetch Data in Parallel ----

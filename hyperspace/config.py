@@ -277,6 +277,51 @@ div[data-testid="stMetricDelta"] { color: #64ffda !important; }
     color: #7aab98; font-size: 0.87em; line-height: 1.65;
     margin: 0; font-family: 'Inter', sans-serif;
 }
+
+/* ─── Sidebar Kanban Progress Cards ────────────────────────────────── */
+.kanban-card {
+    background: #0d1b2a;
+    border: 1px solid #1a3a5c;
+    border-radius: 8px;
+    padding: 10px 12px;
+    margin: 6px 0;
+    font-family: 'Inter', sans-serif;
+}
+.kanban-card-pending  { border-left: 3px solid #4a5568; }
+.kanban-card-running  { border-left: 3px solid #4da6ff; }
+.kanban-card-complete { border-left: 3px solid #34d399; }
+.kanban-card-failed   { border-left: 3px solid #f56565; }
+.kanban-card-skipped  { border-left: 3px solid #718096; }
+.kanban-header {
+    display: flex; align-items: center; gap: 6px; margin-bottom: 4px;
+}
+.kanban-icon { font-size: 0.9em; }
+.kanban-icon-pending  { color: #4a5568; }
+.kanban-icon-running  { color: #4da6ff; }
+.kanban-icon-complete { color: #34d399; }
+.kanban-icon-failed   { color: #f56565; }
+.kanban-icon-skipped  { color: #718096; }
+.kanban-title {
+    font-size: 0.82em; font-weight: 700; color: #dce8f0;
+    letter-spacing: 0.02em;
+}
+.kanban-status {
+    font-size: 0.73em; color: #8ab4cc;
+    font-family: 'JetBrains Mono', monospace;
+}
+.kanban-context {
+    font-size: 0.70em; color: #7a9ab8;
+    display: block; margin-top: 2px; line-height: 1.4;
+}
+.kanban-source {
+    font-size: 0.70em; color: #64ffda;
+    font-family: 'JetBrains Mono', monospace;
+}
+@keyframes kanban-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+}
+.kanban-card-running .kanban-icon { animation: kanban-pulse 2s ease-in-out infinite; }
 </style>
 """
 

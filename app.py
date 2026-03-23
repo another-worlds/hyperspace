@@ -22,6 +22,7 @@ import streamlit as st
 from hyperspace.config import AVAILABLE_TICKERS, DARK_CSS, DEFAULT_TICKERS, GLOSSARY
 from hyperspace.state import init_session_state
 from hyperspace.pages import governance as governance_module
+from hyperspace.viz.sidebar_kanban import render_sidebar_kanban
 
 # ── Page config ──────────────────────────────────────────────────────
 st.set_page_config(
@@ -78,43 +79,15 @@ with st.sidebar:
 
     st.markdown("---")
 
-    # D1: Run ID display (post-pipeline)
-    run_id = st.session_state.get("run_id")
-    run_ts = st.session_state.get("run_timestamp")
-    if run_id:
-        st.markdown("**Run Identifier**")
-        st.markdown(
-            f'<span class="run-id-watermark">ID: {run_id}</span>  \n'
-            f'<span class="run-id-watermark">{run_ts}</span>',
-            unsafe_allow_html=True,
-        )
-        st.markdown("---")
+    # Pipeline progress kanban cards (replaces old Run ID + data sources + flags)
+    render_sidebar_kanban()
 
-    # Data source status + C2 jurisdiction badges (post-pipeline)
+    # C2: Jurisdiction badges (post-pipeline)
     data_sources = st.session_state.get("data_sources", {})
     if data_sources:
-        st.markdown("**Data Sources**")
-        for block, src in data_sources.items():
-            icon = "+" if "Live" in src or "Offline" in src else "!"
-            st.caption(f"[{icon}] {block}: {src}")
-
-        # C2: Jurisdiction badges
         governance_module.render_jurisdiction_badges(data_sources)
 
-        # Governance flags summary in sidebar
-        gov_flags = st.session_state.get("governance_flags", [])
-        if gov_flags:
-            st.markdown(
-                f'<span class="gov-flag">⚠ {len(gov_flags)} governance flag(s)</span>',
-                unsafe_allow_html=True,
-            )
-        else:
-            st.markdown(
-                '<span class="gov-pass">✓ No flags</span>',
-                unsafe_allow_html=True,
-            )
-
-        st.markdown("---")
+    st.markdown("---")
 
     # A2: Provenance Trace Panel (post-pipeline)
     snapshots = st.session_state.get("ukt_snapshots", [])
