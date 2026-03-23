@@ -5,6 +5,7 @@ import pandas as pd
 import streamlit as st
 
 from hyperspace.config import KERNEL_EXPANDER_THRESHOLD
+from hyperspace.core.caching import get_or_compute_figure, hash_list
 from hyperspace.viz import kernel_viz
 from hyperspace.viz.charts import source_badge
 
@@ -132,7 +133,11 @@ def render() -> None:
         "A kernel that spikes when a new block is added indicates that block "
         "introduced a dominant new pattern into the analysis."
     )
-    fig_evo = kernel_viz.plot_kernel_evolution(snapshots)
+    _snap_hash = hash_list([s["block_name"] for s in snapshots], "pipe_evo")
+    fig_evo = get_or_compute_figure(
+        f"pipe_evo_{_snap_hash}",
+        lambda: kernel_viz.plot_kernel_evolution(snapshots),
+    )
     st.plotly_chart(fig_evo, use_container_width=True, key="pipeline_kernel_evolution")
 
     # ── Semantic Kernel Narratives ────────────────────────────────────

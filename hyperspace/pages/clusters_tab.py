@@ -8,6 +8,7 @@ import plotly.express as px
 import streamlit as st
 
 from hyperspace.config import OUTLIER_RATIO_CRITICAL, OUTLIER_RATIO_MODERATE, PLOTLY_LAYOUT
+from hyperspace.core.caching import get_or_compute_figure, hash_list
 from hyperspace.data.news import get_text_data
 from hyperspace.models.topic_model import fit_topic_model
 from hyperspace.pages._report_section import render_interpretability_report
@@ -74,15 +75,25 @@ def render() -> None:
                 # Topic distribution
                 st.markdown("### Topic Distribution")
                 tc = pd.Series(topics).value_counts().head(10)
-                fig = px.bar(
-                    x=[str(x) for x in tc.index], y=tc.values,
-                    color=tc.values, color_continuous_scale="Viridis",
-                    title="Document Count per Topic",
+                _topic_hash = hash_list(list(topics), "topic_dist")
+
+                def _make_topic_dist_fig():
+                    fig = px.bar(
+                        x=[str(x) for x in tc.index], y=tc.values,
+                        color=tc.values, color_continuous_scale="Viridis",
+                        title="Document Count per Topic",
+                    )
+                    fig.update_traces(
+                        hovertemplate="<b>Topic %{x}</b><br>Documents: %{y}<extra></extra>",
+                    )
+                    fig.update_layout(**PLOTLY_LAYOUT, height=350)
+                    return fig
+
+                fig = get_or_compute_figure(
+                    f"cluster_dist_{_topic_hash}",
+                    _make_topic_dist_fig,
+                    force_recompute=force_retrain,
                 )
-                fig.update_traces(
-                    hovertemplate="<b>Topic %{x}</b><br>Documents: %{y}<extra></extra>",
-                )
-                fig.update_layout(**PLOTLY_LAYOUT, height=350)
                 st.plotly_chart(fig, use_container_width=True, key="clusters_topic_distribution")
                 st.caption(
                     "v3.0 — Topic distribution populates UKT indices 16–23 "

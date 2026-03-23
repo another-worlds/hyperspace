@@ -20,7 +20,9 @@ from hyperspace.core.caching import (
     get_or_compute_sae,
     get_or_compute_figure,
     get_cache_stats,
+    hash_list,
     hash_ndarray,
+    hash_params,
     make_sae_cache_key,
 )
 from hyperspace.core.logging import log_sae_training
@@ -123,39 +125,48 @@ def render() -> None:
             canvas_state = canvas.get_accumulated_state()
             coords = canvas_state["coordinates"]
             dim_labels = [d["label"] for d in CANVAS_DIMENSIONS]
+            _radar_hash = hash_ndarray(coords, "radar")
 
-            fig_radar = go.Figure()
-            fig_radar.add_trace(go.Scatterpolar(
-                r=coords.tolist() + [coords[0]],
-                theta=dim_labels + [dim_labels[0]],
-                fill="toself",
-                name="Accumulated (all domains)",
-                line=dict(color="#64ffda", width=3),
-                fillcolor="rgba(100, 255, 218, 0.15)",
-                hovertemplate="<b>%{theta}</b><br>Score: %{r:.3f}<extra>Accumulated</extra>",
-            ))
-            colors = ["#3498db", "#e67e22", "#e74c3c", "#2ecc71", "#9b59b6"]
-            for i, entry in enumerate(canvas_state["entries"]):
-                c = entry.coordinates
+            def _make_radar_fig():
+                fig_radar = go.Figure()
                 fig_radar.add_trace(go.Scatterpolar(
-                    r=c.tolist() + [c[0]],
+                    r=coords.tolist() + [coords[0]],
                     theta=dim_labels + [dim_labels[0]],
-                    name=entry.block_name,
-                    line=dict(color=colors[i % len(colors)], dash="dot", width=1.5),
-                    opacity=0.6,
-                    hovertemplate="<b>%{theta}</b><br>Score: %{r:.3f}<extra>" + entry.block_name + "</extra>",
+                    fill="toself",
+                    name="Accumulated (all domains)",
+                    line=dict(color="#64ffda", width=3),
+                    fillcolor="rgba(100, 255, 218, 0.15)",
+                    hovertemplate="<b>%{theta}</b><br>Score: %{r:.3f}<extra>Accumulated</extra>",
                 ))
-            fig_radar.update_layout(
-                **PLOTLY_LAYOUT,
-                polar=dict(
-                    bgcolor="#0d1117",
-                    radialaxis=dict(range=[0, 1], showticklabels=True,
-                                    gridcolor="#1a2332"),
-                    angularaxis=dict(gridcolor="#1a2332"),
-                ),
-                title="Semantic Canvas — Cross-Domain Theme Fingerprint",
-                height=480,
-                showlegend=True,
+                colors = ["#3498db", "#e67e22", "#e74c3c", "#2ecc71", "#9b59b6"]
+                for i, entry in enumerate(canvas_state["entries"]):
+                    c = entry.coordinates
+                    fig_radar.add_trace(go.Scatterpolar(
+                        r=c.tolist() + [c[0]],
+                        theta=dim_labels + [dim_labels[0]],
+                        name=entry.block_name,
+                        line=dict(color=colors[i % len(colors)], dash="dot", width=1.5),
+                        opacity=0.6,
+                        hovertemplate="<b>%{theta}</b><br>Score: %{r:.3f}<extra>" + entry.block_name + "</extra>",
+                    ))
+                fig_radar.update_layout(
+                    **PLOTLY_LAYOUT,
+                    polar=dict(
+                        bgcolor="#0d1117",
+                        radialaxis=dict(range=[0, 1], showticklabels=True,
+                                        gridcolor="#1a2332"),
+                        angularaxis=dict(gridcolor="#1a2332"),
+                    ),
+                    title="Semantic Canvas — Cross-Domain Theme Fingerprint",
+                    height=480,
+                    showlegend=True,
+                )
+                return fig_radar
+
+            fig_radar = get_or_compute_figure(
+                f"interp_radar_{_radar_hash}",
+                _make_radar_fig,
+                force_recompute=force_retrain,
             )
             st.plotly_chart(fig_radar, use_container_width=True,
                             key="interp_semantic_radar")
@@ -315,7 +326,12 @@ def render() -> None:
             "blue=market/temporal, orange=news/semantic, green=geopolitical/structural, "
             "red=agent/dynamic, purple=spatial/geospatial."
         )
-        fig_rr = kernel_viz.plot_reality_regression(final_snap)
+        _rr_hash = hash_ndarray(final_snap["reality_regression"], "rr")
+        fig_rr = get_or_compute_figure(
+            f"interp_rr_{_rr_hash}",
+            lambda: kernel_viz.plot_reality_regression(final_snap),
+            force_recompute=force_retrain,
+        )
         st.plotly_chart(fig_rr, use_container_width=True, key="interp_reality_regression")
 
         # Policy language mode: named kernel briefings
@@ -376,7 +392,12 @@ def render() -> None:
 
             # Kernel matrix
             st.markdown("#### Universal Kernel Matrix")
-            fig_km = kernel_viz.plot_kernel_matrix(final_snap, block_names)
+            _km_hash = hash_ndarray(final_snap["matrix"], "km")
+            fig_km = get_or_compute_figure(
+                f"interp_km_{_km_hash}",
+                lambda: kernel_viz.plot_kernel_matrix(final_snap, block_names),
+                force_recompute=force_retrain,
+            )
             st.plotly_chart(fig_km, use_container_width=True,
                             key="interp_adv_kernel_matrix")
             st.caption(
@@ -387,7 +408,11 @@ def render() -> None:
             # Kernel importance
             col1, col2 = st.columns(2)
             with col1:
-                fig_imp = kernel_viz.plot_kernel_importance(final_snap)
+                fig_imp = get_or_compute_figure(
+                    f"interp_kimp_{_km_hash}",
+                    lambda: kernel_viz.plot_kernel_importance(final_snap),
+                    force_recompute=force_retrain,
+                )
                 st.plotly_chart(fig_imp, use_container_width=True,
                                 key="interp_adv_kernel_importance")
                 st.caption("Fraction of total variance explained per SVD kernel.")
@@ -401,17 +426,26 @@ def render() -> None:
                     if len(trajectory) > 1:
                         traj_matrix = np.array([t["state"] for t in trajectory])
                         traj_block_labels = [t["block"] for t in trajectory]
-                        fig_traj = px.imshow(
-                            traj_matrix,
-                            x=_dim_labels_adv,
-                            y=traj_block_labels,
-                            color_continuous_scale="Viridis",
-                            title="Canvas Evolution per Step",
+                        _traj_hash = hash_ndarray(traj_matrix, "traj")
+
+                        def _make_traj_fig():
+                            fig_traj = px.imshow(
+                                traj_matrix,
+                                x=_dim_labels_adv,
+                                y=traj_block_labels,
+                                color_continuous_scale="Viridis",
+                                title="Canvas Evolution per Step",
+                            )
+                            fig_traj.update_traces(
+                                hovertemplate="Block: %{y}<br>Dimension: %{x}<br>Value: %{z:.3f}<extra></extra>",
+                            )
+                            fig_traj.update_layout(**PLOTLY_LAYOUT, height=280)
+                            return fig_traj
+
+                        fig_traj = get_or_compute_figure(
+                            f"interp_traj_{_traj_hash}", _make_traj_fig,
+                            force_recompute=force_retrain,
                         )
-                        fig_traj.update_traces(
-                            hovertemplate="Block: %{y}<br>Dimension: %{x}<br>Value: %{z:.3f}<extra></extra>",
-                        )
-                        fig_traj.update_layout(**PLOTLY_LAYOUT, height=280)
                         st.plotly_chart(fig_traj, use_container_width=True,
                                         key="interp_adv_canvas_trajectory")
                         st.caption(
@@ -431,16 +465,25 @@ def render() -> None:
 
                 loss_hist = sae_result.get("loss_history", [])
                 if loss_hist:
-                    fig_loss = px.line(
-                        x=list(range(len(loss_hist))), y=loss_hist,
-                        title="SAE Training Loss Curve",
-                    )
-                    fig_loss.update_traces(
-                        hovertemplate="Epoch: %{x}<br>Loss: %{y:.4f}<extra></extra>",
-                    )
-                    fig_loss.update_layout(
-                        **PLOTLY_LAYOUT, height=220,
-                        xaxis_title="Epoch", yaxis_title="Loss",
+                    _loss_hash = hash_list(loss_hist, "sae_loss")
+
+                    def _make_loss_fig():
+                        fig_loss = px.line(
+                            x=list(range(len(loss_hist))), y=loss_hist,
+                            title="SAE Training Loss Curve",
+                        )
+                        fig_loss.update_traces(
+                            hovertemplate="Epoch: %{x}<br>Loss: %{y:.4f}<extra></extra>",
+                        )
+                        fig_loss.update_layout(
+                            **PLOTLY_LAYOUT, height=220,
+                            xaxis_title="Epoch", yaxis_title="Loss",
+                        )
+                        return fig_loss
+
+                    fig_loss = get_or_compute_figure(
+                        f"interp_loss_{_loss_hash}", _make_loss_fig,
+                        force_recompute=force_retrain,
                     )
                     st.plotly_chart(fig_loss, use_container_width=True,
                                     key="interp_adv_sae_loss")
@@ -463,7 +506,15 @@ def render() -> None:
             concept_kernel_map = st.session_state.get("concept_kernel_map", [])
             if concept_kernel_map:
                 st.markdown("#### Concept-Kernel Correspondence")
-                fig_ck = kernel_viz.plot_concept_kernel_map(concept_kernel_map)
+                _ck_hash = hash_list(
+                    [c.get("concept_id", i) for i, c in enumerate(concept_kernel_map)],
+                    "ck_map",
+                )
+                fig_ck = get_or_compute_figure(
+                    f"interp_ck_{_ck_hash}",
+                    lambda: kernel_viz.plot_concept_kernel_map(concept_kernel_map),
+                    force_recompute=force_retrain,
+                )
                 st.plotly_chart(fig_ck, use_container_width=True,
                                 key="interp_adv_concept_kernel_map")
 
@@ -478,18 +529,27 @@ def render() -> None:
                     coupling_block_names = [
                         f"Block_{i}" for i in range(coupling.shape[0])
                     ]
-                fig_coup = px.imshow(
-                    coupling,
-                    x=coupling_block_names,
-                    y=coupling_block_names,
-                    color_continuous_scale="Viridis",
-                    title="Cross-Block Coupling Matrix (Attention Weights)",
-                    text_auto=".3f",
+                _coup_hash = hash_ndarray(coupling, "uvt_coup")
+
+                def _make_coupling_fig():
+                    fig_coup = px.imshow(
+                        coupling,
+                        x=coupling_block_names,
+                        y=coupling_block_names,
+                        color_continuous_scale="Viridis",
+                        title="Cross-Block Coupling Matrix (Attention Weights)",
+                        text_auto=".3f",
+                    )
+                    fig_coup.update_traces(
+                        hovertemplate="Source: %{x}<br>Target: %{y}<br>Weight: %{z:.4f}<extra></extra>",
+                    )
+                    fig_coup.update_layout(**PLOTLY_LAYOUT, height=350)
+                    return fig_coup
+
+                fig_coup = get_or_compute_figure(
+                    f"interp_coup_{_coup_hash}", _make_coupling_fig,
+                    force_recompute=force_retrain,
                 )
-                fig_coup.update_traces(
-                    hovertemplate="Source: %{x}<br>Target: %{y}<br>Weight: %{z:.4f}<extra></extra>",
-                )
-                fig_coup.update_layout(**PLOTLY_LAYOUT, height=350)
                 st.plotly_chart(fig_coup, use_container_width=True,
                                 key="interp_adv_uvt_coupling")
 
@@ -519,16 +579,27 @@ def render() -> None:
 
                 coupling_labels = uvt_result.get("coupling_labels", [])
                 if coupling_labels:
-                    fig_var = go.Figure(go.Bar(
-                        x=[cl["mode_id"] for cl in coupling_labels],
-                        y=[cl["variance_explained"] for cl in coupling_labels],
-                        marker_color=["#64ffda" if cl["variance_explained"] > KERNEL_EXPANDER_THRESHOLD
-                                      else "#3498db" for cl in coupling_labels],
-                        hovertemplate="<b>%{x}</b><br>Variance Explained: %{y:.3f}<extra></extra>",
-                    ))
-                    fig_var.update_layout(
-                        **PLOTLY_LAYOUT, height=220,
-                        title="Variance Explained per Coupling Mode",
+                    _var_hash = hash_list(
+                        [cl["variance_explained"] for cl in coupling_labels], "uvt_var"
+                    )
+
+                    def _make_var_fig():
+                        fig_var = go.Figure(go.Bar(
+                            x=[cl["mode_id"] for cl in coupling_labels],
+                            y=[cl["variance_explained"] for cl in coupling_labels],
+                            marker_color=["#64ffda" if cl["variance_explained"] > KERNEL_EXPANDER_THRESHOLD
+                                          else "#3498db" for cl in coupling_labels],
+                            hovertemplate="<b>%{x}</b><br>Variance Explained: %{y:.3f}<extra></extra>",
+                        ))
+                        fig_var.update_layout(
+                            **PLOTLY_LAYOUT, height=220,
+                            title="Variance Explained per Coupling Mode",
+                        )
+                        return fig_var
+
+                    fig_var = get_or_compute_figure(
+                        f"interp_var_{_var_hash}", _make_var_fig,
+                        force_recompute=force_retrain,
                     )
                     st.plotly_chart(fig_var, use_container_width=True,
                                     key="interp_adv_uvt_variance")
@@ -545,31 +616,49 @@ def render() -> None:
                     else "#555"
                     for dl in use_result["dimension_labels"]
                 ]
-                fig_enc = go.Figure(go.Bar(
-                    x=list(range(len(encoding))),
-                    y=encoding,
-                    marker_color=colors_use,
-                    customdata=dim_labels_use,
-                    hovertemplate="<b>%{customdata}</b> (dim %{x})<br>Value: %{y:.3f}<extra></extra>",
-                ))
-                fig_enc.update_layout(
-                    **PLOTLY_LAYOUT, height=260,
-                    title="USE: Unified Multi-Modal State Vector",
-                    yaxis=dict(range=[-1.1, 1.1]),
+                _enc_hash = hash_list(list(encoding), "use_enc")
+
+                def _make_enc_fig():
+                    fig_enc = go.Figure(go.Bar(
+                        x=list(range(len(encoding))),
+                        y=encoding,
+                        marker_color=colors_use,
+                        customdata=dim_labels_use,
+                        hovertemplate="<b>%{customdata}</b> (dim %{x})<br>Value: %{y:.3f}<extra></extra>",
+                    ))
+                    fig_enc.update_layout(
+                        **PLOTLY_LAYOUT, height=260,
+                        title="USE: Unified Multi-Modal State Vector",
+                        yaxis=dict(range=[-1.1, 1.1]),
+                    )
+                    return fig_enc
+
+                fig_enc = get_or_compute_figure(
+                    f"interp_enc_{_enc_hash}", _make_enc_fig,
+                    force_recompute=force_retrain,
                 )
                 st.plotly_chart(fig_enc, use_container_width=True,
                                 key="interp_adv_use_encoding")
 
                 use_loss = use_result.get("loss_history", [])
                 if use_loss:
-                    fig_use_loss = px.line(
-                        x=list(range(len(use_loss))), y=use_loss,
-                        title="USE Training Loss",
+                    _use_loss_hash = hash_list(use_loss, "use_loss")
+
+                    def _make_use_loss_fig():
+                        fig_use_loss = px.line(
+                            x=list(range(len(use_loss))), y=use_loss,
+                            title="USE Training Loss",
+                        )
+                        fig_use_loss.update_traces(
+                            hovertemplate="Epoch: %{x}<br>Loss: %{y:.4f}<extra></extra>",
+                        )
+                        fig_use_loss.update_layout(**PLOTLY_LAYOUT, height=200)
+                        return fig_use_loss
+
+                    fig_use_loss = get_or_compute_figure(
+                        f"interp_use_loss_{_use_loss_hash}", _make_use_loss_fig,
+                        force_recompute=force_retrain,
                     )
-                    fig_use_loss.update_traces(
-                        hovertemplate="Epoch: %{x}<br>Loss: %{y:.4f}<extra></extra>",
-                    )
-                    fig_use_loss.update_layout(**PLOTLY_LAYOUT, height=200)
                     st.plotly_chart(fig_use_loss, use_container_width=True,
                                     key="interp_adv_use_loss")
 
