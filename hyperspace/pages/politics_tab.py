@@ -6,6 +6,7 @@ import plotly.express as px
 import streamlit as st
 
 from hyperspace.config import PLOTLY_LAYOUT
+from hyperspace.core.caching import get_or_compute_dataframe, hash_ndarray
 from hyperspace.data.political import get_political_data
 from hyperspace.data.map import get_country_stats
 from hyperspace.models.graph_engine import (
@@ -103,13 +104,23 @@ def render() -> None:
             betweenness = analysis.get("betweenness", {})
             eigenvector = analysis.get("eigenvector", {})
             pagerank = analysis.get("pagerank", {})
-            cent_df = pd.DataFrame({
-                "Node": node_names,
-                "Degree": [degree_cent.get(n, 0.0) for n in node_names],
-                "Betweenness": [betweenness.get(n, 0.0) for n in node_names],
-                "Eigenvector": [eigenvector.get(n, 0.0) for n in node_names],
-                "PageRank": [pagerank.get(n, 0.0) for n in node_names],
-            })
+
+            # Cache centrality DataFrame and bar chart
+            import hashlib as _hl
+            _node_hash = _hl.sha256(str(sorted(node_names)).encode()).hexdigest()[:12]
+
+            cent_df = get_or_compute_dataframe(
+                f"centrality_{_node_hash}",
+                lambda: pd.DataFrame({
+                    "Node": node_names,
+                    "Degree": [degree_cent.get(n, 0.0) for n in node_names],
+                    "Betweenness": [betweenness.get(n, 0.0) for n in node_names],
+                    "Eigenvector": [eigenvector.get(n, 0.0) for n in node_names],
+                    "PageRank": [pagerank.get(n, 0.0) for n in node_names],
+                }),
+                force_recompute=force_rebuild,
+            )
+
             fig = px.bar(
                 cent_df.melt(id_vars="Node", var_name="Metric", value_name="Score"),
                 x="Node", y="Score", color="Metric", barmode="group",

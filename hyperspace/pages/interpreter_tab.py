@@ -18,7 +18,9 @@ import streamlit as st
 from hyperspace.config import KERNEL_EXPANDER_THRESHOLD, PLOTLY_LAYOUT
 from hyperspace.core.caching import (
     get_or_compute_sae,
+    get_or_compute_figure,
     get_cache_stats,
+    hash_ndarray,
     make_sae_cache_key,
 )
 from hyperspace.core.logging import log_sae_training
@@ -252,21 +254,31 @@ def render() -> None:
                     else:
                         col_labels.append(f"C{i:02d}")
 
-                fig_act = px.imshow(
-                    act,
-                    x=col_labels,
-                    y=block_names[:act.shape[0]],
-                    color_continuous_scale="Viridis",
-                    title="Concept Activations — Data Domain × Named Concept",
-                )
-                fig_act.update_traces(
-                    hovertemplate="Block: %{y}<br>Concept: %{x}<br>Activation: %{z:.3f}<extra></extra>",
-                )
-                fig_act.update_layout(
-                    **PLOTLY_LAYOUT,
-                    height=max(280, 60 * act.shape[0]),
-                    xaxis_title="Named Concept",
-                    yaxis_title="Pipeline Block",
+                _act_hash = hash_ndarray(act, "concept_act")
+
+                def _build_concept_heatmap():
+                    _fig = px.imshow(
+                        act,
+                        x=col_labels,
+                        y=block_names[:act.shape[0]],
+                        color_continuous_scale="Viridis",
+                        title="Concept Activations — Data Domain × Named Concept",
+                    )
+                    _fig.update_traces(
+                        hovertemplate="Block: %{y}<br>Concept: %{x}<br>Activation: %{z:.3f}<extra></extra>",
+                    )
+                    _fig.update_layout(
+                        **PLOTLY_LAYOUT,
+                        height=max(280, 60 * act.shape[0]),
+                        xaxis_title="Named Concept",
+                        yaxis_title="Pipeline Block",
+                    )
+                    return _fig
+
+                fig_act = get_or_compute_figure(
+                    f"concept_heatmap_{_act_hash}",
+                    _build_concept_heatmap,
+                    force_recompute=force_retrain,
                 )
                 st.plotly_chart(fig_act, use_container_width=True,
                                 key="interp_concept_activations")

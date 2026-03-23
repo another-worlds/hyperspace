@@ -5,6 +5,9 @@ Provides deterministic caching for:
 - SVD decompositions
 - Stability estimation
 - Model weights
+- Derived dataframes (pivot tables, correlation matrices, centrality)
+- Plotly chart objects
+- Narrative text (kernel, canvas, concept, reality regression)
 
 Cache keys are built from data hashes + hyperparameters to ensure
 deterministic, auditable, and reproducible results.
@@ -12,9 +15,11 @@ deterministic, auditable, and reproducible results.
 from __future__ import annotations
 
 import hashlib
+import pickle
 import numpy as np
+import pandas as pd
 import streamlit as st
-from typing import Any
+from typing import Any, Callable
 
 
 def hash_ndarray(arr: np.ndarray, prefix: str = "") -> str:
@@ -49,6 +54,98 @@ def hash_params(params: dict) -> str:
     for key in sorted(params.keys()):
         h.update(f"{key}={params[key]}".encode())
     return h.hexdigest()[:16]
+
+
+def hash_dataframe(df: pd.DataFrame, prefix: str = "") -> str:
+    """Generate a SHA-256 hash of a pandas DataFrame for cache keying.
+
+    Hashes shape, dtypes, column names, and first 100 rows for speed.
+    """
+    h = hashlib.sha256()
+    if prefix:
+        h.update(prefix.encode())
+    h.update(str(df.shape).encode())
+    h.update(str(list(df.dtypes)).encode())
+    h.update(str(list(df.columns)).encode())
+    sample = df.head(100)
+    h.update(pd.util.hash_pandas_object(sample).values.tobytes())
+    return h.hexdigest()[:16]
+
+
+def hash_list(lst: list, prefix: str = "") -> str:
+    """Generate a SHA-256 hash of a list for cache keying."""
+    h = hashlib.sha256()
+    if prefix:
+        h.update(prefix.encode())
+    h.update(pickle.dumps(lst))
+    return h.hexdigest()[:16]
+
+
+def get_or_compute_dataframe(
+    cache_key: str,
+    compute_fn: Callable[[], Any],
+    force_recompute: bool = False,
+) -> Any:
+    """Get cached derived dataframe or compute it.
+
+    Args:
+        cache_key: Pre-built cache key (use hash_dataframe / hash_params)
+        compute_fn: Zero-arg callable that produces the result
+        force_recompute: If True, ignore cache
+    """
+    full_key = f"cache_df_{cache_key}"
+    if force_recompute:
+        st.session_state.pop(full_key, None)
+    if full_key in st.session_state:
+        return st.session_state[full_key]
+    result = compute_fn()
+    st.session_state[full_key] = result
+    return result
+
+
+def get_or_compute_figure(
+    cache_key: str,
+    compute_fn: Callable[[], Any],
+    force_recompute: bool = False,
+) -> Any:
+    """Get cached Plotly figure or compute it.
+
+    Args:
+        cache_key: Pre-built cache key
+        compute_fn: Zero-arg callable that returns a go.Figure
+        force_recompute: If True, ignore cache
+    """
+    full_key = f"cache_fig_{cache_key}"
+    if force_recompute:
+        st.session_state.pop(full_key, None)
+    if full_key in st.session_state:
+        return st.session_state[full_key]
+    result = compute_fn()
+    st.session_state[full_key] = result
+    return result
+
+
+def get_or_compute_narrative(
+    cache_key: str,
+    compute_fn: Callable[[], str | None],
+    force_recompute: bool = False,
+) -> str | None:
+    """Get cached narrative text or compute it.
+
+    Args:
+        cache_key: Pre-built cache key (should include policy_language_mode)
+        compute_fn: Zero-arg callable that returns narrative string
+        force_recompute: If True, ignore cache
+    """
+    full_key = f"cache_narr_{cache_key}"
+    if force_recompute:
+        st.session_state.pop(full_key, None)
+    if full_key in st.session_state:
+        return st.session_state[full_key]
+    result = compute_fn()
+    if result is not None:
+        st.session_state[full_key] = result
+    return result
 
 
 def make_sae_cache_key(
@@ -230,7 +327,10 @@ def clear_stability_cache() -> None:
 
 def clear_all_caches() -> None:
     """Clear all computation caches from session state."""
-    prefixes = ["cache_sae_", "cache_svd_", "cache_stability_"]
+    prefixes = [
+        "cache_sae_", "cache_svd_", "cache_stability_",
+        "cache_df_", "cache_fig_", "cache_narr_",
+    ]
     for prefix in prefixes:
         keys_to_remove = [k for k in st.session_state.keys() if k.startswith(prefix)]
         for k in keys_to_remove:
@@ -244,6 +344,9 @@ def get_cache_stats() -> dict:
         "sae": len([k for k in st.session_state.keys() if k.startswith("cache_sae_")]),
         "svd": len([k for k in st.session_state.keys() if k.startswith("cache_svd_")]),
         "stability": len([k for k in st.session_state.keys() if k.startswith("cache_stability_")]),
+        "dataframe": len([k for k in st.session_state.keys() if k.startswith("cache_df_")]),
+        "figure": len([k for k in st.session_state.keys() if k.startswith("cache_fig_")]),
+        "narrative": len([k for k in st.session_state.keys() if k.startswith("cache_narr_")]),
     }
     stats["total"] = sum(stats.values())
     return stats

@@ -9,6 +9,12 @@ from hyperspace.config import (
     FORECAST_CONFIDENCE_MODERATE,
     PLOTLY_LAYOUT,
 )
+from hyperspace.core.caching import (
+    get_or_compute_dataframe,
+    get_or_compute_figure,
+    hash_dataframe,
+    hash_list,
+)
 from hyperspace.data.finance import get_ohlcv
 from hyperspace.models.tft_forecast import fit_tft
 from hyperspace.pages._report_section import render_interpretability_report
@@ -54,10 +60,15 @@ def render() -> None:
             return
         st.markdown(f"### Price History {source_badge(ohlcv_src)}", unsafe_allow_html=True)
 
+        _ohlcv_hash = hash_dataframe(ohlcv_df, "ohlcv")
         for ticker in tickers:
             tdf = ohlcv_df[ohlcv_df.Ticker == ticker] if "Ticker" in ohlcv_df.columns else ohlcv_df
             if len(tdf) > 0:
-                fig = candlestick_chart(ohlcv_df, ticker)
+                fig = get_or_compute_figure(
+                    f"candle_{_ohlcv_hash}_{ticker}",
+                    lambda t=ticker: candlestick_chart(ohlcv_df, t),
+                    force_recompute=force_retrain,
+                )
                 st.plotly_chart(fig, use_container_width=True, key=f"finance_candlestick_{ticker}")
         st.caption(
             "v3.0 — Raw price history feeds the TFT encoder. Attention weights "
@@ -117,19 +128,33 @@ def render() -> None:
             # Correlation heatmap
             st.markdown("### Cross-Ticker Correlation")
             if len(tickers) > 1 and "Ticker" in ohlcv_df.columns:
-                pivot = ohlcv_df.pivot_table(
-                    index="Date", columns="Ticker", values="Close",
+                _tickers_hash = hash_list(sorted(tickers), "tickers")
+                corr = get_or_compute_dataframe(
+                    f"corr_{_ohlcv_hash}_{_tickers_hash}",
+                    lambda: ohlcv_df.pivot_table(
+                        index="Date", columns="Ticker", values="Close",
+                    ).corr(),
+                    force_recompute=force_retrain,
                 )
-                corr = pivot.corr()
+
                 import plotly.express as px
-                fig = px.imshow(
-                    corr, text_auto=".2f", color_continuous_scale="RdBu_r",
-                    title="Cross-Ticker Correlation Matrix",
+
+                def _build_corr_fig():
+                    _fig = px.imshow(
+                        corr, text_auto=".2f", color_continuous_scale="RdBu_r",
+                        title="Cross-Ticker Correlation Matrix",
+                    )
+                    _fig.update_traces(
+                        hovertemplate="Ticker X: %{x}<br>Ticker Y: %{y}<br>Correlation: %{z:.3f}<extra></extra>",
+                    )
+                    _fig.update_layout(**PLOTLY_LAYOUT, height=350)
+                    return _fig
+
+                fig = get_or_compute_figure(
+                    f"corrfig_{_ohlcv_hash}_{_tickers_hash}",
+                    _build_corr_fig,
+                    force_recompute=force_retrain,
                 )
-                fig.update_traces(
-                    hovertemplate="Ticker X: %{x}<br>Ticker Y: %{y}<br>Correlation: %{z:.3f}<extra></extra>",
-                )
-                fig.update_layout(**PLOTLY_LAYOUT, height=350)
                 st.plotly_chart(fig, use_container_width=True, key="finance_correlation_heatmap")
                 st.caption(
                     "v3.0 — Cross-ticker correlations reveal co-movement patterns "
