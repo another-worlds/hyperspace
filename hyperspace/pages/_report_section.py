@@ -15,6 +15,7 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from hyperspace.config import KERNEL_NARRATOR_IMPORTANCE_MIN, PLOTLY_LAYOUT
+from hyperspace.core.caching import get_or_compute_figure, hash_ndarray
 
 # UKT block-name → (region label, feature start, feature end, color)
 _BLOCK_REGIONS: dict[str, tuple[str, int, int, str]] = {
@@ -73,41 +74,55 @@ def render_interpretability_report(block_name: str) -> None:
             activations = ka[block_idx]
             n_k = len(activations)
 
+            _snap_hash = hash_ndarray(ka, f"report_{block_name}")
+
             col_k1, col_k2 = st.columns(2)
             with col_k1:
                 # Block's kernel activation profile
-                fig = go.Figure(go.Bar(
-                    x=[f"K{i}" for i in range(n_k)],
-                    y=activations,
-                    marker_color=color,
-                    text=[f"{v:+.3f}" for v in activations],
-                    textposition="auto",
-                    hovertemplate="<b>%{x}</b><br>Activation: %{y:+.4f}<extra>" + block_name + "</extra>",
-                ))
-                fig.update_layout(
-                    **PLOTLY_LAYOUT, height=260,
-                    title=f"{block_name} — Kernel Activation Profile",
-                    yaxis_title="Activation",
-                    margin=dict(l=20, r=20, t=40, b=20),
+                def _make_ka_fig(act=activations, nk=n_k, c=color, bn=block_name):
+                    fig = go.Figure(go.Bar(
+                        x=[f"K{i}" for i in range(nk)],
+                        y=act,
+                        marker_color=c,
+                        text=[f"{v:+.3f}" for v in act],
+                        textposition="auto",
+                        hovertemplate="<b>%{x}</b><br>Activation: %{y:+.4f}<extra>" + bn + "</extra>",
+                    ))
+                    fig.update_layout(
+                        **PLOTLY_LAYOUT, height=260,
+                        title=f"{bn} — Kernel Activation Profile",
+                        yaxis_title="Activation",
+                        margin=dict(l=20, r=20, t=40, b=20),
+                    )
+                    return fig
+
+                fig = get_or_compute_figure(
+                    f"report_ka_{_snap_hash}", _make_ka_fig,
                 )
                 st.plotly_chart(fig, use_container_width=True,
                                 key=f"report_{block_name}_kernel_act")
 
             with col_k2:
                 # Kernel importance at this step
-                fig_imp = go.Figure(go.Bar(
-                    x=[f"K{i}" for i in range(len(importance))],
-                    y=importance,
-                    marker_color="#64ffda",
-                    text=[f"{v:.1%}" for v in importance],
-                    textposition="auto",
-                    hovertemplate="<b>%{x}</b><br>Variance: %{y:.3f} (%{text})<extra></extra>",
-                ))
-                fig_imp.update_layout(
-                    **PLOTLY_LAYOUT, height=260,
-                    title=f"Kernel Importance (after {block_name})",
-                    yaxis_title="Explained Variance",
-                    margin=dict(l=20, r=20, t=40, b=20),
+                def _make_kimp_fig(imp=importance, bn=block_name):
+                    fig_imp = go.Figure(go.Bar(
+                        x=[f"K{i}" for i in range(len(imp))],
+                        y=imp,
+                        marker_color="#64ffda",
+                        text=[f"{v:.1%}" for v in imp],
+                        textposition="auto",
+                        hovertemplate="<b>%{x}</b><br>Variance: %{y:.3f} (%{text})<extra></extra>",
+                    ))
+                    fig_imp.update_layout(
+                        **PLOTLY_LAYOUT, height=260,
+                        title=f"Kernel Importance (after {bn})",
+                        yaxis_title="Explained Variance",
+                        margin=dict(l=20, r=20, t=40, b=20),
+                    )
+                    return fig_imp
+
+                fig_imp = get_or_compute_figure(
+                    f"report_kimp_{_snap_hash}", _make_kimp_fig,
                 )
                 st.plotly_chart(fig_imp, use_container_width=True,
                                 key=f"report_{block_name}_kernel_imp")
@@ -135,19 +150,27 @@ def render_interpretability_report(block_name: str) -> None:
         ]
         region_colors = ["#3498db", "#e67e22", "#2ecc71", "#e74c3c", "#9b59b6"]
 
-        fig_re = go.Figure(go.Bar(
-            x=region_names,
-            y=region_energies,
-            marker_color=region_colors,
-            text=[f"{v:.1%}" for v in region_energies],
-            textposition="auto",
-            hovertemplate="<b>%{x}</b><br>Energy Share: %{y:.3f} (%{text})<extra></extra>",
-        ))
-        fig_re.update_layout(
-            **PLOTLY_LAYOUT, height=260,
-            title="Reality Regression — Region Energy Share",
-            yaxis_title="Share of Total |RR| Energy",
-            margin=dict(l=20, r=20, t=40, b=20),
+        _rr_hash = hash_ndarray(rr, f"report_re_{block_name}")
+
+        def _make_re_fig(rn=region_names, re=region_energies, rc=region_colors):
+            fig_re = go.Figure(go.Bar(
+                x=rn,
+                y=re,
+                marker_color=rc,
+                text=[f"{v:.1%}" for v in re],
+                textposition="auto",
+                hovertemplate="<b>%{x}</b><br>Energy Share: %{y:.3f} (%{text})<extra></extra>",
+            ))
+            fig_re.update_layout(
+                **PLOTLY_LAYOUT, height=260,
+                title="Reality Regression — Region Energy Share",
+                yaxis_title="Share of Total |RR| Energy",
+                margin=dict(l=20, r=20, t=40, b=20),
+            )
+            return fig_re
+
+        fig_re = get_or_compute_figure(
+            f"report_re_{_rr_hash}", _make_re_fig,
         )
         st.plotly_chart(fig_re, use_container_width=True,
                         key=f"report_{block_name}_region_energy")

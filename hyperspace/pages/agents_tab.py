@@ -14,6 +14,7 @@ from hyperspace.config import (
     GINI_CONCENTRATION_MODERATE,
     PLOTLY_LAYOUT,
 )
+from hyperspace.core.caching import get_or_compute_figure
 from hyperspace.data.political import get_political_data
 from hyperspace.models.agent_sim import (
     ClusterAgent, initialize_agents_from_data, run_simulation,
@@ -89,17 +90,26 @@ def render() -> None:
 
             # Resource trajectories
             st.markdown("### Agent Resource Trajectories")
-            fig = go.Figure()
-            for name, agent in agents.items():
-                color = GEOPOLITICAL_NODES.get(name, {}).get("color", "#ffffff")
-                fig.add_trace(go.Scatter(
-                    y=agent.history, mode="lines",
-                    name=name, line=dict(color=color, width=2),
-                    hovertemplate="<b>" + name + "</b><br>Step: %{x}<br>Resources: %{y:.1f}<extra></extra>",
-                ))
-            fig.update_layout(
-                **PLOTLY_LAYOUT, title="Resource Evolution Over Time",
-                height=400, xaxis_title="Step", yaxis_title="Resources",
+            _fig_key = st.session_state.get("_sim_param_key", "default")
+
+            def _make_resource_traj_fig():
+                fig = go.Figure()
+                for name, agent in agents.items():
+                    color = GEOPOLITICAL_NODES.get(name, {}).get("color", "#ffffff")
+                    fig.add_trace(go.Scatter(
+                        y=agent.history, mode="lines",
+                        name=name, line=dict(color=color, width=2),
+                        hovertemplate="<b>" + name + "</b><br>Step: %{x}<br>Resources: %{y:.1f}<extra></extra>",
+                    ))
+                fig.update_layout(
+                    **PLOTLY_LAYOUT, title="Resource Evolution Over Time",
+                    height=400, xaxis_title="Step", yaxis_title="Resources",
+                )
+                return fig
+
+            fig = get_or_compute_figure(
+                f"agents_traj_{_fig_key}", _make_resource_traj_fig,
+                force_recompute=force_rerun,
             )
             st.plotly_chart(fig, use_container_width=True, key="agents_resource_trajectories")
             st.caption(
@@ -113,11 +123,19 @@ def render() -> None:
             names = list(agents.keys())
             resources = [agents[n].resources for n in names]
             colors = [GEOPOLITICAL_NODES.get(n, {}).get("color", "#888") for n in names]
-            fig = go.Figure(go.Bar(
-                x=names, y=resources, marker_color=colors,
-                hovertemplate="<b>%{x}</b><br>Resources: %{y:.1f}<extra></extra>",
-            ))
-            fig.update_layout(**PLOTLY_LAYOUT, title="Final Resources", height=350)
+
+            def _make_final_resources_fig():
+                fig = go.Figure(go.Bar(
+                    x=names, y=resources, marker_color=colors,
+                    hovertemplate="<b>%{x}</b><br>Resources: %{y:.1f}<extra></extra>",
+                ))
+                fig.update_layout(**PLOTLY_LAYOUT, title="Final Resources", height=350)
+                return fig
+
+            fig = get_or_compute_figure(
+                f"agents_final_{_fig_key}", _make_final_resources_fig,
+                force_recompute=force_rerun,
+            )
             st.plotly_chart(fig, use_container_width=True, key="agents_final_resources")
             st.caption(
                 "v3.0 — Final resource distribution shows equilibrium power "
@@ -134,15 +152,22 @@ def render() -> None:
                 for j, other in enumerate(node_names):
                     alliance_mat[i, j] = agents[name].alliances.get(other, 0)
 
-            fig = px.imshow(
-                alliance_mat, x=node_names, y=node_names,
-                color_continuous_scale="RdBu_r", text_auto=".2f",
-                title="Alliance Strengths After Simulation",
+            def _make_alliance_fig():
+                fig = px.imshow(
+                    alliance_mat, x=node_names, y=node_names,
+                    color_continuous_scale="RdBu_r", text_auto=".2f",
+                    title="Alliance Strengths After Simulation",
+                )
+                fig.update_traces(
+                    hovertemplate="Actor: %{y}<br>Partner: %{x}<br>Alliance: %{z:.3f}<extra></extra>",
+                )
+                fig.update_layout(**PLOTLY_LAYOUT, height=400)
+                return fig
+
+            fig = get_or_compute_figure(
+                f"agents_alliance_{_fig_key}", _make_alliance_fig,
+                force_recompute=force_rerun,
             )
-            fig.update_traces(
-                hovertemplate="Actor: %{y}<br>Partner: %{x}<br>Alliance: %{z:.3f}<extra></extra>",
-            )
-            fig.update_layout(**PLOTLY_LAYOUT, height=400)
             st.plotly_chart(fig, use_container_width=True, key="agents_alliance_matrix")
             st.caption(
                 "v3.0 — Alliance matrix eigenvalues populate UKT indices 56–63. "

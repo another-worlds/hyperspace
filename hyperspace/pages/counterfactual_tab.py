@@ -19,7 +19,7 @@ from hyperspace.config import (
     PLOTLY_LAYOUT,
     POLICY_KERNEL_NAMES,
 )
-from hyperspace.core.caching import get_or_compute_svd
+from hyperspace.core.caching import get_or_compute_figure, get_or_compute_svd, hash_params
 from hyperspace.models.knowledge_matrix import (
     FEATURE_REGION_LABELS,
     estimate_reality_regression_stability,
@@ -446,8 +446,12 @@ def render() -> None:
 
     # Main diff visualization
     st.markdown("### Reality Regression Comparison")
-    fig_diff = _plot_rr_diff(rr_orig, rr_cf,
-                              title=f"Reality Regression Diff ('{removed}' removed)")
+    _cf_fig_key = hash_params({"removed": removed, "kept": ",".join(kept)})
+    fig_diff = get_or_compute_figure(
+        f"cf_rr_diff_{_cf_fig_key}",
+        lambda: _plot_rr_diff(rr_orig, rr_cf,
+                               title=f"Reality Regression Diff ('{removed}' removed)"),
+    )
     st.plotly_chart(fig_diff, use_container_width=True, key="cf_rr_diff")
     st.caption(
         "**Top panel:** Original reality regression across all 80 feature dimensions. "
@@ -458,10 +462,13 @@ def render() -> None:
 
     # Kernel importance comparison
     st.markdown("### Kernel Importance Comparison")
-    fig_ki = _plot_kernel_importance_diff(
-        final_snap["importance"],
-        cf_result["importance"],
-        orig_kernels, cf_kernels,
+    fig_ki = get_or_compute_figure(
+        f"cf_ki_{_cf_fig_key}",
+        lambda: _plot_kernel_importance_diff(
+            final_snap["importance"],
+            cf_result["importance"],
+            orig_kernels, cf_kernels,
+        ),
     )
     st.plotly_chart(fig_ki, use_container_width=True, key="cf_kernel_importance")
     st.caption(

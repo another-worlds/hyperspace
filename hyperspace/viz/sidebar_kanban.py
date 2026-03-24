@@ -33,6 +33,11 @@ _KANBAN_CARDS = [
         "label": "Governance",
         "context": "Flags, compliance, audit trail",
     },
+    {
+        "key": "visualization",
+        "label": "Visualization",
+        "context": "Charts, narratives, export",
+    },
 ]
 
 _STATUS_ICONS = {
@@ -131,6 +136,7 @@ def render_sidebar_kanban() -> None:
                 "model_training": "Models",
                 "core_pipeline": "Graph",
                 "governance_analysis": "Governance",
+                "visualization": "Visualization",
             }
             src_key = _SOURCE_MAP.get(key, "")
             source = data_sources.get(src_key, "")
