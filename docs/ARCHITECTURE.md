@@ -176,14 +176,14 @@ Open-Elevation, Open-Meteo, USGS earthquake feeds, NOAA climate data, and derive
 
 | Tab | Name | Core Feature |
 |-----|------|-------------|
-| 0 | Mission Control | Executive summary, governance scorecard, data provenance, diagnostics, export |
-| 1 | Finance-Neural Block | TFT forecasting, correlation heatmaps, confidence summary |
-| 2 | Informational Cluster Mapping | BERTopic multilingual clustering, topic distributions |
-| 3 | Politics-Military Block | Graph engine, centrality analysis, geographic visualization |
-| 4 | Agentic Simulation | Multi-agent resource/alliance simulation |
-| 5 | Semantic Interpreter | Concept bottleneck, kernel visualization, semantic canvas |
-| 6 | Hyperspace Pipeline | End-to-end orchestration, timing, governance context |
-| 7 | Counterfactual | Block removal + diff analysis for contestability |
+| 0 | Mission Control | System overview, metrics, pipeline progress bar and stop/pause/continue controls, governance scorecard, status |
+| 1 | Finance-Neural Block | TFT forecasting metrics: trading simulation, trading metrics, 1d kernel narrative explanation |
+| 2 | Informational Cluster Mapping | BERTopic multilingual clustering, news anchor clustering and emerging alliance narrative explanation |
+| 3 | Politics-Military Block | Graph engine, centrality, kernelization, alliance clusterization and narrative explanation |
+| 4 | Agentic Simulation | Multi-agent resource/alliance sim, kernelization of the resource transfer processes, narrative explanation of the kernels |
+| 5 | Semantic Interpreter | Kernel narrative explanation, semantic canvas 3d map with relationships |
+| 6 | Hyperspace Pipeline | End-to-end orchestration |
+| 7 | Counterfactual | Block removal + diff analysis (contestability) |
 
 ---
 
