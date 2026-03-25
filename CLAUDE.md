@@ -39,12 +39,12 @@
 ### Architecture Tabs
 | Tab | Name | Core Feature |
 |-----|------|-------------|
-| 0 | Mission Control | System overview, metrics, governance scorecard, status |
-| 1 | Finance-Neural Block | TFT forecasting, correlation heatmaps |
-| 2 | Informational Cluster Mapping | BERTopic multilingual clustering |
-| 3 | Politics-Military Block | Graph engine, centrality, kernelization |
-| 4 | Agentic Simulation | Multi-agent resource/alliance sim |
-| 5 | Semantic Interpreter | Concept bottleneck, kernel viz, semantic canvas |
+| 0 | Mission Control | System overview, metrics, pipeline progress bar and stop/pause/continue controls, governance scorecard, status |
+| 1 | Finance-Neural Block | TFT forecasting metrics: trading simulation, trading metrics, 1d kernel narrative explanation |
+| 2 | Informational Cluster Mapping | BERTopic multilingual clustering, news anchor clustering and emerging alliance narrative explanation |
+| 3 | Politics-Military Block | Graph engine, centrality, kernelization, alliance clusterization and narrative explanation |
+| 4 | Agentic Simulation | Multi-agent resource/alliance sim, kernelization of the resource transfer processes, narrative explanation of the kernels |
+| 5 | Semantic Interpreter | Kernel narrative explanation, semantic canvas 3d map with relationships |
 | 6 | Hyperspace Pipeline | End-to-end orchestration |
 | 7 | Counterfactual | Block removal + diff analysis (contestability) |
 
