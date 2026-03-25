@@ -1,5 +1,40 @@
 # Hyperspace – Predictive Polymath System v3.0 Prototype
 
+## Engineering Reality
+
+### What This Project Is
+
+A prototype for the UN AI Council demonstrating that **reusable, scalable universal kernels + total interpretability** can enhance and globalize governance. The core thesis: AI accountability and analytical power reinforce each other — they are not trade-offs.
+
+### Stateless Development Constraints
+
+This project is developed entirely through stateless LLM sessions. You have no memory of prior sessions. This causes two compounding problems you must actively resist:
+
+1. **Context loss** — You will not remember why past decisions were made. Before changing architecture, read `docs/VISION.md` (ideological contract) and `docs/ARCHITECTURE.md` (technical specs). If your change contradicts a VISION invariant, stop and flag it to the user.
+
+2. **Deviation accumulation** — Each session, you will be tempted to add fallbacks, workarounds, and local patches instead of fixing root causes. These compound across sessions into a codebase that no longer matches the vision. Follow these rules:
+   - **Never add a fallback without asking.** If a computation fails, fix it. Do not silently substitute mock data or template output.
+   - **Never add hardcoded values for things that should be emergent.** Kernel count, kernel importance, cross-block coupling — these come from the data via SVD, not from constants.
+   - **Fix root causes, not symptoms.** If a chart shows wrong data, trace the problem to its source. Do not patch the display layer.
+   - **Do not incrementally patch broken foundations.** If a component was generated in a oneshot and never properly redesigned, say so. A clean rebuild of one component is better than 10 patches on a broken base.
+
+### Known Technical Debt (be specific when you encounter these)
+
+| What | Where | Status | What's Wrong |
+|------|-------|--------|-------------|
+| Semantic Canvas dimensions | `hyperspace/models/semantic_canvas.py:94-150` | Working scaffold | 12 dimensions hardcoded in `REGION_SEMANTIC_SPEC`. Should eventually be data-driven, not fixed strings. |
+| Tab UI implementations | `hyperspace/pages/*.py` | Scaffolding | Generated in initial oneshot prompt, patched incrementally. Never redesigned from ground up. |
+| Narrator template fallback | `semantic_interpreter/narrator.py:186-386` | Acceptable for now | Template narratives substitute when LLM unavailable. Acceptable graceful degradation, but templates must never claim things the data doesn't support. |
+
+### MVP Priority (what matters for the demo)
+
+1. **Universal kernels that emerge from real data** — The SVD path works. This is the core. Protect it.
+2. **Total interpretability** — Every claim traceable: narrative → kernel → SVD → features → raw data. No gaps in the chain.
+3. **Governance** — Every output auditable, contestable, with counterfactual support.
+4. Everything else (UI polish, caching, parallel speedups) is secondary to these three.
+
+---
+
 ## Tech Stack & Strict Rules
 
 ### Core Stack
