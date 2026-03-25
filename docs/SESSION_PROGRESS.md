@@ -79,7 +79,7 @@ Pattern: `st.session_state.pop(key, None)` followed by setting the primary butto
 ## Discoveries
 
 - **CLAUDE.md audit log was inaccurate** — The Phase 3 "VERIFIED IN kernel_viz.py" claim for hovertemplates was misleading; only 1 of 5 functions in that file had a hovertemplate. The audit log should always be verified against actual code, not trusted at face value.
-- **Caption text color `#7a9ab8`** — At ~3.5:1 contrast against `#070d1a`, this passes the 3:1 large-text threshold but fails the 4.5:1 body-text threshold. Since captions are secondary/supporting text, this is acceptable per WCAG guidelines, but should be documented as a known limitation.
+- **Caption text color** — Updated from `#7a9ab8` (~3.5:1) to `#8ab4cc` (~4.5:1) across all caption/secondary text. Now meets WCAG AA 4.5:1 body-text threshold.
 - **Graph engine charts** — `plot_geopolitical_map()` and `plot_geopolitical_graph()` in `graph_engine.py` use `hoverinfo="text"` with custom `hovertext` strings. This is functionally equivalent to hovertemplates for these complex chart types and was assessed as compliant.
 
 ## Migration Checklist
@@ -87,7 +87,7 @@ Pattern: `st.session_state.pop(key, None)` followed by setting the primary butto
 - [x] What changed that should be remembered? → All UI charts now have hovertemplates; all governance thresholds centralized in config.py; retrain buttons in all domain tabs
 - [x] New components? → No; all changes are evolutionary
 - [x] Key decisions? → Threshold centralization, retrain button pattern, parameter-hash caching, px.imshow hovertemplate approach
-- [x] New constraints? → Caption color `#7a9ab8` is borderline WCAG AA for body text; accepted for secondary text
+- [x] New constraints? → Caption color fixed: `#7a9ab8` → `#8ab4cc` (now WCAG AA compliant)
 - [x] New technical debt? → Cross-tab navigation and diagnostics sub-tabs still pending
 - [x] Vision refinements? → None
 

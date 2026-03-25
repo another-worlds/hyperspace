@@ -78,7 +78,7 @@ div[data-testid="stMetricDelta"] { color: #64ffda !important; }
     transition: color 0.15s, border-color 0.15s !important;
 }
 .stTabs [data-baseweb="tab"]:hover {
-    color: #7a9ab8 !important;
+    color: #8ab4cc !important;
     background: transparent !important;
 }
 .stTabs [aria-selected="true"] {
@@ -130,7 +130,7 @@ div[data-testid="stMetricDelta"] { color: #64ffda !important; }
 
 /* ─── Captions ──────────────────────────────────────────────────────── */
 .stCaption p, .stCaption {
-    color: #7a9bb5 !important;
+    color: #8ab4cc !important;
     font-size: 0.79em !important;
     font-family: 'Inter', sans-serif !important;
     line-height: 1.55 !important;
@@ -153,7 +153,7 @@ div[data-testid="stMetricDelta"] { color: #64ffda !important; }
     font-size: 0.79em;
     padding: 5px 10px; margin: 2px 0;
     border-left: 3px solid #64ffda;
-    background: #06111f; color: #7a9ab8;
+    background: #06111f; color: #8ab4cc;
     border-radius: 0 4px 4px 0;
 }
 
@@ -223,7 +223,7 @@ div[data-testid="stMetricDelta"] { color: #64ffda !important; }
 .contest-note {
     background: #050f1e; border-left: 3px solid #fbbf24;
     padding: 8px 14px; margin: 4px 0; font-size: 0.84em;
-    color: #7a9ab8; border-radius: 0 6px 6px 0;
+    color: #8ab4cc; border-radius: 0 6px 6px 0;
 }
 
 /* ─── Annotation tag ────────────────────────────────────────────────── */
@@ -256,7 +256,7 @@ div[data-testid="stMetricDelta"] { color: #64ffda !important; }
     font-family: 'Inter', sans-serif;
 }
 .accountability-card p {
-    color: #7a9ab8; font-size: 0.87em; line-height: 1.65;
+    color: #8ab4cc; font-size: 0.87em; line-height: 1.65;
     margin: 0; font-family: 'Inter', sans-serif;
 }
 .guarantee-card {
@@ -310,7 +310,7 @@ div[data-testid="stMetricDelta"] { color: #64ffda !important; }
     font-family: 'JetBrains Mono', monospace;
 }
 .kanban-context {
-    font-size: 0.70em; color: #7a9ab8;
+    font-size: 0.70em; color: #8ab4cc;
     display: block; margin-top: 2px; line-height: 1.4;
 }
 .kanban-source {
@@ -333,7 +333,7 @@ PLOTLY_LAYOUT = dict(
     font=dict(
         family="Inter, -apple-system, BlinkMacSystemFont, sans-serif",
         size=12,
-        color="#7a9ab8",
+        color="#8ab4cc",
     ),
     hoverlabel=dict(
         bgcolor="#0d1e38",

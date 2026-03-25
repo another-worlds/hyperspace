@@ -166,7 +166,7 @@ def _render_block_status(block: BlockProgress) -> None:
         color = "#8b8b8b"
     else:
         icon = "○"
-        color = "#7a9ab8"
+        color = "#8ab4cc"
 
     # Format timing
     timing_str = f"{block.duration_sec:.1f}s" if block.duration_sec > 0 else ""

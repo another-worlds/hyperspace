@@ -147,7 +147,7 @@ See branch: `claude/design-ui-architecture-ZNRZv` for implementation.
 
 - **Cross-tab navigation** (PENDING): Links between tabs, breadcrumb trail
 - **Advanced Diagnostics reorganization** (PENDING): Convert 200-line expander into sub-tabs
-- **Caption text color** (LOW PRIORITY): `#7a9ab8` yields ~3.5:1 against `#070d1a`; passes 3:1 large text but not 4.5:1 body text. Acceptable for caption/secondary text per WCAG guidelines.
+- **Caption text color** (FIXED): Updated `#7a9ab8` → `#8ab4cc` across `config.py` and `pipeline_progress.py`. Now meets WCAG AA 4.5:1 contrast against `#070d1a`. Also fixed typo variant `#7a9bb5`.
 
 ### UI Development Principles
 
