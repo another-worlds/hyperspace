@@ -179,14 +179,16 @@ class SemanticCanvas(_StandaloneCanvas):
     def __init__(self) -> None:
         # Use block order from BLOCK_TO_REGION
         dims = CANVAS_DIMENSIONS
-        mapping = BLOCK_TO_CANVAS
+        # Include both block-name and region-name keys so project_block()
+        # works whether called with block name or region name.
+        mapping = dict(BLOCK_TO_CANVAS)
+        mapping.update(REGION_TO_CANVAS)
         super().__init__(
             dimensions=[
                 SemanticDimension(key=d["key"], label=d["label"], description=d["desc"])
                 for d in dims
             ],
-            region_mapping=mapping,  # Note: still called region_mapping for backward compat,
-                                      # but now contains block→dimensions mapping
+            region_mapping=mapping,
         )
 
     # ------------------------------------------------------------------ #
