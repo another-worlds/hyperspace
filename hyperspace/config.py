@@ -322,6 +322,20 @@ div[data-testid="stMetricDelta"] { color: #64ffda !important; }
     50% { opacity: 0.4; }
 }
 .kanban-card-running .kanban-icon { animation: kanban-pulse 2s ease-in-out infinite; }
+
+/* ─── Cross-Tab Navigation Pills ─────────────────────────────────── */
+.nav-row { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-bottom: 0.75rem; }
+.nav-pill {
+    display: inline-block;
+    background: #0d1b2a;
+    border: 1px solid #1a3a5c;
+    border-radius: 12px;
+    padding: 0.2rem 0.6rem;
+    font-size: 0.78rem;
+    color: #8ab4cc;
+    line-height: 1.4;
+}
+.nav-pill-tab { font-weight: 600; color: #64ffda; }
 </style>
 """
 

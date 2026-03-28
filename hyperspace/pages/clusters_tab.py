@@ -8,16 +8,18 @@ import plotly.express as px
 import streamlit as st
 
 from hyperspace.config import OUTLIER_RATIO_CRITICAL, OUTLIER_RATIO_MODERATE, PLOTLY_LAYOUT
-from hyperspace.core.caching import get_or_compute_figure, hash_list
+from hyperspace.core.caching import get_or_compute_figure, get_or_compute_topic_info, hash_list
 from hyperspace.data.news import get_text_data
 from hyperspace.models.topic_model import fit_topic_model
 from hyperspace.pages._report_section import render_interpretability_report
 from hyperspace.viz.charts import source_badge
+from hyperspace.viz.cross_tab_nav import render_related_tabs
 
 
 def render() -> None:
     """Render the Informational Cluster Mapping tab."""
     st.markdown("## Informational Cluster Mapping")
+    render_related_tabs("Informational Cluster Mapping")
     st.markdown(
         "BERTopic multilingual clustering on live country-focused news. "
         "*Backbone: BERTopic + sentence-transformers.*"
@@ -67,7 +69,12 @@ def render() -> None:
 
                 st.markdown("### Discovered Topics")
                 try:
-                    topic_info = model.get_topic_info()
+                    _ti_hash = hash_list(list(topics), "topic_info")
+                    topic_info = get_or_compute_topic_info(
+                        f"info_{_ti_hash}",
+                        lambda: model.get_topic_info(),
+                        force_recompute=force_retrain,
+                    )
                     st.dataframe(topic_info.head(15), use_container_width=True)
                 except Exception as e:
                     st.warning(f"Could not display topic info: {e}")

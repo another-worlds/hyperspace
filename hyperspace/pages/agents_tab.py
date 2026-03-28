@@ -21,11 +21,13 @@ from hyperspace.models.agent_sim import (
 )
 from hyperspace.pages._report_section import render_interpretability_report
 from hyperspace.viz.charts import source_badge
+from hyperspace.viz.cross_tab_nav import render_related_tabs
 
 
 def render() -> None:
     """Render the Agentic Simulation tab."""
     st.markdown("## Agentic Simulation")
+    render_related_tabs("Agentic Simulation")
     st.markdown(
         "Bounded-rational agents with data-driven resource initialization "
         "and alliance structures derived from graph centrality and voting agreement."

@@ -8,11 +8,13 @@ from hyperspace.config import KERNEL_EXPANDER_THRESHOLD
 from hyperspace.core.caching import get_or_compute_figure, hash_list
 from hyperspace.viz import kernel_viz
 from hyperspace.viz.charts import source_badge
+from hyperspace.viz.cross_tab_nav import render_related_tabs
 
 
 def render() -> None:
     """Render the Full Pipeline tab."""
     st.markdown("## Hyperspace Pipeline — Governance Accountability View")
+    render_related_tabs("Hyperspace Pipeline")
     st.markdown(
         "End-to-end cycle: Finance → Clustering → Graph → **Spatial Raster Kernelization** → "
         "Agentic Sim → Semantic Interpretation. Each step updates the 80-dim Universal "

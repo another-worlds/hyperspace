@@ -6,7 +6,11 @@ import plotly.express as px
 import streamlit as st
 
 from hyperspace.config import PLOTLY_LAYOUT
-from hyperspace.core.caching import get_or_compute_dataframe, hash_ndarray
+from hyperspace.core.caching import (
+    get_or_compute_dataframe,
+    get_or_compute_graph_analysis,
+    hash_ndarray,
+)
 from hyperspace.data.political import get_political_data
 from hyperspace.data.map import get_country_stats
 from hyperspace.models.graph_engine import (
@@ -15,11 +19,13 @@ from hyperspace.models.graph_engine import (
 )
 from hyperspace.pages._report_section import render_interpretability_report
 from hyperspace.viz.charts import source_badge
+from hyperspace.viz.cross_tab_nav import render_related_tabs
 
 
 def render() -> None:
     """Render the Politics-Military Graph tab."""
     st.markdown("## Politics-Military Graph Engine")
+    render_related_tabs("Politics-Military Block")
     st.markdown(
         "Multi-relational geopolitical graph with real centrality analysis, "
         "community detection, and optional UN voting data integration."
@@ -46,7 +52,12 @@ def render() -> None:
                     st.error(str(exc))
                     return
                 G, pos = build_geopolitical_graph(agreement_matrix=agreement)
-                analysis = analyze_graph(G)
+                _graph_hash = hash_ndarray(agreement, prefix="graph_analysis")
+                analysis = get_or_compute_graph_analysis(
+                    f"analysis_{_graph_hash}",
+                    lambda: analyze_graph(G),
+                    force_recompute=force_rebuild,
+                )
                 try:
                     country_stats, map_src = get_country_stats()
                 except RuntimeError:

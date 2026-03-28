@@ -26,6 +26,7 @@ from hyperspace.models.knowledge_matrix import (
 )
 from hyperspace.models.sparse_ae import train_sparse_ae, map_concepts_to_kernels
 from hyperspace.viz import kernel_viz
+from hyperspace.viz.cross_tab_nav import render_related_tabs
 
 
 def _run_counterfactual_ukt(
@@ -226,6 +227,7 @@ def _plot_kernel_importance_diff(
 def render() -> None:
     """Render the Counterfactual Scenario Engine tab."""
     st.markdown("## Counterfactual Scenario Engine")
+    render_related_tabs("\u2696 Counterfactual")
     st.markdown(
         "Test the robustness of AI conclusions by removing one data block from the analysis. "
         "This operationalises **contestability** — asking: *What would the system have concluded "
