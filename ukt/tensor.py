@@ -108,11 +108,15 @@ class UniversalKnowledgeTensor:
         decomposition = decompose_svd(matrix)
 
         # Label each kernel
+        feature_names = [
+            self.registry.feature_name(i)
+            for i in range(self.feature_dim)
+        ]
         kernel_labels = []
         for k in range(decomposition.n_kernels):
             kl = label_kernel(
-                k, decomposition, self.registry, self.block_names,
-                self.global_feature_meta, timeframe_context,
+                k, decomposition, self.registry, feature_names,
+                self.block_names, self.global_feature_meta, timeframe_context,
             )
             kernel_labels.append(kl)
 

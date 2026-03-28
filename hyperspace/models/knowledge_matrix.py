@@ -80,9 +80,18 @@ FEATURE_REGION_LABELS: dict[tuple[int, int], str] = {
     for r in HYPERSPACE_REGISTRY.ordered_regions
 }
 
+# Block-to-region mapping: block name → (region_name, start, end)
+BLOCK_REGION_MAP: dict[str, tuple[str, int, int]] = {
+    "Finance": ("temporal-pattern", 0, 16),
+    "Clusters": ("semantic-embedding", 16, 32),
+    "Graph": ("structural-centrality", 32, 48),
+    "Agents": ("dynamic-agent", 48, 64),
+    "Spatial": ("geospatial-kernel", 64, 80),
+}
+
 
 def _normalize_features(arr: np.ndarray) -> np.ndarray:
-    """Normalize feature vector to [-1, 1] range using symmetric scaling.
+    """Normalize feature vector to [0, 1] range using min-max scaling.
 
     In the monolithic feature space, normalization is global (no region boundaries).
     Uses min-max scaling across the entire vector for comparable block scales.
@@ -92,8 +101,8 @@ def _normalize_features(arr: np.ndarray) -> np.ndarray:
     arr_max = np.max(arr)
     rng = arr_max - arr_min
     if rng > 1e-8:
-        out = 2.0 * (arr - arr_min) / rng - 1.0  # Scale to [-1, 1]
-    return np.clip(out, -1.0, 1.0)
+        out = (arr - arr_min) / rng  # Scale to [0, 1]
+    return np.clip(out, 0.0, 1.0)
 
 
 def estimate_reality_regression_stability(

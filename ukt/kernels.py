@@ -15,6 +15,17 @@ from typing import Any
 
 import numpy as np
 
+from ukt.registry import FeatureRegionRegistry
+
+
+def _resolve_ranges(
+    block_feature_ranges: FeatureRegionRegistry | dict[str, tuple[int, int]],
+) -> dict[str, tuple[int, int]]:
+    """Convert a FeatureRegionRegistry to a plain dict if needed."""
+    if isinstance(block_feature_ranges, FeatureRegionRegistry):
+        return block_feature_ranges.region_bounds()
+    return block_feature_ranges
+
 
 @dataclass
 class KernelDecomposition:
@@ -69,7 +80,7 @@ def decompose_svd(matrix: np.ndarray) -> KernelDecomposition:
 
 def describe_top_features(
     vt_row: np.ndarray,
-    block_feature_ranges: dict[str, tuple[int, int]],
+    block_feature_ranges: FeatureRegionRegistry | dict[str, tuple[int, int]],
     feature_names: list[str],
     feature_meta: dict[int, dict] | None = None,
     top_n: int = 5,
@@ -78,7 +89,8 @@ def describe_top_features(
 
     Args:
         vt_row: (feature_dim,) — one row of Vt (feature loadings for a kernel).
-        block_feature_ranges: Mapping of block name to (start, end) feature indices.
+        block_feature_ranges: Mapping of block name to (start, end) feature indices,
+            or a FeatureRegionRegistry.
         feature_names: List of feature names by index.
         feature_meta: Optional per-feature metadata from the data pipeline.
         top_n: How many top features to return.
@@ -86,12 +98,13 @@ def describe_top_features(
     Returns:
         List of dicts with index, name, source_block, loading, and metadata.
     """
+    ranges = _resolve_ranges(block_feature_ranges)
     indices = np.argsort(np.abs(vt_row))[-top_n:][::-1]
     descriptions = []
 
     # Build reverse mapping: index -> block_name
     idx_to_block = {}
-    for block_name, (start, end) in block_feature_ranges.items():
+    for block_name, (start, end) in ranges.items():
         for idx in range(start, end):
             idx_to_block[idx] = block_name
 
@@ -119,19 +132,21 @@ def describe_top_features(
 
 def compute_block_scores(
     vt_row: np.ndarray,
-    block_feature_ranges: dict[str, tuple[int, int]],
+    block_feature_ranges: FeatureRegionRegistry | dict[str, tuple[int, int]],
 ) -> dict[str, float]:
     """Compute per-block absolute loading scores for a kernel.
 
     Args:
         vt_row: (feature_dim,) — feature loadings for one kernel.
-        block_feature_ranges: Mapping of block name to (start, end) feature indices.
+        block_feature_ranges: Mapping of block name to (start, end) feature indices,
+            or a FeatureRegionRegistry.
 
     Returns:
         {block_name: total_absolute_loading}
     """
+    ranges = _resolve_ranges(block_feature_ranges)
     scores = {}
-    for block_name, (start, end) in block_feature_ranges.items():
+    for block_name, (start, end) in ranges.items():
         scores[block_name] = float(np.abs(vt_row[start:end]).sum())
     return scores
 
@@ -139,7 +154,7 @@ def compute_block_scores(
 def label_kernel(
     k_idx: int,
     decomposition: KernelDecomposition,
-    block_feature_ranges: dict[str, tuple[int, int]],
+    block_feature_ranges: FeatureRegionRegistry | dict[str, tuple[int, int]],
     feature_names: list[str],
     block_names: list[str],
     feature_meta: dict[int, dict] | None = None,
@@ -234,7 +249,7 @@ def generate_kernel_narrative(
     top_features: list[dict],
     block_names: list[str],
     u_col: np.ndarray,
-    block_feature_ranges: dict[str, tuple[int, int]],
+    block_feature_ranges: FeatureRegionRegistry | dict[str, tuple[int, int]],
     timeframe_context: dict | None = None,
 ) -> str:
     """Generate a data-grounded narrative for a kernel.

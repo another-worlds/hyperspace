@@ -69,6 +69,8 @@ class SemanticCanvas:
     def __post_init__(self) -> None:
         if not self.dimensions:
             self.dimensions = _default_dimensions()
+        if not self.region_mapping:
+            self.region_mapping = _default_region_mapping()
         if self.cumulative is None:
             self.cumulative = np.zeros(len(self.dimensions))
 
@@ -297,3 +299,18 @@ def _default_dimensions() -> list[SemanticDimension]:
         SemanticDimension("sparsity_level", "Sparsity Level",
                           "How concentrated the feature activations are."),
     ]
+
+
+def _default_region_mapping() -> dict[str, list[tuple[int, float]]]:
+    """Return a default region-to-canvas mapping for common region names.
+
+    Maps standard Hyperspace region names to the 4 default canvas dimensions
+    so that a bare SemanticCanvas() can project blocks meaningfully.
+    """
+    return {
+        "temporal-pattern": [(0, 1.0), (2, 0.5)],
+        "semantic-embedding": [(1, 1.0), (2, 0.6)],
+        "structural-centrality": [(2, 1.0), (3, 0.4)],
+        "dynamic-agent": [(0, 0.5), (1, 0.7), (3, 1.0)],
+        "geospatial-kernel": [(2, 0.6), (3, 1.0)],
+    }
