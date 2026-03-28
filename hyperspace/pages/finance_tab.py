@@ -19,11 +19,13 @@ from hyperspace.data.finance import get_ohlcv
 from hyperspace.models.tft_forecast import fit_tft
 from hyperspace.pages._report_section import render_interpretability_report
 from hyperspace.viz.charts import candlestick_chart, forecast_chart, source_badge
+from hyperspace.viz.cross_tab_nav import render_related_tabs
 
 
 def render() -> None:
     """Render the Finance-Neural Block tab."""
     st.markdown("## Finance-Neural Block")
+    render_related_tabs("Finance-Neural Block")
     st.markdown(
         "Temporal Fusion Transformer + cross-ticker correlations + multi-horizon "
         "probabilistic forecasting. *Backbone: TFT (Lim et al., 2021).*"

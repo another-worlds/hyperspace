@@ -19,11 +19,13 @@ import streamlit as st
 from hyperspace.config import PLOTLY_LAYOUT
 from hyperspace.core.caching import get_or_compute_figure, hash_list
 from hyperspace.viz.charts import source_badge
+from hyperspace.viz.cross_tab_nav import render_related_tabs
 
 
 def render() -> None:
     """Render Mission Control with governance-first hierarchy."""
     st.markdown("## Mission Control")
+    render_related_tabs("Mission Control")
     st.markdown(
         "**System overview and accountability dashboard.** All metrics update after each pipeline run. "
         "This page is designed for policy officers, auditors, and governance stakeholders. "
@@ -201,10 +203,17 @@ def render() -> None:
     # ═══════════════════════════════════════════════════════════════════════
 
     with st.expander("🔬 **Technical Diagnostics** (Expert View)", expanded=False):
-        st.markdown("### Kernel Evolution")
-        kernel_evolution = st.session_state.get("kernel_evolution", {})
-        if kernel_evolution:
-            with st.container():
+        diag_tabs = st.tabs([
+            "Kernel Evolution",
+            "Reconstruction",
+            "Stability",
+            "Drift",
+            "Alignment",
+        ])
+
+        with diag_tabs[0]:
+            kernel_evolution = st.session_state.get("kernel_evolution", {})
+            if kernel_evolution:
                 evo_cols = st.columns(2)
                 with evo_cols[0]:
                     st.markdown("**Kernel Stability Over Blocks:**")
@@ -268,39 +277,42 @@ def render() -> None:
                         )
                         st.plotly_chart(fig_kc, use_container_width=True,
                                         key="mc_kernel_counts")
-        else:
-            st.info("Kernel evolution data not available.")
+            else:
+                st.info("Kernel evolution data not available.")
 
-        st.markdown("### Reconstruction Error")
-        if final_snap:
-            recon_error = final_snap.get("reconstruction_error", 0)
-            st.metric("SVD Reconstruction Error", f"{recon_error:.6f}", help="Lower = better kernel fit")
+        with diag_tabs[1]:
+            if final_snap:
+                recon_error = final_snap.get("reconstruction_error", 0)
+                st.metric("SVD Reconstruction Error", f"{recon_error:.6f}", help="Lower = better kernel fit")
+            else:
+                st.info("No reconstruction data available yet.")
 
-        st.markdown("### Stability Metrics")
-        stability = st.session_state.get("ukt_multirun_stability", {})
-        if stability:
-            stab_cols = st.columns(3)
-            with stab_cols[0]:
-                st.metric(
-                    "Mean Cosine Similarity",
-                    f"{stability.get('mean_cosine', 0):.3f}",
-                    help="Reality regression stability across 8 noise runs"
-                )
-            with stab_cols[1]:
-                st.metric(
-                    "Min Cosine Similarity",
-                    f"{stability.get('min_cosine', 0):.3f}",
-                )
-            with stab_cols[2]:
-                st.metric(
-                    "Std Dev",
-                    f"{stability.get('std_cosine', 0):.3f}",
-                )
+        with diag_tabs[2]:
+            stability = st.session_state.get("ukt_multirun_stability", {})
+            if stability:
+                stab_cols = st.columns(3)
+                with stab_cols[0]:
+                    st.metric(
+                        "Mean Cosine Similarity",
+                        f"{stability.get('mean_cosine', 0):.3f}",
+                        help="Reality regression stability across 8 noise runs"
+                    )
+                with stab_cols[1]:
+                    st.metric(
+                        "Min Cosine Similarity",
+                        f"{stability.get('min_cosine', 0):.3f}",
+                    )
+                with stab_cols[2]:
+                    st.metric(
+                        "Std Dev",
+                        f"{stability.get('std_cosine', 0):.3f}",
+                    )
+            else:
+                st.info("No stability data available yet.")
 
-        st.markdown("### Drift Monitoring")
-        drift_result = st.session_state.get("drift_result", {})
-        if drift_result:
-            with st.container():
+        with diag_tabs[3]:
+            drift_result = st.session_state.get("drift_result", {})
+            if drift_result:
                 drift_cols = st.columns(2)
                 with drift_cols[0]:
                     st.markdown("**Drift Summary:**")
@@ -311,10 +323,14 @@ def render() -> None:
                     metrics = drift_result.get("drift_metrics", {})
                     for k, v in metrics.items():
                         st.metric(k, f"{v:.3f}", label_visibility="collapsed")
+            else:
+                st.info("No drift data available yet.")
 
-        st.markdown("### Alignment Metrics")
-        if alignment_metrics:
-            st.json(alignment_metrics)
+        with diag_tabs[4]:
+            if alignment_metrics:
+                st.json(alignment_metrics)
+            else:
+                st.info("No alignment data available yet.")
 
     st.markdown("---")
 

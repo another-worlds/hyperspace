@@ -309,6 +309,53 @@ def get_or_compute_stability(
     return result
 
 
+def get_or_compute_topic_info(
+    cache_key: str,
+    compute_fn: Callable[[], Any],
+    force_recompute: bool = False,
+) -> Any:
+    """Get cached BERTopic topic info DataFrame or compute it.
+
+    Args:
+        cache_key: Pre-built cache key (include model/docs hash)
+        compute_fn: Zero-arg callable that returns a DataFrame
+        force_recompute: If True, ignore cache
+    """
+    full_key = f"cache_topic_{cache_key}"
+    if force_recompute:
+        st.session_state.pop(full_key, None)
+    if full_key in st.session_state:
+        return st.session_state[full_key]
+    result = compute_fn()
+    st.session_state[full_key] = result
+    return result
+
+
+def get_or_compute_graph_analysis(
+    cache_key: str,
+    compute_fn: Callable[[], dict],
+    force_recompute: bool = False,
+) -> dict:
+    """Get cached graph analysis dict or compute it.
+
+    Caches the full result of analyze_graph() including centrality
+    measures, communities, and graph-level stats.
+
+    Args:
+        cache_key: Pre-built cache key (include adjacency matrix hash)
+        compute_fn: Zero-arg callable that returns analysis dict
+        force_recompute: If True, ignore cache
+    """
+    full_key = f"cache_graph_{cache_key}"
+    if force_recompute:
+        st.session_state.pop(full_key, None)
+    if full_key in st.session_state:
+        return st.session_state[full_key]
+    result = compute_fn()
+    st.session_state[full_key] = result
+    return result
+
+
 def clear_sae_cache() -> None:
     """Clear all SAE-related caches from session state."""
     keys_to_remove = [k for k in st.session_state.keys() if k.startswith("cache_sae_")]
@@ -330,6 +377,7 @@ def clear_all_caches() -> None:
     prefixes = [
         "cache_sae_", "cache_svd_", "cache_stability_",
         "cache_df_", "cache_fig_", "cache_narr_",
+        "cache_topic_", "cache_graph_",
     ]
     for prefix in prefixes:
         keys_to_remove = [k for k in st.session_state.keys() if k.startswith(prefix)]
@@ -347,6 +395,8 @@ def get_cache_stats() -> dict:
         "dataframe": len([k for k in st.session_state.keys() if k.startswith("cache_df_")]),
         "figure": len([k for k in st.session_state.keys() if k.startswith("cache_fig_")]),
         "narrative": len([k for k in st.session_state.keys() if k.startswith("cache_narr_")]),
+        "topic": len([k for k in st.session_state.keys() if k.startswith("cache_topic_")]),
+        "graph": len([k for k in st.session_state.keys() if k.startswith("cache_graph_")]),
     }
     stats["total"] = sum(stats.values())
     return stats

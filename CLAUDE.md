@@ -143,10 +143,11 @@ See branch: `claude/design-ui-architecture-ZNRZv` for implementation.
 - **Agent simulation caching** (FIXED): Added parameter-hash-keyed caching in `agents_tab.py` to avoid redundant simulation runs.
 - **Educational captions** (FIXED): Added v3.0 captions to dashboard reconstruction/stability trend charts.
 
-#### 📋 OUTSTANDING (Phase 3 Remaining)
+#### ✅ FIXED (Phase 4 — Cross-Tab Nav, Diagnostics, Caching, 2026-03-28)
 
-- **Cross-tab navigation** (PENDING): Links between tabs, breadcrumb trail
-- **Advanced Diagnostics reorganization** (PENDING): Convert 200-line expander into sub-tabs
+- **Cross-tab navigation** (FIXED): Added `hyperspace/viz/cross_tab_nav.py` with contextual navigation pill badges rendered at top of all 8 tabs. Each tab shows related tabs with short context descriptions. CSS classes `.nav-row`, `.nav-pill`, `.nav-pill-tab` added to `DARK_CSS` (WCAG AA compliant).
+- **Advanced Diagnostics reorganization** (FIXED): Converted monolithic Technical Diagnostics expander in `mission_control_tab.py` into 5 sub-tabs: Kernel Evolution, Reconstruction, Stability, Drift, Alignment. Outer expander preserved (collapsed by default, progressive disclosure). Each sub-tab shows informational placeholder when no data available.
+- **SPEC-1 caching gaps closed** (FIXED): Added `get_or_compute_topic_info()` and `get_or_compute_graph_analysis()` helpers to `hyperspace/core/caching.py`. BERTopic topic info cached in `clusters_tab.py` (keyed by topics hash). Graph centrality analysis cached in `politics_tab.py` (keyed by agreement matrix hash). Both respect existing force-retrain/rebuild buttons. `clear_all_caches()` and `get_cache_stats()` updated with `cache_topic_` and `cache_graph_` prefixes.
 - **Caption text color** (FIXED): Updated `#7a9ab8` → `#8ab4cc` across `config.py` and `pipeline_progress.py`. Now meets WCAG AA 4.5:1 contrast against `#070d1a`. Also fixed typo variant `#7a9bb5`.
 
 ### UI Development Principles
@@ -172,8 +173,8 @@ When modifying UI code, follow these rules in addition to the style guide:
 |-----------|--------------|--------|----------------|
 | Derived dataframes | NOT CACHED | Session-state, keyed by `(source_data_hash, transform_params)` | `finance_tab.py` (pivot tables, correlation matrices), other tabs |
 | Plotly chart objects | NOT CACHED | Session-state, keyed by `(data_hash, chart_params)` | ~25 charts across 10 files |
-| Graph centrality measures | NOT CACHED | Session-state, keyed by `(adjacency_matrix_hash, node_set_hash)` | `graph_engine.py`, `politics_tab.py` |
-| BERTopic transform predictions | NOT CACHED | Session-state, keyed by `(docs_hash, model_version)` | `topic_model.py`, `clusters_tab.py` |
+| Graph centrality measures | CACHED | Session-state via `get_or_compute_graph_analysis()`, keyed by agreement matrix hash | `politics_tab.py` |
+| BERTopic transform predictions | CACHED | Session-state via `get_or_compute_topic_info()`, keyed by topics hash | `clusters_tab.py` |
 | Kernel narratives | NOT CACHED | Session-state, keyed by `(kernel_set_hash, policy_language_mode)` | `semantic_narrator.py`, `_report_section.py` |
 
 **Implementation approach:**

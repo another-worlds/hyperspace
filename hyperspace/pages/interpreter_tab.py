@@ -26,6 +26,7 @@ from hyperspace.core.caching import (
     make_sae_cache_key,
 )
 from hyperspace.core.logging import log_sae_training
+from hyperspace.viz.cross_tab_nav import render_related_tabs
 from hyperspace.models.sparse_ae import train_sparse_ae, map_concepts_to_kernels
 from hyperspace.models.semantic_canvas import CANVAS_DIMENSIONS
 from hyperspace.viz import kernel_viz
@@ -34,6 +35,7 @@ from hyperspace.viz import kernel_viz
 def render() -> None:
     """Render the Semantic Interpreter & Persistent Knowledge Matrix tab."""
     st.markdown("## Semantic Interpreter")
+    render_related_tabs("Semantic Interpreter")
     st.markdown(
         "What has the system learned, and can those conclusions be trusted? "
         "This tab answers three questions every governance review requires: "
