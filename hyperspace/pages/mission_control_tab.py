@@ -332,6 +332,59 @@ def render() -> None:
             else:
                 st.info("No alignment data available yet.")
 
+    # ---- SPEC-7: Knowledge Base ----
+    with st.expander("Knowledge Base — Kernel Lineage & Templates", expanded=False):
+        kernel_library = st.session_state.get("kernel_library")
+        if kernel_library is None or not kernel_library.lineages:
+            from hyperspace.config import KERNEL_DISTILLATION_MIN_RUNS
+            st.info(
+                f"No kernel lineages tracked yet. Run the pipeline to begin building "
+                f"kernel identity history. Templates are distilled after "
+                f"{KERNEL_DISTILLATION_MIN_RUNS} consecutive stable runs."
+            )
+        else:
+            import pandas as pd
+            summary = kernel_library.get_library_summary()
+            if summary:
+                df = pd.DataFrame(summary)
+                st.dataframe(df, use_container_width=True)
+
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("Active Lineages", len(kernel_library.lineages))
+            with col2:
+                st.metric("Distilled Templates", len(kernel_library.templates))
+            with col3:
+                st.metric("Archived", len(kernel_library.archived))
+
+            if kernel_library.templates:
+                st.markdown(
+                    f"<span style='color:#8ab4cc;font-size:0.85em;'>"
+                    "Templates are frozen kernel identities that persist across runs. "
+                    "When transfer is enabled, they seed the projection fallback basis."
+                    "</span>", unsafe_allow_html=True,
+                )
+
+    # ---- SPEC-5: Temporal Prediction Summary ----
+    temporal_model = st.session_state.get("temporal_world_model")
+    if temporal_model is not None:
+        with st.expander("Temporal World-Model — Prediction Summary", expanded=False):
+            summary = temporal_model.get_summary()
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("Runs Observed", summary["n_runs"])
+            with col2:
+                st.metric("Confidence", f"{summary['confidence']:.2f}")
+            with col3:
+                status = "Ready" if summary["is_governance_ready"] else "Building history"
+                st.metric("Governance Status", status)
+            if summary.get("mean_error") is not None:
+                st.caption(
+                    f"<span style='color:#8ab4cc;'>Mean prediction error (last 5): "
+                    f"{summary['mean_error']:.4f}</span>",
+                    unsafe_allow_html=True,
+                )
+
     st.markdown("---")
 
     # ═══════════════════════════════════════════════════════════════════════

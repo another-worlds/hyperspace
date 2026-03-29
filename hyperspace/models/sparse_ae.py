@@ -53,9 +53,16 @@ def enrich_concepts_with_narratives(
 
     try:
         from hyperspace.models.semantic_narrator import narrate_concept
+        from hyperspace.core.caching import get_or_compute_narrative, hash_params
+        import streamlit as _st
+        _policy = _st.session_state.get("policy_language_mode", False)
         for cl in sae_result.get("concept_labels", []):
             if cl.get("active"):
-                narrative = narrate_concept(cl, canvas)
+                _ck = f"concept_{hash_params({'id': cl.get('id', ''), 'act': round(cl.get('activation', 0), 6), 'policy': _policy})}"
+                _cl_ref = cl
+                narrative = get_or_compute_narrative(
+                    _ck, lambda _cl=_cl_ref: narrate_concept(_cl, canvas),
+                )
                 if narrative:
                     cl["semantic_narrative"] = narrative
     except Exception:
