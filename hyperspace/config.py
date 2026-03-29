@@ -323,6 +323,58 @@ div[data-testid="stMetricDelta"] { color: #64ffda !important; }
 }
 .kanban-card-running .kanban-icon { animation: kanban-pulse 2s ease-in-out infinite; }
 
+/* ─── Country Selector Cards ─────────────────────────────────────── */
+.country-grid { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
+.country-chip {
+    display: inline-flex; align-items: center; gap: 5px;
+    background: #0d1b2a; border: 1px solid #1a3a5c; border-radius: 8px;
+    padding: 5px 10px; cursor: default; transition: all 0.15s ease;
+    font-size: 0.78rem; color: #8ab4cc;
+}
+.country-chip.selected {
+    background: #112940; border-color: #64ffda;
+    box-shadow: 0 0 6px rgba(100, 255, 218, 0.15);
+}
+.country-chip .chip-flag { font-size: 1.1rem; }
+.country-chip .chip-name { font-weight: 600; color: #dce8f0; }
+.country-chip .chip-bloc {
+    font-size: 0.65rem; color: #4da6ff; font-weight: 500;
+    background: #0a1929; padding: 1px 5px; border-radius: 4px;
+}
+.country-chip .chip-etf {
+    font-size: 0.65rem; color: #64ffda;
+    font-family: 'JetBrains Mono', monospace;
+}
+
+/* ─── Sidebar Section Headers ────────────────────────────────────── */
+.sidebar-section-header {
+    font-size: 0.72rem; font-weight: 700; color: #4da6ff;
+    text-transform: uppercase; letter-spacing: 0.1em;
+    margin: 8px 0 4px; padding-bottom: 4px;
+    border-bottom: 1px solid #1a3a5c;
+}
+
+/* ─── Enhanced Kanban Cards ──────────────────────────────────────── */
+.kanban-progress-bar {
+    height: 3px; background: #1a3a5c; border-radius: 2px;
+    margin-top: 6px; overflow: hidden;
+}
+.kanban-progress-fill {
+    height: 100%; border-radius: 2px; transition: width 0.4s ease;
+}
+.kanban-progress-fill.fill-complete { background: #34d399; width: 100%; }
+.kanban-progress-fill.fill-running  { background: #4da6ff; animation: progress-pulse 1.5s ease-in-out infinite; }
+.kanban-progress-fill.fill-failed   { background: #f56565; width: 100%; }
+.kanban-progress-fill.fill-pending  { background: #4a5568; width: 0%; }
+.kanban-progress-fill.fill-skipped  { background: #718096; width: 100%; }
+@keyframes progress-pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.5; } }
+
+.kanban-timing {
+    font-size: 0.65rem; color: #64ffda;
+    font-family: 'JetBrains Mono', monospace;
+    margin-top: 2px;
+}
+
 /* ─── Cross-Tab Navigation Pills ─────────────────────────────────── */
 .nav-row { display: flex; flex-wrap: wrap; gap: 0.4rem; margin-bottom: 0.75rem; }
 .nav-pill {
@@ -399,6 +451,34 @@ AVAILABLE_TICKERS: list[str] = ["SPY", "EWZ", "INDA", "FXI", "EWU", "ERUS", "RSX
 
 # Default tickers for finance block — country-representative ETFs / major stocks
 DEFAULT_TICKERS: list[str] = ["SPY", "EWZ", "INDA"]
+
+# Country → ticker mapping for sidebar country selector
+COUNTRY_TICKER_MAP: dict[str, str] = {
+    "USA":     "SPY",
+    "Brazil":  "EWZ",
+    "India":   "INDA",
+    "China":   "FXI",
+    "Britain": "EWU",
+    "Russia":  "ERUS",
+}
+
+# Country display metadata for sidebar cards
+COUNTRY_DISPLAY: dict[str, dict] = {
+    "USA":     {"flag": "\U0001F1FA\U0001F1F8", "etf": "SPY",  "bloc": "NATO",  "color": "#3498db"},
+    "Russia":  {"flag": "\U0001F1F7\U0001F1FA", "etf": "ERUS", "bloc": "CIS",   "color": "#e74c3c"},
+    "China":   {"flag": "\U0001F1E8\U0001F1F3", "etf": "FXI",  "bloc": "SCO",   "color": "#e67e22"},
+    "Britain": {"flag": "\U0001F1EC\U0001F1E7", "etf": "EWU",  "bloc": "NATO",  "color": "#2980b9"},
+    "India":   {"flag": "\U0001F1EE\U0001F1F3", "etf": "INDA", "bloc": "NAM",   "color": "#2ecc71"},
+    "Brazil":  {"flag": "\U0001F1E7\U0001F1F7", "etf": "EWZ",  "bloc": "BRICS", "color": "#9b59b6"},
+}
+
+AVAILABLE_COUNTRIES: list[str] = list(COUNTRY_TICKER_MAP.keys())
+DEFAULT_COUNTRIES: list[str] = ["USA", "Brazil", "India"]
+
+
+def countries_to_tickers(countries: list[str]) -> list[str]:
+    """Convert selected country names to their representative ETF tickers."""
+    return [COUNTRY_TICKER_MAP[c] for c in countries if c in COUNTRY_TICKER_MAP]
 
 
 # ---------------------------------------------------------------------------
