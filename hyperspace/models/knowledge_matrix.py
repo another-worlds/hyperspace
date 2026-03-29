@@ -278,11 +278,23 @@ class UniversalKnowledgeTensor:
             from hyperspace.models.semantic_narrator import (
                 narrate_layer, narrate_kernel,
             )
+            from hyperspace.core.caching import (
+                get_or_compute_narrative, hash_params,
+            )
+            import streamlit as _st
+            _policy = _st.session_state.get("policy_language_mode", False)
             if canvas_entry is not None:
-                layer_narrative = narrate_layer(canvas_entry, self.canvas)
+                _lk = f"layer_{name}_{hash_params({'coords': canvas_entry.coordinates.tolist(), 'policy': _policy})}"
+                layer_narrative = get_or_compute_narrative(
+                    _lk, lambda: narrate_layer(canvas_entry, self.canvas),
+                )
             for kl in kernel_labels:
                 if kl["importance"] > KERNEL_NARRATOR_IMPORTANCE_MIN:
-                    k_narr = narrate_kernel(kl, self.canvas)
+                    _kk = f"kernel_{hash_params({'id': kl.get('id', ''), 'imp': round(kl['importance'], 6), 'region': kl.get('dominant_region', ''), 'policy': _policy})}"
+                    _kl_ref = kl  # capture for lambda
+                    k_narr = get_or_compute_narrative(
+                        _kk, lambda _kl=_kl_ref: narrate_kernel(_kl, self.canvas),
+                    )
                     if k_narr:
                         kl["semantic_narrative"] = k_narr
         except Exception:
@@ -330,6 +342,24 @@ class UniversalKnowledgeTensor:
                 f"{decomposition.reality_regression[int(idx)]:+.4f}"
             )
 
+        # ---- SPEC-4: Optional contrastive alignment blending ----
+        contrastive_alignment_score = None
+        try:
+            from hyperspace.config import ENABLE_CONTRASTIVE_ALIGNMENT, CONTRASTIVE_WEIGHT
+            if ENABLE_CONTRASTIVE_ALIGNMENT and CONTRASTIVE_WEIGHT > 0.0 and len(self.rows) >= 2:
+                import streamlit as _st
+                from hyperspace.models.contrastive_encoder import ContrastiveEncoderBank
+                encoder_bank = _st.session_state.get("contrastive_encoder_bank")
+                if encoder_bank is None:
+                    encoder_bank = ContrastiveEncoderBank()
+                    _st.session_state["contrastive_encoder_bank"] = encoder_bank
+                # Train on current features
+                final_features = self.rows[-1]
+                encoder_bank.train_step(final_features)
+                contrastive_alignment_score = encoder_bank.alignment_score(final_features)
+        except Exception:
+            pass  # Contrastive path is non-fatal
+
         snapshot = dict(
             step=len(self.rows),
             block_name=name,
@@ -350,6 +380,7 @@ class UniversalKnowledgeTensor:
             stage_sae_result=stage_sae_result,
             canvas_entry=canvas_entry,
             layer_narrative=layer_narrative,
+            contrastive_alignment_score=contrastive_alignment_score,
         )
         self.snapshots.append(snapshot)
         return snapshot

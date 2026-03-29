@@ -450,6 +450,38 @@ FEATURE_FLAGS: dict[str, bool] = {
     "shared_latent_shadow": True,
 }
 
+# --------------------------------------------------------------------------- #
+# SPEC-4: Cross-Modal Contrastive Alignment                                    #
+# --------------------------------------------------------------------------- #
+ENABLE_CONTRASTIVE_ALIGNMENT: bool = False
+CONTRASTIVE_WEIGHT: float = 0.0           # 0.0 = pure SVD; 1.0 = pure contrastive
+CONTRASTIVE_TEMPERATURE: float = 0.07     # InfoNCE temperature τ
+CONTRASTIVE_LATENT_DIM: int = 32          # shared latent dimension per block encoder
+
+# --------------------------------------------------------------------------- #
+# SPEC-5: Temporal World-Model Memory                                          #
+# --------------------------------------------------------------------------- #
+ENABLE_TEMPORAL_MEMORY: bool = False
+TEMPORAL_ENCODER_HIDDEN_DIM: int = 32     # GRU hidden dimension
+TEMPORAL_MIN_RUNS: int = 3                # minimum runs before predictions
+TEMPORAL_GOVERNANCE_CONFIDENCE: float = 0.8  # min confidence for governance surfacing
+TEMPORAL_GOVERNANCE_MIN_RUNS: int = 5     # min runs at high confidence for governance
+
+# --------------------------------------------------------------------------- #
+# SPEC-6: Mechanistic Probes                                                   #
+# --------------------------------------------------------------------------- #
+PROBE_CANVAS_LOADING_THRESHOLD: float = 0.1   # min |loading| to count as canvas influence
+PROBE_MIN_RUNS_FOR_LINEAR: int = 10           # min KernelMemory runs for linear probing
+
+# --------------------------------------------------------------------------- #
+# SPEC-7: Knowledge Persistence & Transfer                                     #
+# --------------------------------------------------------------------------- #
+KERNEL_TRANSFER_ENABLED: bool = False
+KERNEL_LINEAGE_COSINE_THRESHOLD: float = 0.85   # min cosine to assign existing lineage
+KERNEL_DISTILLATION_MIN_RUNS: int = 5            # consecutive runs before distillation
+KERNEL_LIBRARY_PATH: str = "kernel_library.json"
+KERNEL_STALE_THRESHOLD_RUNS: int = 20            # runs without sighting → archive
+
 # Pipeline step names
 PIPELINE_STEPS: list[str] = [
     "data_fetch",

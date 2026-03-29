@@ -192,6 +192,9 @@ class PipelineResult(TypedDict, total=False):
     # Latent space versioning (Phase 3 governance)
     latent_version: dict[str, Any] | None
 
+    # SPEC-5: Temporal world-model prediction
+    temporal_prediction: dict[str, Any] | None
+
 
 @runtime_checkable
 class InterpretableModule(Protocol):

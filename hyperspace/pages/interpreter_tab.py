@@ -669,3 +669,102 @@ def render() -> None:
             for snap in snapshots:
                 with st.expander(f"Step {snap['step']}: {snap['block_name']}"):
                     st.markdown(snap["report"])
+
+        # ---- SPEC-6: Mechanistic Probes ----
+        with st.expander("Mechanistic Probes [exploratory — not authoritative]", expanded=False):
+            st.markdown(
+                f"<span style='color:#8ab4cc;font-size:0.85em;'>"
+                "Interactive probing tools for exploratory mechanistic interpretability. "
+                "Probes operate on copies — pipeline state is never modified."
+                "</span>", unsafe_allow_html=True,
+            )
+            probe_type = st.selectbox(
+                "Probe Type",
+                ["Activation Patching", "Linear Probing", "Feature Pathway Tracing"],
+                key="probe_type_select",
+            )
+
+            if probe_type == "Activation Patching":
+                n_k = snapshots[-1].get("n_kernels", 0) if snapshots else 0
+                k_labels = snapshots[-1].get("kernel_labels", []) if snapshots else []
+                k_options = [
+                    f"K{i} — {k_labels[i].get('label', '')[:40]}" if i < len(k_labels)
+                    else f"K{i}"
+                    for i in range(n_k)
+                ]
+                if k_options:
+                    selected_k = st.selectbox("Kernel to ablate", k_options, key="probe_patch_k")
+                    k_idx = int(selected_k.split(" ")[0][1:]) if selected_k else 0
+                    if st.button("Run Activation Patching", key="probe_patch_btn"):
+                        from hyperspace.core.mechanistic_probes import activation_patch
+                        result = activation_patch(snapshots[-1], k_idx)
+                        if "error" in result:
+                            st.warning(result["error"])
+                        else:
+                            col1, col2 = st.columns(2)
+                            with col1:
+                                st.metric("Reconstruction Error Delta",
+                                          f"{result['reconstruction_error_delta']:+.6f}")
+                            with col2:
+                                st.metric("Kernel Ablated", result["kernel_label"])
+                            if result.get("affected_canvas_dims"):
+                                st.write("Affected canvas dimensions:", result["affected_canvas_dims"])
+                else:
+                    st.info("No kernels available. Run the pipeline first.")
+
+            elif probe_type == "Linear Probing":
+                if st.button("Run Linear Probing", key="probe_linear_btn"):
+                    from hyperspace.core.mechanistic_probes import linear_probe
+                    kernel_memory = st.session_state.get("kernel_memory")
+                    gov_history = st.session_state.get("governance_flags_history", [])
+                    result = linear_probe(kernel_memory, gov_history)
+                    if result.get("insufficient_history"):
+                        st.info(result.get("message", "Insufficient history for linear probing."))
+                    elif result.get("results"):
+                        import pandas as pd
+                        rows = []
+                        for flag_code, data in result["results"].items():
+                            rows.append({
+                                "Flag": flag_code,
+                                "Most Predictive Kernel": data["most_predictive_kernel"],
+                                "Weight": f"{data['predictive_weight']:.3f}",
+                            })
+                        if rows:
+                            st.dataframe(pd.DataFrame(rows), use_container_width=True)
+
+            elif probe_type == "Feature Pathway Tracing":
+                from hyperspace.config import FEATURE_NAMES as _FN
+                feature_idx = st.selectbox(
+                    "Feature to trace",
+                    range(len(_FN)),
+                    format_func=lambda i: f"{i}: {_FN[i]}",
+                    key="probe_trace_feat",
+                )
+                if st.button("Trace Feature Pathway", key="probe_trace_btn"):
+                    from hyperspace.core.mechanistic_probes import trace_feature_pathway
+                    result = trace_feature_pathway(
+                        snapshots[-1] if snapshots else {},
+                        feature_idx,
+                    )
+                    if "error" in result:
+                        st.warning(result["error"])
+                    else:
+                        st.markdown(f"**Feature:** `{result['feature_name']}` ({result['region']})")
+                        col1, col2, col3 = st.columns(3)
+                        with col1:
+                            st.metric("Raw Value", f"{result['raw_value']:.4f}")
+                        with col2:
+                            st.metric("Normalized", f"{result['normalized_value']:.4f}")
+                        with col3:
+                            st.metric("Projected (RR)", f"{result['projected_value']:.4f}")
+                        if result.get("kernel_loadings"):
+                            st.markdown("**Kernel Loadings:**")
+                            for k_name, loading in sorted(
+                                result["kernel_loadings"].items(),
+                                key=lambda x: abs(x[1]), reverse=True,
+                            )[:5]:
+                                st.write(f"  {k_name}: {loading:+.4f}")
+                        if result.get("narrative_mentions"):
+                            st.markdown("**Narrative Mentions:**")
+                            for mention in result["narrative_mentions"]:
+                                st.caption(mention)

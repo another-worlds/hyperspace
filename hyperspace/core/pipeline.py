@@ -328,11 +328,23 @@ class PipelineRunner:
                 narrate_canvas,
                 narrate_reality_regression,
             )
+            from hyperspace.core.caching import (
+                get_or_compute_narrative, hash_params, hash_ndarray,
+            )
+            import streamlit as _st
+            _policy = _st.session_state.get("policy_language_mode", False)
 
-            canvas_narrative = narrate_canvas(ukt.canvas)
+            _canvas_key = f"canvas_{hash_params({'n_entries': len(ukt.canvas.entries), 'policy': _policy})}"
+            canvas_narrative = get_or_compute_narrative(
+                _canvas_key, lambda: narrate_canvas(ukt.canvas),
+            )
             if snapshots:
-                reality_narrative = narrate_reality_regression(
-                    snapshots[-1], ukt.canvas,
+                _rr = snapshots[-1].get("reality_regression")
+                _rr_key = f"reality_{hash_ndarray(_rr) if _rr is not None else 'none'}_{hash_params({'policy': _policy})}"
+                reality_narrative = get_or_compute_narrative(
+                    _rr_key, lambda: narrate_reality_regression(
+                        snapshots[-1], ukt.canvas,
+                    ),
                 )
             if sae_result is not None:
                 enrich_concepts_with_narratives(sae_result, ukt.canvas)
@@ -411,10 +423,31 @@ class PipelineRunner:
             alignment_metrics, faithfulness_report,
         )
 
-        interpretability_contract = build_alpha_scope_contract_reports({
+        # Build SPEC-3 interpretability adapters for all pipeline blocks
+        from hyperspace.models.interpretability_adapters import (
+            TFTAdapter, BERTopicAdapter, GraphEngineAdapter,
+            AgentSimAdapter, SpatialKernelsAdapter,
+        )
+        _contract_modules: dict = {
             "UniversalKnowledgeTensor": ukt,
             "SemanticCanvas": ukt.canvas,
-        })
+        }
+        try:
+            if finance_result is not None:
+                _contract_modules["TFT"] = TFTAdapter(finance_result)
+            if cluster_result is not None:
+                _contract_modules["BERTopic"] = BERTopicAdapter(cluster_result)
+            _contract_modules["GraphEngine"] = GraphEngineAdapter(G, graph_analysis)
+            if spatial_result is not None:
+                _contract_modules["SpatialKernels"] = SpatialKernelsAdapter(spatial_result)
+            _contract_modules["AgentSimulation"] = AgentSimAdapter(
+                agents, log_entries, agent_features,
+            )
+        except Exception:
+            pass  # Adapter creation is non-fatal
+        interpretability_contract = build_alpha_scope_contract_reports(
+            _contract_modules,
+        )
         enforce_alpha_scope_contract_coverage(interpretability_contract)
         interpretability_contract_summary = summarize_interpretable_reports(
             interpretability_contract,
@@ -425,6 +458,46 @@ class PipelineRunner:
         if self._kernel_memory is not None and snapshots:
             self._kernel_memory.store_run(run_id, run_timestamp, snapshots)
             kernel_evolution = self._kernel_memory.get_evolution_summary()
+
+        # ---- SPEC-7: Kernel Library — versioning, distillation, transfer ----
+        try:
+            import streamlit as _st
+            from hyperspace.core.kernel_library import KernelLibrary
+            from hyperspace.config import KERNEL_LIBRARY_PATH
+            kernel_library = _st.session_state.get("kernel_library")
+            if kernel_library is None:
+                kernel_library = KernelLibrary.load(KERNEL_LIBRARY_PATH)
+            kernel_library.begin_run()
+            if snapshots:
+                final_snap = snapshots[-1]
+                Vt = final_snap.get("Vt")
+                k_labels = final_snap.get("kernel_labels", [])
+                importance = final_snap.get("importance", np.array([]))
+                if Vt is not None:
+                    n_k = min(len(k_labels), Vt.shape[0], len(importance))
+                    for k_idx in range(n_k):
+                        vt_row = Vt[k_idx]
+                        kl = k_labels[k_idx]
+                        lid = kernel_library.match_or_mint(
+                            vt_row, kl.get("label", ""),
+                            float(importance[k_idx]),
+                            kl.get("semantic_narrative", kl.get("label", "")),
+                            run_id,
+                        )
+                        kernel_library.record_run(
+                            lid, float(importance[k_idx]),
+                            kl.get("semantic_narrative", kl.get("label", "")),
+                            run_id, vt_row=vt_row,
+                        )
+                kernel_library.distill_eligible()
+                kernel_library.prune_stale()
+            _st.session_state["kernel_library"] = kernel_library
+            try:
+                kernel_library.save(KERNEL_LIBRARY_PATH)
+            except Exception:
+                pass  # Disk persistence is best-effort
+        except Exception:
+            pass  # SPEC-7 is non-fatal
 
         # ---- Latent space versioning (Phase 3 governance) ----
         latent_version_summary = None
@@ -493,6 +566,38 @@ class PipelineRunner:
                     ],
                 }
 
+        # ---- SPEC-5: Temporal World-Model Memory ----
+        temporal_prediction = None
+        try:
+            from hyperspace.config import ENABLE_TEMPORAL_MEMORY
+            if ENABLE_TEMPORAL_MEMORY and snapshots:
+                import streamlit as _st
+                from hyperspace.models.temporal_encoder import TemporalWorldModel
+                temporal_model = _st.session_state.get("temporal_world_model")
+                if temporal_model is None:
+                    temporal_model = TemporalWorldModel()
+                    _st.session_state["temporal_world_model"] = temporal_model
+                current_rr = snapshots[-1].get(
+                    "reality_regression", np.zeros(UKT_FEATURE_DIM),
+                )
+                # Update with previous prediction error if we have history
+                prev_rr = None
+                if len(temporal_model._states) > 0 and temporal_model._predictions:
+                    prev_rr = current_rr  # actual_next = current run's RR
+                temporal_model.update(current_rr, prev_rr)
+                # Make prediction for the UI
+                pred_result = temporal_model.predict_next(current_rr)
+                if pred_result.get("prediction") is not None:
+                    temporal_prediction = {
+                        "predicted_rr": pred_result["prediction"].tolist(),
+                        "confidence": pred_result["confidence"],
+                        "is_governance_ready": pred_result["is_governance_ready"],
+                        "summary": temporal_model.get_summary(),
+                    }
+                _st.session_state["temporal_world_model"] = temporal_model
+        except Exception:
+            pass  # SPEC-5 is non-fatal
+
         return PipelineResult(
             snapshots=snapshots,
             final_matrix=final_matrix,
@@ -522,6 +627,7 @@ class PipelineRunner:
             latent_version=latent_version_summary,
             run_id=run_id,
             run_timestamp=run_timestamp,
+            temporal_prediction=temporal_prediction,
         )
 
     # ------------------------------------------------------------------ #
