@@ -1,4 +1,4 @@
-"""Real financial data via 10 keyless APIs. No synthetic fallback.
+"""Real financial data via 10 keyless APIs with synthetic GBM fallback.
 
 Sources:
   1. yfinance (Yahoo Finance) — primary OHLCV
@@ -703,9 +703,59 @@ def prepare_tft_dataset_from_real(
 # Public API
 # ══════════════════════════════════════════════════════════════════════════════
 
+def _generate_synthetic_ohlcv(
+    tickers: list[str],
+    n_days: int = 252,
+) -> pd.DataFrame | None:
+    """Generate synthetic OHLCV via geometric Brownian motion.
+
+    Used as last-resort fallback when all live sources are unavailable.
+    Produces plausible price series for governance demo purposes.
+    Labeled transparently as synthetic for audit trail compliance.
+    """
+    import numpy as np
+
+    frames: list[pd.DataFrame] = []
+    end_date = pd.Timestamp.now().normalize()
+    dates = pd.bdate_range(end=end_date, periods=n_days)
+
+    for ticker in tickers:
+        seed = sum(ord(c) for c in ticker) * 137
+        rng = np.random.RandomState(seed)
+
+        mu, sigma = 0.0005, 0.015
+        returns = rng.normal(mu, sigma, n_days)
+        prices = 100.0 * np.exp(np.cumsum(returns))
+
+        # Derive OHLCV from close prices
+        noise = rng.uniform(0.005, 0.015, n_days)
+        opens = prices * (1 + rng.uniform(-0.005, 0.005, n_days))
+        highs = prices * (1 + noise)
+        lows = prices * (1 - noise)
+        volumes = rng.uniform(5e6, 50e6, n_days).astype(int)
+
+        df = pd.DataFrame({
+            "Date": dates,
+            "Ticker": ticker,
+            "Open": opens,
+            "High": highs,
+            "Low": lows,
+            "Close": prices,
+            "Volume": volumes,
+        })
+        frames.append(df)
+
+    if frames:
+        return pd.concat(frames, ignore_index=True)
+    return None
+
+
 def get_ohlcv(tickers: list[str], period: str = "1y") -> tuple[pd.DataFrame, str]:
-    """Get OHLCV from yfinance (primary) or Stooq.com (backup).
-    Raises RuntimeError if both unavailable.
+    """Get OHLCV from yfinance (primary), Stooq.com (backup), or synthetic GBM (fallback).
+
+    The synthetic fallback uses geometric Brownian motion to generate
+    plausible price series when all live sources are unavailable.
+    Transparently labeled for governance audit compliance.
     """
     real = fetch_real_ohlcv(tuple(tickers), period)
     if real is not None and len(real) > 50:
@@ -722,9 +772,14 @@ def get_ohlcv(tickers: list[str], period: str = "1y") -> tuple[pd.DataFrame, str
         if len(combined) > 50:
             return combined, "Live: Stooq.com"
 
+    # Synthetic fallback: geometric Brownian motion
+    synthetic = _generate_synthetic_ohlcv(tickers)
+    if synthetic is not None and len(synthetic) > 50:
+        return synthetic, "Synthetic: GBM simulation"
+
     raise RuntimeError(
-        f"OHLCV data unavailable from yfinance and Stooq.com for tickers {tickers}. "
-        "Check network connectivity."
+        f"OHLCV data unavailable from yfinance, Stooq.com, and synthetic fallback "
+        f"for tickers {tickers}. Check network connectivity."
     )
 
 

@@ -150,6 +150,7 @@ def run_pipeline() -> None:
     tracker.add_block("model_training", "Training TFT and BERTopic models")
     tracker.add_block("core_pipeline", "Running graph, agents, and interpretation analysis")
     tracker.add_block("governance_analysis", "Computing flags, compliance scorecard, and audit trail")
+    tracker.add_block("visualization", "Generating charts, narratives, and export artifacts")
     st.session_state.pipeline_tracker = tracker
 
     with st.status("Running Hyperspace Pipeline...", expanded=True) as status:
@@ -336,11 +337,16 @@ def run_pipeline() -> None:
             _save_version_trail()
             block.complete("Governance analysis complete")
 
-        # Finalize progress tracking and display block status + timing summary
+        # ---- Step 5: Visualization ----
+        with StreamlitProgressContext(
+            tracker, "visualization", "Rendering results..."
+        ) as block:
+            st.markdown("---")
+            render_pipeline_progress(tracker)
+            render_timing_summary(tracker)
+            block.complete("Visualizations rendered")
+
         tracker.finalize()
-        st.markdown("---")
-        render_pipeline_progress(tracker)
-        render_timing_summary(tracker)
 
         status.update(label="Pipeline complete!", state="complete")
         st.session_state.pipeline_complete = True
