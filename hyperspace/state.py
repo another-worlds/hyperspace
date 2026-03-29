@@ -43,6 +43,9 @@ def init_session_state() -> None:
         semantic_canvas=None,
         canvas_narrative=None,
         reality_narrative=None,
+        # Cross-block results (UVT + USE, written by run_pipeline)
+        uvt_result=None,
+        use_result=None,
         # ------------------------------------------------------------------ #
         # Governance features
         # ------------------------------------------------------------------ #
