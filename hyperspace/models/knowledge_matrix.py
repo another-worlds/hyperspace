@@ -91,18 +91,19 @@ BLOCK_REGION_MAP: dict[str, tuple[str, int, int]] = {
 
 
 def _normalize_features(arr: np.ndarray) -> np.ndarray:
-    """Normalize feature vector to [0, 1] range using min-max scaling.
+    """Normalize feature vector to [-1, 1] range using min-max scaling.
 
     In the monolithic feature space, normalization is global (no region boundaries).
-    Uses min-max scaling across the entire vector for comparable block scales.
+    Uses symmetric min-max scaling so negative loadings create richer coupling
+    structure in the projection matrix (rank-1 outer products).
     """
     out = arr.copy()
     arr_min = np.min(arr)
     arr_max = np.max(arr)
     rng = arr_max - arr_min
     if rng > 1e-8:
-        out = (arr - arr_min) / rng  # Scale to [0, 1]
-    return np.clip(out, 0.0, 1.0)
+        out = 2.0 * (arr - arr_min) / rng - 1.0  # Scale to [-1, 1]
+    return np.clip(out, -1.0, 1.0)
 
 
 def estimate_reality_regression_stability(
@@ -233,19 +234,25 @@ class UniversalKnowledgeTensor:
             if bn not in self._block_feature_ranges:
                 continue
             lo, hi = self._block_feature_ranges[bn]
-            region_features = row[lo:hi]
-            # Get region name from registry for canvas (used as region_name parameter)
+            # Pass the full 80-dim projected vector to the canvas so it can
+            # see cross-block coupling effects. Region mapping determines
+            # which canvas dimensions activate — the feature space is monolithic.
             region = HYPERSPACE_REGISTRY.region_for_index(lo)
             rname = region.name if region else bn
+
+            # Per-stage SAE: discover sparse concepts from this block's
+            # projected region features before canvas projection.
+            region_features = row[lo:hi]
+            stage_sae_result = train_stage_sae(region_features)
 
             entry = self.canvas.project_block(
                 block_name=bn,
                 step=step_idx + 1,
                 region_name=rname,
-                features=region_features,
-                sae_result=None,
+                features=row,
+                sae_result=stage_sae_result,
             )
-            # Attach feature provenance evidence
+            # Attach feature provenance evidence from the block's own region
             top_local = np.argsort(np.abs(region_features))[-3:][::-1]
             canvas_dim_keys = [
                 self.canvas.dimensions[ci].key
@@ -381,6 +388,7 @@ class UniversalKnowledgeTensor:
             canvas_entry=canvas_entry,
             layer_narrative=layer_narrative,
             contrastive_alignment_score=contrastive_alignment_score,
+            projection_matrix=self.projection.projection_matrix.copy(),
         )
         self.snapshots.append(snapshot)
         return snapshot

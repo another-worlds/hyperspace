@@ -8,6 +8,7 @@ Provides deterministic caching for:
 - Derived dataframes (pivot tables, correlation matrices, centrality)
 - Plotly chart objects
 - Narrative text (kernel, canvas, concept, reality regression)
+- Disk-based API data cache (survives restarts)
 
 Cache keys are built from data hashes + hyperparameters to ensure
 deterministic, auditable, and reproducible results.
@@ -15,11 +16,18 @@ deterministic, auditable, and reproducible results.
 from __future__ import annotations
 
 import hashlib
+import json
+import logging
 import pickle
+import time
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
 import streamlit as st
 from typing import Any, Callable
+
+logger = logging.getLogger(__name__)
 
 
 def hash_ndarray(arr: np.ndarray, prefix: str = "") -> str:
@@ -399,4 +407,166 @@ def get_cache_stats() -> dict:
         "graph": len([k for k in st.session_state.keys() if k.startswith("cache_graph_")]),
     }
     stats["total"] = sum(stats.values())
+    return stats
+
+
+# --------------------------------------------------------------------------- #
+# Disk-based API data cache (survives app restarts)                           #
+# --------------------------------------------------------------------------- #
+
+def _disk_cache_path(cache_dir: Path, source: str, key: str) -> Path:
+    """Build the path for a disk-cached entry."""
+    return cache_dir / f"{source}_{key}.pkl"
+
+
+def _disk_cache_meta_path(cache_dir: Path, source: str, key: str) -> Path:
+    """Build the path for a disk-cache metadata sidecar."""
+    return cache_dir / f"{source}_{key}.meta.json"
+
+
+def disk_cache_key(params: dict) -> str:
+    """Build a deterministic cache key from fetch parameters.
+
+    Args:
+        params: Dict of fetch parameters (tickers, dates, etc.)
+
+    Returns:
+        16-char hex hash.
+    """
+    h = hashlib.sha256()
+    for k in sorted(params.keys()):
+        h.update(f"{k}={params[k]}".encode())
+    return h.hexdigest()[:16]
+
+
+def disk_cache_store(
+    cache_dir: Path,
+    source: str,
+    key: str,
+    data: Any,
+    params: dict | None = None,
+) -> None:
+    """Persist data to disk cache.
+
+    Args:
+        cache_dir: Root cache directory.
+        source: Source name (finance, docs, political, spatial).
+        key: Cache key from disk_cache_key().
+        data: Picklable payload.
+        params: Original fetch params (stored in sidecar for auditability).
+    """
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    pkl_path = _disk_cache_path(cache_dir, source, key)
+    meta_path = _disk_cache_meta_path(cache_dir, source, key)
+
+    with open(pkl_path, "wb") as f:
+        pickle.dump(data, f, protocol=pickle.HIGHEST_PROTOCOL)
+
+    meta = {
+        "source": source,
+        "key": key,
+        "timestamp": time.time(),
+        "params": {k: str(v) for k, v in (params or {}).items()},
+    }
+    with open(meta_path, "w") as f:
+        json.dump(meta, f, indent=2)
+
+    logger.info("disk_cache STORE  source=%s key=%s path=%s", source, key, pkl_path)
+
+
+def disk_cache_load(
+    cache_dir: Path,
+    source: str,
+    key: str,
+    ttl: int,
+) -> Any | None:
+    """Load data from disk cache if it exists and is fresh.
+
+    Args:
+        cache_dir: Root cache directory.
+        source: Source name.
+        key: Cache key.
+        ttl: Maximum age in seconds.
+
+    Returns:
+        Cached payload, or None if missing/stale.
+    """
+    meta_path = _disk_cache_meta_path(cache_dir, source, key)
+    pkl_path = _disk_cache_path(cache_dir, source, key)
+
+    if not pkl_path.exists() or not meta_path.exists():
+        return None
+
+    try:
+        with open(meta_path, "r") as f:
+            meta = json.load(f)
+        age = time.time() - meta["timestamp"]
+        if age > ttl:
+            logger.info(
+                "disk_cache STALE  source=%s key=%s age=%.0fs ttl=%ds",
+                source, key, age, ttl,
+            )
+            return None
+
+        with open(pkl_path, "rb") as f:
+            data = pickle.load(f)  # noqa: S301 — trusted local cache only
+        logger.info(
+            "disk_cache HIT    source=%s key=%s age=%.0fs",
+            source, key, age,
+        )
+        return data
+    except Exception as exc:
+        logger.warning("disk_cache ERROR  source=%s key=%s: %s", source, key, exc)
+        return None
+
+
+def clear_disk_cache(cache_dir: Path | None = None) -> int:
+    """Remove all files from the disk data cache.
+
+    Args:
+        cache_dir: Cache directory (defaults to config.DATA_CACHE_DIR).
+
+    Returns:
+        Number of files removed.
+    """
+    if cache_dir is None:
+        from hyperspace.config import DATA_CACHE_DIR
+        cache_dir = DATA_CACHE_DIR
+    if not cache_dir.exists():
+        return 0
+    count = 0
+    for f in cache_dir.iterdir():
+        if f.is_file():
+            f.unlink()
+            count += 1
+    return count
+
+
+def get_disk_cache_stats(cache_dir: Path | None = None) -> dict:
+    """Summary of disk-cached entries grouped by source.
+
+    Returns:
+        Dict with source names as keys and lists of {key, age_s, size_kb}.
+    """
+    if cache_dir is None:
+        from hyperspace.config import DATA_CACHE_DIR
+        cache_dir = DATA_CACHE_DIR
+    stats: dict[str, list[dict]] = {}
+    if not cache_dir.exists():
+        return stats
+    for meta_file in sorted(cache_dir.glob("*.meta.json")):
+        try:
+            with open(meta_file, "r") as f:
+                meta = json.load(f)
+            source = meta["source"]
+            key = meta["key"]
+            pkl = _disk_cache_path(cache_dir, source, key)
+            entry = {
+                "key": key,
+                "age_s": round(time.time() - meta["timestamp"]),
+                "size_kb": round(pkl.stat().st_size / 1024, 1) if pkl.exists() else 0,
+            }
+            stats.setdefault(source, []).append(entry)
+        except Exception:
+            continue
     return stats

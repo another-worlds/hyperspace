@@ -24,6 +24,19 @@ from semantic_interpreter.sae import (
     train_stage_sae,
 )
 
+# Import centralized coupling weights from config (VISION invariant 8)
+from hyperspace.config import (
+    CANVAS_COUPLING_VOLATILITY_FROM_FINANCE,
+    CANVAS_COUPLING_STRESS_FROM_FINANCE,
+    CANVAS_COUPLING_POWER_FROM_CLUSTERS,
+    CANVAS_COUPLING_POWER_FROM_GRAPH,
+    CANVAS_COUPLING_MOMENTUM_FROM_GRAPH,
+    CANVAS_COUPLING_STRESS_FROM_GRAPH,
+    CANVAS_COUPLING_POWER_FROM_AGENTS,
+    CANVAS_COUPLING_DIVERSITY_FROM_AGENTS,
+    CANVAS_COUPLING_COHESION_FROM_SPATIAL,
+)
+
 # --------------------------------------------------------------------------- #
 # Block-to-region mapping and block semantic specification                     #
 # --------------------------------------------------------------------------- #
@@ -102,7 +115,8 @@ REGION_SEMANTIC_SPEC: dict[str, dict] = {  # Keyed by region name (for backward 
              "Market stability vs turbulence; regime shift signals."),
         ],
         "primary": ["market_momentum", "temporal_memory"],
-        "coupling": [("volatility_regime", 0.8), ("systemic_stress", 0.3)],
+        "coupling": [("volatility_regime", CANVAS_COUPLING_VOLATILITY_FROM_FINANCE),
+                      ("systemic_stress", CANVAS_COUPLING_STRESS_FROM_FINANCE)],
     },
     "semantic-embedding": {
         "dimensions": [
@@ -112,7 +126,7 @@ REGION_SEMANTIC_SPEC: dict[str, dict] = {  # Keyed by region name (for backward 
              "Breadth of distinct informational themes in the discourse environment."),
         ],
         "primary": ["information_focus", "narrative_diversity"],
-        "coupling": [("power_concentration", 0.4)],
+        "coupling": [("power_concentration", CANVAS_COUPLING_POWER_FROM_CLUSTERS)],
     },
     "structural-centrality": {
         "dimensions": [
@@ -124,8 +138,9 @@ REGION_SEMANTIC_SPEC: dict[str, dict] = {  # Keyed by region name (for backward 
              "How concentrated resources and influence are among actors."),
         ],
         "primary": ["alliance_polarity", "network_cohesion"],
-        "coupling": [("power_concentration", 0.5), ("market_momentum", 0.3),
-                      ("systemic_stress", 0.4)],
+        "coupling": [("power_concentration", CANVAS_COUPLING_POWER_FROM_GRAPH),
+                      ("market_momentum", CANVAS_COUPLING_MOMENTUM_FROM_GRAPH),
+                      ("systemic_stress", CANVAS_COUPLING_STRESS_FROM_GRAPH)],
     },
     "dynamic-agent": {
         "dimensions": [
@@ -135,7 +150,8 @@ REGION_SEMANTIC_SPEC: dict[str, dict] = {  # Keyed by region name (for backward 
              "Net negative alignment, rivalry, and zero-sum dynamics."),
         ],
         "primary": ["cooperation_signal", "competition_signal"],
-        "coupling": [("power_concentration", 0.5), ("narrative_diversity", 0.3)],
+        "coupling": [("power_concentration", CANVAS_COUPLING_POWER_FROM_AGENTS),
+                      ("narrative_diversity", CANVAS_COUPLING_DIVERSITY_FROM_AGENTS)],
     },
     "geospatial-kernel": {
         "dimensions": [
@@ -145,7 +161,7 @@ REGION_SEMANTIC_SPEC: dict[str, dict] = {  # Keyed by region name (for backward 
              "Aggregate pressure across conflict, economic, and political dimensions."),
         ],
         "primary": ["geographic_coupling", "systemic_stress"],
-        "coupling": [("network_cohesion", 0.3)],
+        "coupling": [("network_cohesion", CANVAS_COUPLING_COHESION_FROM_SPATIAL)],
     },
 }
 

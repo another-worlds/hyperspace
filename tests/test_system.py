@@ -249,6 +249,49 @@ class TestModuleAPIs:
         assert hasattr(semantic_narrator, "narrate_reality_regression")
         assert hasattr(semantic_narrator, "narrate_concept")
 
+    def test_semantic_narrator_kernel_context(self):
+        from hyperspace.models import semantic_narrator
+        from hyperspace.models.semantic_canvas import SemanticCanvas
+        import numpy as np
+
+        canvas = SemanticCanvas()
+        canvas.project_block("Finance", 1, "temporal-pattern", np.ones(80), None)
+
+        json = semantic_narrator.narrate_canvas(
+            canvas,
+            kernel_labels=[
+                {
+                    "kernel_id": "K0",
+                    "importance": 0.35,
+                    "contributing_blocks": [("Finance", 0.7)],
+                    "top_features": [
+                        {"name": "f1"},
+                        {"name": "f2"},
+                        {"name": "f3"},
+                    ],
+                }
+            ],
+        )
+        assert json is not None
+        assert "K0" in json
+
+    def test_semantic_narrator_reality_regression_kernel_summary(self):
+        from hyperspace.models import semantic_narrator
+        from hyperspace.models.semantic_canvas import SemanticCanvas
+
+        canvas = SemanticCanvas()
+        snapshot = {
+            "reality_regression": [0.1] * 80,
+            "n_kernels": 1,
+            "kernel_labels": [
+                {"kernel_id": "K0", "importance": 0.42, "contributing_blocks": [("Finance", 0.8)]}
+            ],
+        }
+
+        narrative = semantic_narrator.narrate_reality_regression(snapshot, canvas)
+        assert narrative is not None
+        assert "Top kernels" in narrative or "K0" in narrative
+
     def test_core_types_api(self):
         from hyperspace.core import types
         assert hasattr(types, "BlockResult")

@@ -28,6 +28,7 @@ from hyperspace.core.caching import (
 from hyperspace.core.logging import log_sae_training
 from hyperspace.viz.cross_tab_nav import render_related_tabs
 from hyperspace.models.sparse_ae import train_sparse_ae, map_concepts_to_kernels
+from hyperspace.models.semantic_narrator import get_llm_health_status
 from hyperspace.models.semantic_canvas import CANVAS_DIMENSIONS
 from hyperspace.viz import kernel_viz
 
@@ -185,6 +186,18 @@ def render() -> None:
             # Cross-domain narrative from Tiny-LLM
             canvas_narrative = st.session_state.get("canvas_narrative")
             reality_narrative = st.session_state.get("reality_narrative")
+
+            llm_status = get_llm_health_status()
+            status_text = (
+                f"LLM {llm_status['model_name']}: "
+                f"{'loaded' if llm_status['model_loaded'] else 'unavailable'}; "
+                f"timeouts={llm_status['timeout_count']}/{llm_status['timeout_threshold']}; "
+                f"timeout_limit={llm_status['generation_timeout']}s"
+            )
+            if llm_status.get("permanently_disabled"):
+                status_text += " (permanently disabled due to repeat timeouts)"
+            st.caption(status_text)
+
             if canvas_narrative:
                 st.success(f"**System Summary:** {canvas_narrative}")
                 # Provenance: surface the concrete features behind the narrative

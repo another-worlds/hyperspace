@@ -11,11 +11,14 @@ or write your own backend for domain-specific language.
 """
 from __future__ import annotations
 
+import logging
 import re
 from abc import ABC, abstractmethod
 from typing import TYPE_CHECKING, Any
 
 import numpy as np
+
+logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from semantic_interpreter.canvas import SemanticCanvas, CanvasEntry
@@ -29,7 +32,11 @@ class NarratorBackend(ABC):
     """Base class for narrative generation backends."""
 
     @abstractmethod
-    def narrate_canvas(self, canvas: "SemanticCanvas") -> str | None:
+    def narrate_canvas(
+        self,
+        canvas: "SemanticCanvas",
+        kernel_labels: list[dict] | None = None,
+    ) -> str | None:
         """Generate a full narrative from the accumulated canvas."""
 
     @abstractmethod
@@ -72,17 +79,45 @@ class TemplateNarrator(NarratorBackend):
     Generates structured analytical text from the semantic coordinates.
     """
 
-    def narrate_canvas(self, canvas: "SemanticCanvas") -> str | None:
+    def narrate_canvas(
+        self,
+        canvas: "SemanticCanvas",
+        kernel_labels: list[dict] | None = None,
+    ) -> str | None:
         state = canvas.get_accumulated_state()
         dominant = state.get("dominant_narrative", [])
-        if not dominant:
+        if not dominant and not kernel_labels:
             return "No dominant patterns detected across the analysis layers."
 
         parts = []
-        for d in dominant:
-            strength = "strongly" if d["value"] > 0.7 else "moderately"
-            parts.append(f"The analysis {strength} indicates {d['label'].lower()} "
-                         f"(score: {d['value']:.2f}).")
+        # Kernel-aware narrative should reference emergent structure first
+        if kernel_labels:
+            sorted_kernels = sorted(
+                kernel_labels,
+                key=lambda k: k.get("importance", 0),
+                reverse=True,
+            )
+            top_kernels = sorted_kernels[:3]
+            kernel_parts = []
+            for kl in top_kernels:
+                cid = kl.get("kernel_id", "?")
+                imp = kl.get("importance", 0.0)
+                contrib = kl.get("contributing_blocks", [])
+                contrib_desc = ", ".join(f"{b} ({v:.2f})" for b, v in contrib[:2])
+                kernel_parts.append(
+                    f"{cid} ({imp:.1%} var, {contrib_desc if contrib_desc else 'single-block'})"
+                )
+            parts.append(
+                f"Emergent kernels driving the analysis: {', '.join(kernel_parts)}."
+            )
+
+        if dominant:
+            for d in dominant:
+                strength = "strongly" if d["value"] > 0.7 else "moderately"
+                parts.append(
+                    f"The analysis {strength} indicates {d['label'].lower()} "
+                    f"(score: {d['value']:.2f})."
+                )
 
         n_layers = len(state.get("entries", []))
         parts.append(f"This assessment integrates signals from {n_layers} processing layers.")
@@ -144,10 +179,19 @@ class TemplateNarrator(NarratorBackend):
             name = feature_name_fn(int(idx)) if feature_name_fn else f"feature_{idx}"
             parts.append(f"{name} ({rr[int(idx)]:+.4f})")
 
+        kernel_labels = snapshot.get("kernel_labels", [])
+        kernel_part = ""
+        if kernel_labels:
+            top_k = sorted(kernel_labels, key=lambda k: k.get("importance", 0), reverse=True)[:3]
+            kernel_part = " Top kernels: " + ", ".join(
+                f"{k.get('kernel_id','?')} ({k.get('importance',0.0):.1%})"
+                for k in top_k
+            ) + "."
+
         return (
             f"The reality regression is most influenced by: {', '.join(parts)}. "
             f"This vector summarizes {snapshot.get('n_kernels', 0)} kernels into "
-            f"a single direction of maximum explained variance."
+            f"a single direction of maximum explained variance.{kernel_part}"
         )
 
 
@@ -174,7 +218,7 @@ class LLMNarrator(NarratorBackend):
         max_new_tokens: int = 60,
         temperature: float = 0.7,
         cache_fn: Any = None,
-        generation_timeout: float = 15.0,
+        generation_timeout: float = 30.0,
     ) -> None:
         self.model_name = model_name
         self.max_new_tokens = max_new_tokens
@@ -186,11 +230,16 @@ class LLMNarrator(NarratorBackend):
         self._fallback = TemplateNarrator()
         self._timeout_count = 0       # Consecutive timeouts
         self._timeout_threshold = 3   # Permanently disable after N consecutive
+        self._model_load_failed = False  # Avoid repeated load retries on persistent failure
 
     def _load_model(self):
         """Load model and tokenizer."""
         if self._model is not None:
             return self._model, self._tokenizer
+
+        if self._model_load_failed:
+            logger.warning("Skipping model load: previous load has failed permanently.")
+            return None, None
 
         def _do_load():
             try:
@@ -199,7 +248,14 @@ class LLMNarrator(NarratorBackend):
                 model = AutoModelForCausalLM.from_pretrained(self.model_name)
                 model.eval()
                 return model, tokenizer
-            except Exception:
+            except Exception as exc:
+                logger.error(
+                    "Failed to load LLM model %s: %s",
+                    self.model_name,
+                    exc,
+                    exc_info=True,
+                )
+                self._model_load_failed = True
                 return None, None
 
         if self._cache_fn:
@@ -219,10 +275,15 @@ class LLMNarrator(NarratorBackend):
         narrator) on timeout.
         """
         if self._timeout_count >= self._timeout_threshold:
+            logger.warning(
+                "LLM generation disabled after %d consecutive timeouts",
+                self._timeout_count,
+            )
             return None  # Too many consecutive timeouts; skip LLM
 
         model, tokenizer = self._load_model()
         if model is None or tokenizer is None:
+            logger.warning("LLM model not available; using fallback narrative.")
             return None
 
         try:
@@ -242,31 +303,61 @@ class LLMNarrator(NarratorBackend):
                     )
                 return outputs
 
-            # Use daemon thread so it won't block process exit, and
-            # cancel the future on timeout so the executor __exit__
-            # doesn't wait for the worker to finish.
             executor = ThreadPoolExecutor(max_workers=1)
             future = executor.submit(_run_generation)
             executor.shutdown(wait=False)
             try:
                 outputs = future.result(timeout=self._generation_timeout)
                 self._timeout_count = 0  # Reset on success
-            except FuturesTimeout:
+            except FuturesTimeout as e:
                 future.cancel()
                 self._timeout_count += 1
+                logger.warning(
+                    "LLM generation timeout (%ss) for %s (count %d/%d)",
+                    self._generation_timeout,
+                    self.model_name,
+                    self._timeout_count,
+                    self._timeout_threshold,
+                )
                 return None
 
             full_text = tokenizer.decode(outputs[0], skip_special_tokens=True)
             continuation = full_text[len(tokenizer.decode(inputs[0],
                                                           skip_special_tokens=True)):]
             return _postprocess(continuation)
-        except Exception:
+        except Exception as exc:
+            logger.error("LLM generation failed: %s", exc, exc_info=True)
             return None
 
-    def narrate_canvas(self, canvas: "SemanticCanvas") -> str | None:
-        prompt = canvas.format_for_narrator()
+    def narrate_canvas(
+        self,
+        canvas: "SemanticCanvas",
+        kernel_labels: list[dict] | None = None,
+    ) -> str | None:
+        prompt = canvas.format_for_narrator(kernel_labels=kernel_labels)
+        # Add explicit kernel summary for probabilistic model context
+        if kernel_labels:
+            top_kernels = sorted(
+                kernel_labels,
+                key=lambda k: k.get("importance", 0),
+                reverse=True,
+            )[:3]
+            kernel_info = "\n\nTop emergent kernels:\n"
+            for kl in top_kernels:
+                contrib = kl.get("contributing_blocks", [])
+                contrib_desc = ", ".join(f"{b} ({v:.2f})" for b, v in contrib[:2])
+                kernel_info += (
+                    f"- {kl.get('kernel_id', '?')} ({kl.get('importance', 0.0):.1%} variance) "
+                    f"contributions: {contrib_desc or 'single-block'}; "
+                    f"top features: {', '.join(f['name'] for f in kl.get('top_features', [])[:3])}.\n"
+                )
+            prompt = prompt + kernel_info
+
         result = self._generate(prompt, max_tokens=80)
-        return result or self._fallback.narrate_canvas(canvas)
+        if result is None:
+            logger.info("narrate_canvas: LLM not available, using template fallback")
+            return self._fallback.narrate_canvas(canvas, kernel_labels=kernel_labels)
+        return result
 
     def narrate_layer(self, entry: "CanvasEntry", canvas: "SemanticCanvas") -> str | None:
         coords = entry.coordinates
@@ -373,19 +464,31 @@ class LLMNarrator(NarratorBackend):
 
         n_kernels = snapshot.get("n_kernels", 0)
 
+        kernel_infos = ""
+        kernel_labels = snapshot.get("kernel_labels", [])
+        if kernel_labels:
+            top_k = sorted(kernel_labels, key=lambda k: k.get("importance", 0), reverse=True)[:3]
+            kernel_infos = "\n\nKernel summary: " + ", ".join(
+                f"{k.get('kernel_id','?')} ({k.get('importance',0.0):.1%})"
+                for k in top_k
+            ) + "."
+
         prompt = (
             f"Final reality assessment — feature synthesis:\n\n"
             f"After integrating {n_kernels} data domains, the system computed a "
             f"unified reality regression vector.\n\n"
             f"Top features: {'; '.join(top_feats[:3])}.\n"
             f"Region energy: {'; '.join(region_lines)}."
-            f"{canvas_text}\n\n"
+            f"{canvas_text}{kernel_infos}\n\n"
             f"The overall assessment is that"
         )
         result = self._generate(prompt, max_tokens=80)
-        return result or self._fallback.narrate_reality_regression(
-            snapshot, canvas, feature_name_fn, region_for_index_fn, region_bounds,
-        )
+        if result is None:
+            logger.info("narrate_reality_regression: LLM not available, using template fallback")
+            return self._fallback.narrate_reality_regression(
+                snapshot, canvas, feature_name_fn, region_for_index_fn, region_bounds,
+            )
+        return result
 
 
 # --------------------------------------------------------------------------- #

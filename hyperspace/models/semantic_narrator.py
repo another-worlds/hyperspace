@@ -58,7 +58,7 @@ def _get_narrator() -> LLMNarrator:
             max_new_tokens=60,
             temperature=0.7,
             cache_fn=cache_fn,
-            generation_timeout=10.0,
+            generation_timeout=30.0,
         )
     return _narrator
 
@@ -70,18 +70,38 @@ def is_llm_available() -> bool:
     return model is not None and tokenizer is not None
 
 
+def get_llm_health_status() -> dict[str, object]:
+    """Return health status for diagnostics and UI display."""
+    narrator = _get_narrator()
+    model_loaded = narrator._model is not None
+    if not model_loaded and not narrator._model_load_failed:
+        # attempt at least one load
+        narrator._load_model()
+        model_loaded = narrator._model is not None
+
+    return {
+        "model_name": narrator.model_name,
+        "model_loaded": model_loaded,
+        "model_load_failed": narrator._model_load_failed,
+        "timeout_count": narrator._timeout_count,
+        "timeout_threshold": narrator._timeout_threshold,
+        "generation_timeout": narrator._generation_timeout,
+        "permanently_disabled": narrator._timeout_count >= narrator._timeout_threshold,
+    }
+
+
 # --------------------------------------------------------------------------- #
 # Public API — latent-space-to-semantics translation                          #
 # --------------------------------------------------------------------------- #
 
-def narrate_canvas(canvas: "SemanticCanvas") -> str | None:
+def narrate_canvas(canvas: "SemanticCanvas", kernel_labels: list[dict] | None = None) -> str | None:
     """Translate the accumulated semantic canvas into a narrative.
 
     The canvas contains all projected coordinates from every pipeline layer.
     The LLM reads the structured canvas state and produces a holistic
     interpretation of the cross-domain latent patterns.
     """
-    return _get_narrator().narrate_canvas(canvas)
+    return _get_narrator().narrate_canvas(canvas, kernel_labels=kernel_labels)
 
 
 def narrate_layer(entry: "CanvasEntry", canvas: "SemanticCanvas") -> str | None:

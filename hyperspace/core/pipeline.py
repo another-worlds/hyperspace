@@ -327,6 +327,7 @@ class PipelineRunner:
             from hyperspace.models.semantic_narrator import (
                 narrate_canvas,
                 narrate_reality_regression,
+                get_llm_health_status,
             )
             from hyperspace.core.caching import (
                 get_or_compute_narrative, hash_params, hash_ndarray,
@@ -334,9 +335,10 @@ class PipelineRunner:
             import streamlit as _st
             _policy = _st.session_state.get("policy_language_mode", False)
 
-            _canvas_key = f"canvas_{hash_params({'n_entries': len(ukt.canvas.entries), 'policy': _policy})}"
+            kernel_labels = snapshots[-1].get('kernel_labels') if snapshots else None
+            _canvas_key = f"canvas_{hash_params({'n_entries': len(ukt.canvas.entries), 'policy': _policy, 'kernels': [k.get('kernel_id','') for k in (kernel_labels or [])]})}"
             canvas_narrative = get_or_compute_narrative(
-                _canvas_key, lambda: narrate_canvas(ukt.canvas),
+                _canvas_key, lambda: narrate_canvas(ukt.canvas, kernel_labels=kernel_labels),
             )
             if snapshots:
                 _rr = snapshots[-1].get("reality_regression")
@@ -348,8 +350,19 @@ class PipelineRunner:
                 )
             if sae_result is not None:
                 enrich_concepts_with_narratives(sae_result, ukt.canvas)
+
+            health = get_llm_health_status()
+            _st.session_state["narrator_mode"] = (
+                "llm" if health.get("model_loaded", False) and not health.get("permanently_disabled", False)
+                else "template"
+            )
+            _st.session_state["llm_health_status"] = health
         except Exception as exc:
             self._warnings.append(f"Narrator unavailable: {exc}")
+            try:
+                _st.session_state["narrator_mode"] = "template"
+            except Exception:
+                pass
 
         # ---- Stability ----
         stability = None

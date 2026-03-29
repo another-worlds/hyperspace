@@ -6,14 +6,34 @@ Parallelizes independent data fetch operations to maximize throughput:
 - Political agreement matrices (GDELT)
 - Multimodal spatial rasters
 
-Expected speedup: 4-6× (from ~100-150s to ~50-70s) for typical runs.
+Disk-cached via .data_cache/ to survive app restarts. Each source has an
+independent TTL configured in config.py (DATA_CACHE_TTL_*).
+
+Expected speedup: 4-6× (from ~100-150s to ~50-70s) for typical runs,
+effectively instant on cache hits.
 """
 from __future__ import annotations
 
+import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime
 from typing import Any, Callable
 import pandas as pd
+
+from hyperspace.config import (
+    DATA_CACHE_DIR,
+    DATA_CACHE_TTL_FINANCE,
+    DATA_CACHE_TTL_NEWS,
+    DATA_CACHE_TTL_POLITICAL,
+    DATA_CACHE_TTL_SPATIAL,
+)
+from hyperspace.core.caching import (
+    disk_cache_key,
+    disk_cache_load,
+    disk_cache_store,
+)
+
+logger = logging.getLogger(__name__)
 
 
 class ParallelFetchResult:
@@ -81,8 +101,12 @@ def fetch_all_data_parallel(
     min_year: int | None = None,
     max_year: int | None = None,
     max_workers: int = 4,
+    force_refresh: bool = False,
 ) -> ParallelFetchResult:
     """Fetch all required data sources in parallel.
+
+    Each source is disk-cached under .data_cache/ with per-source TTLs.
+    On a cache hit the API call is skipped entirely.
 
     Args:
         tickers: Financial tickers to fetch
@@ -95,6 +119,7 @@ def fetch_all_data_parallel(
         min_year: Minimum year for political data
         max_year: Maximum year for political data
         max_workers: Max threads for parallel execution
+        force_refresh: If True, bypass disk cache and re-fetch from APIs
 
     Returns:
         ParallelFetchResult with all fetched data and error information
@@ -124,54 +149,115 @@ def fetch_all_data_parallel(
         from hyperspace.data.spatial import fetch_all_spatial_data
         fetch_spatial_fn = lambda: (fetch_all_spatial_data(), "spatial_rasters")
 
+    # --- Disk cache keys (deterministic from input params) ---
+    finance_cache_key = disk_cache_key({
+        "source": "finance",
+        "tickers": ",".join(sorted(tickers)),
+    })
+    docs_cache_key = disk_cache_key({
+        "source": "docs",
+        "start": str(finance_start),
+        "end": str(finance_end),
+    })
+    political_cache_key = disk_cache_key({
+        "source": "political",
+        "min_year": str(min_year),
+        "max_year": str(max_year),
+    })
+    spatial_cache_key = disk_cache_key({"source": "spatial"})
+
     # Define wrapper tasks for parallel execution
     def fetch_ohlcv_task():
-        """Fetch financial data."""
+        """Fetch financial data, with disk cache."""
         import time
         start = time.time()
         try:
+            if not force_refresh:
+                cached = disk_cache_load(DATA_CACHE_DIR, "finance", finance_cache_key, DATA_CACHE_TTL_FINANCE)
+                if cached is not None:
+                    result.ohlcv_df = cached["ohlcv_df"]
+                    result.ohlcv_source = cached["source"] + " (disk cache)"
+                    return
             ohlcv_df, source = fetch_ohlcv_fn()
             result.ohlcv_df = ohlcv_df
             result.ohlcv_source = source
+            disk_cache_store(
+                DATA_CACHE_DIR, "finance", finance_cache_key,
+                {"ohlcv_df": ohlcv_df, "source": source},
+                params={"tickers": ",".join(sorted(tickers))},
+            )
         except Exception as e:
             result.errors["ohlcv"] = e
         finally:
             result.timings["ohlcv"] = time.time() - start
 
     def fetch_docs_task():
-        """Fetch document data."""
+        """Fetch document data, with disk cache."""
         import time
         start = time.time()
         try:
+            if not force_refresh:
+                cached = disk_cache_load(DATA_CACHE_DIR, "docs", docs_cache_key, DATA_CACHE_TTL_NEWS)
+                if cached is not None:
+                    result.docs = cached["docs"]
+                    result.docs_source = cached["source"] + " (disk cache)"
+                    return
             docs, source = fetch_docs_fn()
             result.docs = docs
             result.docs_source = source
+            disk_cache_store(
+                DATA_CACHE_DIR, "docs", docs_cache_key,
+                {"docs": docs, "source": source},
+                params={"start": str(finance_start), "end": str(finance_end)},
+            )
         except Exception as e:
             result.errors["documents"] = e
         finally:
             result.timings["documents"] = time.time() - start
 
     def fetch_political_task():
-        """Fetch political data."""
+        """Fetch political data, with disk cache."""
         import time
         start = time.time()
         try:
+            if not force_refresh:
+                cached = disk_cache_load(DATA_CACHE_DIR, "political", political_cache_key, DATA_CACHE_TTL_POLITICAL)
+                if cached is not None:
+                    result.agreement = cached["agreement"]
+                    result.agreement_source = cached["source"] + " (disk cache)"
+                    return
             _, agreement, source = fetch_political_fn()
             result.agreement = agreement
             result.agreement_source = source
+            disk_cache_store(
+                DATA_CACHE_DIR, "political", political_cache_key,
+                {"agreement": agreement, "source": source},
+                params={"min_year": str(min_year), "max_year": str(max_year)},
+            )
         except Exception as e:
             result.errors["political"] = e
         finally:
             result.timings["political"] = time.time() - start
 
     def fetch_spatial_task():
-        """Fetch spatial data."""
+        """Fetch spatial data, with disk cache."""
         import time
         start = time.time()
         try:
+            if not force_refresh:
+                cached = disk_cache_load(DATA_CACHE_DIR, "spatial", spatial_cache_key, DATA_CACHE_TTL_SPATIAL)
+                if cached is not None:
+                    result.spatial_data = cached["spatial_data"]
+                    result.spatial_source = cached["source"] + " (disk cache)"
+                    return
             spatial_data, source = fetch_spatial_fn()
             result.spatial_data = spatial_data
             result.spatial_source = source
+            disk_cache_store(
+                DATA_CACHE_DIR, "spatial", spatial_cache_key,
+                {"spatial_data": spatial_data, "source": source},
+                params={},
+            )
         except Exception as e:
             result.errors["spatial"] = e
         finally:

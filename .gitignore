@@ -25,3 +25,4 @@ checkpoints/
 *.h5
 .streamlit/
 .hyperspace/
+.data_cache/

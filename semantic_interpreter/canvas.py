@@ -233,7 +233,7 @@ class SemanticCanvas:
             "dominant_narrative": dominant_narrative,
         }
 
-    def format_for_narrator(self) -> str:
+    def format_for_narrator(self, kernel_labels: list[dict] | None = None) -> str:
         """Format the canvas state as structured text for a narrator backend.
 
         Returns a rich context string that an LLM or template engine can process.
@@ -275,6 +275,23 @@ class SemanticCanvas:
         if dominant:
             dim_names = [d["label"] for d in dominant]
             lines.append(f"The dominant patterns are: {', '.join(dim_names)}.")
+            lines.append("")
+
+        if kernel_labels:
+            top_kernels = sorted(
+                kernel_labels,
+                key=lambda k: k.get("importance", 0),
+                reverse=True,
+            )[:3]
+            lines.append("Top emergent kernels:")
+            for kl in top_kernels:
+                contrib = kl.get("contributing_blocks", [])
+                contrib_desc = ", ".join(f"{b} ({v:.2f})" for b, v in contrib[:2])
+                lines.append(
+                    f"  - {kl.get('kernel_id', '?')} ({kl.get('importance', 0.0):.1%} variance); "
+                    f"{contrib_desc or 'single-block'}; "
+                    f"top features: {', '.join(f['name'] for f in kl.get('top_features', [])[:3])}"
+                )
             lines.append("")
 
         lines.append(

@@ -523,6 +523,33 @@ DRIFT_REGRESSION_COSINE_THRESHOLD: float = 0.85
 DRIFT_IMPORTANCE_COSINE_THRESHOLD: float = 0.80
 DRIFT_STABILITY_DELTA_THRESHOLD: float = -0.10
 
+# --------------------------------------------------------------------------- #
+# Semantic Canvas coupling weights                                             #
+# --------------------------------------------------------------------------- #
+# Cross-domain coupling strength between blocks and canvas dimensions.
+# Primary dimensions use weight 1.0 (implicit). These weights control how
+# much each block's features activate NON-primary canvas dimensions.
+# Named for auditability per VISION invariant 8 (centralized thresholds).
+CANVAS_COUPLING_VOLATILITY_FROM_FINANCE: float = 0.8
+CANVAS_COUPLING_STRESS_FROM_FINANCE: float = 0.3
+CANVAS_COUPLING_POWER_FROM_CLUSTERS: float = 0.4
+CANVAS_COUPLING_POWER_FROM_GRAPH: float = 0.5
+CANVAS_COUPLING_MOMENTUM_FROM_GRAPH: float = 0.3
+CANVAS_COUPLING_STRESS_FROM_GRAPH: float = 0.4
+CANVAS_COUPLING_POWER_FROM_AGENTS: float = 0.5
+CANVAS_COUPLING_DIVERSITY_FROM_AGENTS: float = 0.3
+CANVAS_COUPLING_COHESION_FROM_SPATIAL: float = 0.3
+
+# --------------------------------------------------------------------------- #
+# Disk-based API data cache (survives app restarts)                            #
+# --------------------------------------------------------------------------- #
+import pathlib as _pathlib
+DATA_CACHE_DIR: _pathlib.Path = _pathlib.Path(__file__).resolve().parent.parent / ".data_cache"
+DATA_CACHE_TTL_FINANCE: int = 3600       # 1 hour  (matches yfinance st.cache_data TTL)
+DATA_CACHE_TTL_NEWS: int = 1800          # 30 min  (matches GDELT/RSS TTL)
+DATA_CACHE_TTL_POLITICAL: int = 86400    # 24 hours (matches Dataverse TTL)
+DATA_CACHE_TTL_SPATIAL: int = 86400      # 24 hours
+
 # Feature flags
 FEATURE_FLAGS: dict[str, bool] = {
     # Shared-latent prototype remains shadow-only until parity + governance
