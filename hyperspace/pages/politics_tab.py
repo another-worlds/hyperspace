@@ -52,7 +52,7 @@ def render() -> None:
                     st.error(str(exc))
                     return
                 G, pos = build_geopolitical_graph(agreement_matrix=agreement)
-                _graph_hash = hash_ndarray(agreement, prefix="graph_analysis")
+                _graph_hash = hash_ndarray(agreement.to_numpy(), prefix="graph_analysis")
                 analysis = get_or_compute_graph_analysis(
                     f"analysis_{_graph_hash}",
                     lambda: analyze_graph(G),

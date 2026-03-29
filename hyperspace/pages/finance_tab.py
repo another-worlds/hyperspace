@@ -4,6 +4,7 @@ from __future__ import annotations
 import streamlit as st
 
 from hyperspace.config import (
+    COUNTRY_TICKER_MAP,
     DEFAULT_TICKERS,
     FORECAST_CONFIDENCE_HIGH,
     FORECAST_CONFIDENCE_MODERATE,
@@ -31,9 +32,11 @@ def render() -> None:
         "probabilistic forecasting. *Backbone: TFT (Lim et al., 2021).*"
     )
 
-    # Use shared session state tickers (set by sidebar)
+    # Use shared session state tickers (set by sidebar country selector)
     tickers = st.session_state.get("tickers", DEFAULT_TICKERS) or DEFAULT_TICKERS
-    st.caption(f"Using tickers from sidebar: {', '.join(tickers)}")
+    _ticker_to_country = {v: k for k, v in COUNTRY_TICKER_MAP.items()}
+    country_labels = [f"{_ticker_to_country.get(t, t)} ({t})" for t in tickers]
+    st.caption(f"Analysing: {', '.join(country_labels)}")
 
     sc1, sc2, sc3 = st.columns(3)
     encoder_length = sc1.slider("Encoder Length", 24, 90, 48, key="finance_encoder_len")

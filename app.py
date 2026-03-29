@@ -19,7 +19,15 @@ warnings.filterwarnings("ignore")
 
 import streamlit as st
 
-from hyperspace.config import AVAILABLE_TICKERS, DARK_CSS, DEFAULT_TICKERS, GLOSSARY
+from hyperspace.config import (
+    AVAILABLE_COUNTRIES,
+    COUNTRY_DISPLAY,
+    COUNTRY_TICKER_MAP,
+    DARK_CSS,
+    DEFAULT_COUNTRIES,
+    GLOSSARY,
+    countries_to_tickers,
+)
 from hyperspace.state import init_session_state
 from hyperspace.pages import governance as governance_module
 from hyperspace.viz.sidebar_kanban import render_sidebar_kanban
@@ -55,9 +63,48 @@ with st.sidebar:
     )
     st.markdown("---")
 
+    # ── Analysis Scope ──────────────────────────────────────────────
+    st.markdown(
+        '<div class="sidebar-section-header">Analysis Scope</div>',
+        unsafe_allow_html=True,
+    )
+
+    # Country selection (replaces ticker selection)
+    selected_countries = st.multiselect(
+        "Countries",
+        AVAILABLE_COUNTRIES,
+        default=st.session_state.get("selected_countries", DEFAULT_COUNTRIES),
+        key="selected_countries",
+        label_visibility="collapsed",
+    )
+
+    # Render country chips with metadata
+    if selected_countries:
+        chips_html = []
+        for country in selected_countries:
+            info = COUNTRY_DISPLAY.get(country, {})
+            flag = info.get("flag", "")
+            etf = info.get("etf", "")
+            bloc = info.get("bloc", "")
+            chips_html.append(
+                f'<div class="country-chip selected">'
+                f'<span class="chip-flag">{flag}</span>'
+                f'<span class="chip-name">{country}</span>'
+                f'<span class="chip-bloc">{bloc}</span>'
+                f'<span class="chip-etf">{etf}</span>'
+                f'</div>'
+            )
+        st.markdown(
+            f'<div class="country-grid">{"".join(chips_html)}</div>',
+            unsafe_allow_html=True,
+        )
+
+    # Sync tickers from country selection for downstream consumers
+    st.session_state["tickers"] = countries_to_tickers(selected_countries)
+
     # B1: Policy Language Mode toggle
     st.toggle(
-        "🗂️ Governance Language Mode",
+        "Governance Language Mode",
         value=st.session_state.get("policy_language_mode", False),
         key="policy_language_mode",
         help=(
@@ -69,35 +116,38 @@ with st.sidebar:
 
     st.markdown("---")
 
-    # Ticker selection (shared across tabs)
-    st.multiselect(
-        "Finance Tickers (Country ETFs)",
-        AVAILABLE_TICKERS,
-        default=DEFAULT_TICKERS,
-        key="tickers",
+    # ── Pipeline Status ──────────────────────────────────────────────
+    st.markdown(
+        '<div class="sidebar-section-header">Pipeline Status</div>',
+        unsafe_allow_html=True,
     )
-
-    st.markdown("---")
-
-    # Pipeline progress kanban cards (replaces old Run ID + data sources + flags)
     render_sidebar_kanban()
 
-    # C2: Jurisdiction badges (post-pipeline)
-    data_sources = st.session_state.get("data_sources", {})
-    if data_sources:
-        governance_module.render_jurisdiction_badges(data_sources)
-
     st.markdown("---")
 
-    # A2: Provenance Trace Panel (post-pipeline)
+    # ── Governance & Provenance ──────────────────────────────────────
+    data_sources = st.session_state.get("data_sources", {})
     snapshots = st.session_state.get("ukt_snapshots", [])
-    if snapshots:
-        st.markdown("**🔍 Feature Provenance Trace**")
-        governance_module.render_provenance_panel(snapshots)
+
+    if data_sources or snapshots:
+        st.markdown(
+            '<div class="sidebar-section-header">Governance & Provenance</div>',
+            unsafe_allow_html=True,
+        )
+
+        # C2: Jurisdiction badges (post-pipeline)
+        if data_sources:
+            governance_module.render_jurisdiction_badges(data_sources)
+
+        # A2: Provenance Trace Panel (post-pipeline)
+        if snapshots:
+            st.markdown("**Feature Provenance Trace**")
+            governance_module.render_provenance_panel(snapshots)
+
         st.markdown("---")
 
     # D2: Glossary
-    with st.expander("📖 Glossary", expanded=False):
+    with st.expander("Glossary", expanded=False):
         st.markdown(
             "Plain-English definitions for all technical terms used in this system. "
             "Intended for legal, policy, and diplomatic delegates."
@@ -108,11 +158,17 @@ with st.sidebar:
             st.markdown("")
 
     st.markdown("---")
-    st.markdown("**v3.0 Architecture**")
     st.markdown(
-        "Interpretability · Traceability · Contestability as first-class requirements"
+        '<div style="text-align:center; padding: 4px 0;">'
+        '<div style="font-size:0.72rem; font-weight:600; color:#8ab4cc; '
+        'letter-spacing:0.05em;">v3.0 Architecture</div>'
+        '<div style="font-size:0.65rem; color:#64748b; margin-top:2px;">'
+        'Interpretability · Traceability · Contestability</div>'
+        '<div style="font-size:0.60rem; color:#4a5568; margin-top:4px;">'
+        'UN Global Dialogue on AI Governance · Feb 2026</div>'
+        '</div>',
+        unsafe_allow_html=True,
     )
-    st.caption("UN Global Dialogue on AI Governance · February 2026")
 
 # ── Main area: Dashboard or Tabs ─────────────────────────────────────
 if not st.session_state.pipeline_launched:
