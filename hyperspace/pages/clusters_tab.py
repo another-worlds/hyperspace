@@ -69,7 +69,7 @@ def render() -> None:
 
                 st.markdown("### Discovered Topics")
                 try:
-                    _ti_hash = hash_list(list(topics), "topic_info")
+                    _ti_hash = hash_list(list(topics) + docs, "topic_info")
                     topic_info = get_or_compute_topic_info(
                         f"info_{_ti_hash}",
                         lambda: model.get_topic_info(),
