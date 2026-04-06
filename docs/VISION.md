@@ -68,6 +68,17 @@ These properties must hold in every version of the system. Violating any of them
 
 8. **Centralized thresholds.** All magic numbers used in governance and display logic are defined in a single configuration source with descriptive names, making them auditable and consistent.
 
+9. **LLM narration is a vital, non-optional part of the interpretability framework.** The language model (currently `arnir0/Tiny-LLM`, but the role, not the identity, is what matters) is the only component in the pipeline capable of translating emergent cross-block structure into language that a non-engineer can audit. Templates cannot perform this role, for three structural reasons:
+
+   1. **Emergent concepts are cross-block by construction.** A concept that loads (+0.137) on a Finance feature, (+0.103) on an Agents feature, and (-0.093) on a Graph feature is, by definition, not a "Finance concept" — it is a relationship between Finance, Agents, and Graph. A template can only slot-fill a single label per concept and therefore must collapse the concept to its single most-dominant block. That collapse silently destroys the exact structure the UKT was built to discover.
+   2. **Synthesis across concepts requires a language model.** A faithful narrative must relate multiple kernels and concepts to one another ("when K0 shifts in this direction, concept C05 rises together with C01, implying …"). This is synthesis, not slot-filling. Templates are per-item; they have no mechanism for cross-item reasoning.
+   3. **Governance audiences are non-engineers.** Policy officers, auditors, and UN stakeholders do not read loading matrices. The narrative layer is the only interface through which they can interrogate the system's conclusions. If that layer is a statistics stitch, the interpretability chain is complete on paper (narrative → kernel → SVD → features → data) but broken in practice, because the "narrative" link carries no semantic content beyond what a spreadsheet would.
+
+   Consequences for implementation:
+   - LLM unavailability **must be treated as a hard failure in the governance pipeline**, not a silent fallback. The system should refuse to emit a "System Summary" if the LLM is down, and must never present template output as if it were LLM-generated interpretation.
+   - Templates are acceptable **only for auxiliary provenance text** (e.g., listing top feature loadings verbatim), never for claims about what a concept, kernel, or reality-regression direction *means*.
+   - Concept labels produced by the SAE must preserve their cross-block signature (signed contributions per block) as structured data. The narrator, given that structured signature and an LLM, produces the human-readable claim. The SAE does not get to decide the concept's semantic label.
+
 ---
 
 ## Ideal End-State
