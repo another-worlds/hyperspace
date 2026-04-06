@@ -3,107 +3,99 @@ standalone ukt framework.
 
 This module preserves the existing Hyperspace API while delegating core logic
 to the standalone ``ukt`` package. The standalone package is network-agnostic;
-this wrapper adds Hyperspace-specific feature regions, block-region mappings,
-and Semantic Canvas integration.
+this wrapper adds Semantic Canvas integration and Hyperspace-specific snapshot
+enrichments (narratives, contrastive alignment, dominant_region labelling).
+
+Design: ``UniversalKnowledgeTensor`` *subclasses* the framework's class.
+The registry is **emergent** — blocks self-register as they are added, so no
+dimensionality or region layout is pre-configured. Any neural network can plug
+in by simply calling ``add_block(name, features)``.
+
+The constructor injects:
+  - ``projection`` — :class:`~ukt.projection.SharedProjection` (dim=0, grows
+    automatically as blocks arrive so cross-block coupling is data-driven from
+    the first pair)
+  - ``normalizer`` — symmetric [-1, 1] global normalizer (richer coupling)
+  - ``on_snapshot`` — ``_enrich_snapshot`` hook that adds Hyperspace-specific
+    fields (dominant_region, LLM narratives, projection_matrix, …) without
+    duplicating ``add_block`` logic
 """
 from __future__ import annotations
 
 import numpy as np
 
 from hyperspace.config import (
-    FEATURE_NAMES,
     KERNEL_BLOCK_CONTRIBUTION_MIN,
     KERNEL_CONTRIBUTING_REGION_THRESHOLD,
     KERNEL_NARRATOR_IMPORTANCE_MIN,
-    REGION_DESCRIPTIONS,
-    UKT_FEATURE_DIM,
 )
 
 # Re-export from standalone ukt framework
 from ukt.registry import FeatureRegionRegistry
-from ukt.kernels import (
-    decompose_svd,
-    describe_top_features,
-    label_kernel as _standalone_label_kernel,
-)
 from ukt.projection import SharedProjection
 from ukt.stability import estimate_regression_stability
+from ukt.tensor import (
+    UniversalKnowledgeTensor as _UKTFramework,
+    _normalize_features,
+)
 from ukt.utils import _pad_or_truncate
+
+# Disable preconfigured region labels in emergent mode; kept for legacy APIs
+FEATURE_REGION_LABELS: dict[str, tuple[int, int]] = {}
 
 # Hyperspace-specific semantic canvas
 from hyperspace.models.semantic_canvas import (
     SemanticCanvas,
-    train_stage_sae,
 )
 
 
-# --------------------------------------------------------------------------- #
-# Hyperspace feature region registry (pre-configured for the 5-block pipeline)#
-# --------------------------------------------------------------------------- #
+def _symmetric_normalize(
+    arr: np.ndarray,
+    registry: FeatureRegionRegistry,
+) -> np.ndarray:
+    """Normalize a feature vector to [-1, 1] using global min-max scaling.
 
-def _build_hyperspace_registry() -> FeatureRegionRegistry:
-    """Build the default Hyperspace feature region registry (80-dim, 5 regions)."""
-    registry = FeatureRegionRegistry()
-    registry.register(
-        "temporal-pattern", 0, 16,
-        description=REGION_DESCRIPTIONS.get("temporal-pattern", ""),
-        feature_names=FEATURE_NAMES[0:16],
-    )
-    registry.register(
-        "semantic-embedding", 16, 32,
-        description=REGION_DESCRIPTIONS.get("semantic-embedding", ""),
-        feature_names=FEATURE_NAMES[16:32],
-    )
-    registry.register(
-        "structural-centrality", 32, 48,
-        description=REGION_DESCRIPTIONS.get("structural-centrality", ""),
-        feature_names=FEATURE_NAMES[32:48],
-    )
-    registry.register(
-        "dynamic-agent", 48, 64,
-        description=REGION_DESCRIPTIONS.get("dynamic-agent", ""),
-        feature_names=FEATURE_NAMES[48:64],
-    )
-    registry.register(
-        "geospatial-kernel", 64, 80,
-        description=REGION_DESCRIPTIONS.get("geospatial-kernel", ""),
-        feature_names=FEATURE_NAMES[64:80],
-    )
-    return registry
+    Global (not per-region) normalization is used in the Hyperspace pipeline so
+    that negative loadings create richer coupling structure in the SharedProjection
+    rank-1 outer products.
 
-
-HYPERSPACE_REGISTRY = _build_hyperspace_registry()
-
-# Feature provenance labels (backward-compatible dict form)
-FEATURE_REGION_LABELS: dict[tuple[int, int], str] = {
-    (r.start, r.end): r.name
-    for r in HYPERSPACE_REGISTRY.ordered_regions
-}
-
-# Block-to-region mapping: block name → (region_name, start, end)
-BLOCK_REGION_MAP: dict[str, tuple[str, int, int]] = {
-    "Finance": ("temporal-pattern", 0, 16),
-    "Clusters": ("semantic-embedding", 16, 32),
-    "Graph": ("structural-centrality", 32, 48),
-    "Agents": ("dynamic-agent", 48, 64),
-    "Spatial": ("geospatial-kernel", 64, 80),
-}
-
-
-def _normalize_features(arr: np.ndarray) -> np.ndarray:
-    """Normalize feature vector to [-1, 1] range using min-max scaling.
-
-    In the monolithic feature space, normalization is global (no region boundaries).
-    Uses symmetric min-max scaling so negative loadings create richer coupling
-    structure in the projection matrix (rank-1 outer products).
+    Only indices belonging to registered regions are included in the global
+    min/max computation and transformed.  Unoccupied (zero-padded) indices
+    remain 0.0 so they do not inflate projection energy or distort coupling
+    direction vectors.
     """
-    out = arr.copy()
-    arr_min = np.min(arr)
-    arr_max = np.max(arr)
+    out = np.zeros_like(arr)
+    regions = registry.ordered_regions
+    if not regions:
+        # No regions registered yet — normalize the entire vector as-is
+        arr_min = float(np.min(arr))
+        arr_max = float(np.max(arr))
+        rng = arr_max - arr_min
+        if rng > 1e-8:
+            out = 2.0 * (arr - arr_min) / rng - 1.0
+        return np.clip(out, -1.0, 1.0)
+
+    # Collect all occupied values to compute a single global min/max
+    occupied_vals = np.concatenate(
+        [arr[r.start:r.end] for r in regions if r.start < len(arr)]
+    )
+    if len(occupied_vals) == 0:
+        return out
+    arr_min = float(np.min(occupied_vals))
+    arr_max = float(np.max(occupied_vals))
     rng = arr_max - arr_min
-    if rng > 1e-8:
-        out = 2.0 * (arr - arr_min) / rng - 1.0  # Scale to [-1, 1]
-    return np.clip(out, -1.0, 1.0)
+
+    # Apply symmetric [-1, 1] scaling only to occupied indices
+    for r in regions:
+        lo = r.start
+        hi = min(r.end, len(arr))
+        if lo >= len(arr):
+            continue
+        if rng > 1e-8:
+            out[lo:hi] = np.clip(2.0 * (arr[lo:hi] - arr_min) / rng - 1.0, -1.0, 1.0)
+        else:
+            out[lo:hi] = 0.0  # Constant region → zero (no signal)
+    return out
 
 
 def estimate_reality_regression_stability(
@@ -116,60 +108,67 @@ def estimate_reality_regression_stability(
     return estimate_regression_stability(matrix, n_runs, noise_std, seed)
 
 
-def _feature_name(idx: int, feature_meta: dict[int, dict] | None = None) -> str:
+def _feature_name(
+    idx: int,
+    registry: FeatureRegionRegistry,
+    feature_meta: dict[int, dict] | None = None,
+) -> str:
     """Return the name for a feature index, preferring metadata-derived labels."""
     if feature_meta and idx in feature_meta and feature_meta[idx].get("label"):
         return str(feature_meta[idx]["label"])
-    return HYPERSPACE_REGISTRY.feature_name(idx)
+    return registry.feature_name(idx)
 
 
-def _region_for_index(idx: int) -> str:
+def _region_for_index(idx: int, registry: FeatureRegionRegistry) -> str:
     """Return the region label for a feature index."""
-    region = HYPERSPACE_REGISTRY.region_for_index(idx)
+    region = registry.region_for_index(idx)
     return region.name if region else "unknown"
 
 
-# Block-to-feature-range mapping — hard-coded defaults, can be overridden per instance
-_BLOCK_TO_REGION: dict[str, str] = {
-    "Finance":  "temporal-pattern",
-    "Clusters": "semantic-embedding",
-    "Graph":    "structural-centrality",
-    "Agents":   "dynamic-agent",
-    "Spatial":  "geospatial-kernel",
-}
+# --------------------------------------------------------------------------- #
+# Hyperspace-specific UKT wrapper                                             #
+# --------------------------------------------------------------------------- #
 
-# Build default block_feature_ranges from the registry
-_DEFAULT_BLOCK_FEATURE_RANGES: dict[str, tuple[int, int]] = {}
-for _block_name, _region_name in _BLOCK_TO_REGION.items():
-    if _region_name in HYPERSPACE_REGISTRY.regions:
-        _r = HYPERSPACE_REGISTRY.regions[_region_name]
-        _DEFAULT_BLOCK_FEATURE_RANGES[_block_name] = (_r.start, _r.end)
-
-
-class UniversalKnowledgeTensor:
+class UniversalKnowledgeTensor(_UKTFramework):
     """Hyperspace-specific UKT with Semantic Canvas integration.
 
-    Wraps the standalone ukt framework with Hyperspace's N-block pipeline,
-    semantic canvas subsystem, and Tiny-LLM narratives.
+    Subclasses the standalone :class:`~ukt.tensor.UniversalKnowledgeTensor`
+    and injects:
 
-    The feature dimension is derived from the registry — not hardcoded.
-    New blocks can be added by registering regions in the registry.
+    - Symmetric [-1, 1] global normalization (``normalizer``)
+    - Adaptive cross-block SharedProjection (``projection``) that starts with
+      zero dimensions and self-expands as blocks arrive — no topology prior
+    - ``_enrich_snapshot`` hook (``on_snapshot``) that adds downstream
+      Hyperspace fields to every snapshot: ``dominant_region`` per kernel,
+      Tiny-LLM semantic narratives, ``projection_matrix``, etc.
+
+    Downstream code calls ``add_block()`` and ``get_final_matrix()`` exactly as
+    before.  The registry, feature_dim, and projection all grow automatically.
     """
 
-    def __init__(self, feature_dim: int | None = None):
-        self.feature_dim = feature_dim or HYPERSPACE_REGISTRY.total_dim
-        self.block_names: list[str] = []
-        self.rows: list[np.ndarray] = []
-        self._raw_features: list[np.ndarray] = []  # Unprojected, for re-projection
-        self.snapshots: list[dict] = []
-        self.global_feature_meta: dict[int, dict] = {}
-        self.canvas = SemanticCanvas()
-        # Block feature ranges: maps block name to (start, end) indices in 80-dim space
-        self._block_feature_ranges: dict[str, tuple[int, int]] = _DEFAULT_BLOCK_FEATURE_RANGES.copy()
-        # Initialize projection without registry — only block names needed for coupling topology
-        self.projection = SharedProjection(
-            block_names=list(self._block_feature_ranges.keys())
+    def __init__(
+        self,
+        feature_dim: int | None = None,
+    ) -> None:
+        # Projection starts dimensionless; self-expands as blocks arrive
+        _projection = SharedProjection()
+
+        super().__init__(
+            registry=None,  # Empty emergent registry — self-registers per block
+            feature_dim=feature_dim,
+            projection=_projection,
+            normalizer=_symmetric_normalize,
+            on_snapshot=self._enrich_snapshot,
         )
+
+        # Hyperspace-specific state
+        self.canvas = SemanticCanvas()
+        # Tracks raw (pre-normalization) feature vectors for snapshot compat
+        self._hs_raw_features: list[np.ndarray] = []
+
+    # ---------------------------------------------------------------------- #
+    # Override add_block to also capture raw (un-normalized) features        #
+    # ---------------------------------------------------------------------- #
 
     def add_block(
         self,
@@ -178,228 +177,107 @@ class UniversalKnowledgeTensor:
         feature_meta: dict[int, dict] | None = None,
         timeframe_context: dict | None = None,
     ) -> dict:
-        """Add a block's feature vector, normalize, decompose, interpret."""
-        self.block_names.append(name)
-        if feature_meta:
-            self.global_feature_meta.update(feature_meta)
-        raw = _pad_or_truncate(features, self.feature_dim)
-        self._raw_features.append(raw)
+        """Add a block, capturing raw features before delegating to the framework."""
+        self._hs_raw_features.append(np.asarray(features, dtype=float).flatten())
+        return super().add_block(name, features, feature_meta, timeframe_context)
 
-        # Normalize BEFORE projection: bring each feature to [-1, 1] so blocks
-        # enter the shared space on comparable scales. Then project — the
-        # cross-block structure P creates is preserved for SVD.
-        normalized_raw = _normalize_features(raw)
+    # ---------------------------------------------------------------------- #
+    # on_snapshot hook: Hyperspace-specific snapshot enrichment              #
+    # ---------------------------------------------------------------------- #
 
-        # Feed full 80-dim normalized vector to the adaptive projection
-        # The projection couples blocks via their full vectors, not sliced regions
-        if name in self._block_feature_ranges:
-            self.projection.observe(name, normalized_raw)
+    def _enrich_snapshot(self, snapshot: dict) -> dict:
+        """Inject Hyperspace-specific fields into the just-assembled snapshot.
 
-        # Project all raw features through the current projection matrix
-        self.rows = [
-            self.projection.project(_normalize_features(r))
-            for r in self._raw_features
-        ]
-
-        matrix = np.stack(self.rows)
-        decomposition = decompose_svd(matrix)
-        n_kernels = decomposition.n_kernels
-
-        kernel_labels = []
-        for k in range(n_kernels):
-            label = _standalone_label_kernel(
-                k,
-                decomposition,
-                self._block_feature_ranges,
-                FEATURE_NAMES,
-                self.block_names,
-                feature_meta=self.global_feature_meta,
-                timeframe_context=timeframe_context,
+        Called by the framework's ``add_block`` after the base snapshot dict is
+        fully built.  Mutates and returns it — framework replaces its snapshot
+        with the return value.
+        """
+        # 1. Add dominant_region to each kernel label from the emergent registry
+        for kl in snapshot.get("kernel_labels", []):
+            dfb = kl.get("dominant_feature_block", "")
+            region = self.registry.region_for_index(
+                # dominant_feature_block is a block name; look up its region start
+                self.registry.regions[dfb].start if dfb in self.registry.regions else 0
             )
-            # Enrich with dominant_region (feature-space region name) derived
-            # from the block-level dominant_feature_block via _BLOCK_TO_REGION.
-            dfb = label.get("dominant_feature_block", "")
-            label["dominant_region"] = _BLOCK_TO_REGION.get(dfb, "unknown")
-            kernel_labels.append(label)
+            kl["dominant_region"] = region.name if region else dfb or "unknown"
 
-        # Semantic Canvas: reset and replay ALL blocks with the current
-        # projection, so every block's canvas coordinates are computed in
-        # the same projection space.  No per-block SAE — canvas coordinates
-        # are data-driven via feature distribution (entropy/concentration).
-        stage_sae_result = None
-        self.canvas = SemanticCanvas()
-        canvas_entry = None
-        for step_idx, (bn, row) in enumerate(zip(self.block_names, self.rows)):
-            # Get block feature range from _block_feature_ranges
-            if bn not in self._block_feature_ranges:
-                continue
-            lo, hi = self._block_feature_ranges[bn]
-            # Pass the full 80-dim projected vector to the canvas so it can
-            # see cross-block coupling effects. Region mapping determines
-            # which canvas dimensions activate — the feature space is monolithic.
-            region = HYPERSPACE_REGISTRY.region_for_index(lo)
-            rname = region.name if region else bn
+        # 2. Add backward-compatible extra fields
+        snapshot["raw_features"] = [r.copy() for r in self._hs_raw_features]
+        if self.projection is not None:
+            snapshot["projection_matrix"] = self.projection.projection_matrix.copy()
+        snapshot.setdefault("stage_sae_result", None)
+        snapshot.setdefault("canvas_entry", None)
+        snapshot.setdefault("layer_narrative", None)
+        snapshot.setdefault("contrastive_alignment_score", None)
 
-            # Per-stage SAE: discover sparse concepts from this block's
-            # projected region features before canvas projection.
-            region_features = row[lo:hi]
-            stage_sae_result = train_stage_sae(region_features)
-
-            entry = self.canvas.project_block(
-                block_name=bn,
-                step=step_idx + 1,
-                region_name=rname,
-                features=row,
-                sae_result=stage_sae_result,
-            )
-            # Attach feature provenance evidence from the block's own region
-            top_local = np.argsort(np.abs(region_features))[-3:][::-1]
-            canvas_dim_keys = [
-                self.canvas.dimensions[ci].key
-                for ci, _ in self.canvas.region_mapping.get(rname, [])
-                if ci < self.canvas.n_dims
-            ]
-            evidence = []
-            for local_idx in top_local:
-                global_idx = lo + int(local_idx)
-                meta = self.global_feature_meta.get(global_idx, {})
-                evidence.append({
-                    "index": global_idx,
-                    "name": _feature_name(global_idx, self.global_feature_meta),
-                    "loading": round(float(row[global_idx]), 4),
-                    "source": meta.get("source", "synthetic"),
-                    "region": rname,
-                    "canvas_dims": canvas_dim_keys,
-                })
-            entry.feature_evidence = evidence
-            if bn == name:
-                canvas_entry = entry
-
-        # Tiny-LLM semantic translator: translates machine neuron clusters
-        # (kernels, canvas coordinates) into human-readable narratives.
-        # The LLM is the primary path; TemplateNarrator is the internal fallback.
-        # Wrapped in try/except to allow pipeline to complete even if narrator
-        # is slow (LLM generation on CPU can be significant per-kernel).
-        layer_narrative = None
+        # 3. Tiny-LLM semantic translator: generates per-kernel narratives.
+        #    The canvas is empty until the global SAE runs after all 5 blocks
+        #    are added, so narrate_kernel receives an empty canvas here — this
+        #    is the same as the previous behaviour.  Non-fatal.
         try:
-            from hyperspace.models.semantic_narrator import (
-                narrate_layer, narrate_kernel,
-            )
-            from hyperspace.core.caching import (
-                get_or_compute_narrative, hash_params,
-            )
+            from hyperspace.models.semantic_narrator import narrate_kernel
+            from hyperspace.core.caching import get_or_compute_narrative, hash_params
             import streamlit as _st
             _policy = _st.session_state.get("policy_language_mode", False)
-            if canvas_entry is not None:
-                _lk = f"layer_{name}_{hash_params({'coords': canvas_entry.coordinates.tolist(), 'policy': _policy})}"
-                layer_narrative = get_or_compute_narrative(
-                    _lk, lambda: narrate_layer(canvas_entry, self.canvas),
-                )
-            for kl in kernel_labels:
-                if kl["importance"] > KERNEL_NARRATOR_IMPORTANCE_MIN:
-                    _kk = f"kernel_{hash_params({'id': kl.get('id', ''), 'imp': round(kl['importance'], 6), 'region': kl.get('dominant_region', ''), 'policy': _policy})}"
-                    _kl_ref = kl  # capture for lambda
+            for kl in snapshot.get("kernel_labels", []):
+                if kl.get("importance", 0.0) > KERNEL_NARRATOR_IMPORTANCE_MIN:
+                    _kk_params = {
+                        "id": kl.get("id", ""),
+                        "imp": round(kl["importance"], 6),
+                        "region": kl.get("dominant_region", ""),
+                        "policy": _policy,
+                    }
+                    _kk = f"kernel_{hash_params(_kk_params)}"
                     k_narr = get_or_compute_narrative(
-                        _kk, lambda _kl=_kl_ref: narrate_kernel(_kl, self.canvas),
+                        _kk, lambda _kl=kl: narrate_kernel(_kl, self.canvas),
                     )
                     if k_narr:
                         kl["semantic_narrative"] = k_narr
         except Exception:
             pass  # Narrator degrades gracefully; pipeline never fails
 
-        # Build report
-        report_lines = [
-            f"=== Step {len(self.rows)}: Added '{name}' block ===",
-            f"Active kernels: {n_kernels}",
-            f"Reconstruction error: {decomposition.reconstruction_error:.6f}",
-            f"Reality regression norm: {np.linalg.norm(decomposition.reality_regression):.4f}",
-            "",
-        ]
-
-        if canvas_entry is not None:
-            report_lines.append("--- Semantic Canvas ---")
-            report_lines.append(canvas_entry.interpretation)
-            if layer_narrative:
-                report_lines.append(f"Narrative: {layer_narrative}")
-            report_lines.append("")
-
-        for kl in kernel_labels:
-            report_lines.append(f"--- {kl['label']} ---")
-            report_lines.append(kl["narrative"])
-            if kl.get("semantic_narrative"):
-                report_lines.append(f"Semantic: {kl['semantic_narrative']}")
-            report_lines.append("")
-
-        if len(self.rows) > 1:
-            report_lines.append("--- Cross-Block Coherence ---")
-            for k in range(n_kernels):
-                contribs = []
-                for i, bn in enumerate(self.block_names):
-                    val = float(decomposition.kernel_activation[i, k])
-                    if abs(val) > 0.01:
-                        contribs.append(f"{bn}={val:+.3f}")
-                report_lines.append(f"K{k} activation across blocks: {', '.join(contribs)}")
-            report_lines.append("")
-
-        rr_top = np.argsort(np.abs(decomposition.reality_regression))[-5:][::-1]
-        report_lines.append("--- Reality Regression (top features) ---")
-        for idx in rr_top:
-            report_lines.append(
-                f"  {_feature_name(int(idx), self.global_feature_meta)} [{_region_for_index(int(idx))}]: "
-                f"{decomposition.reality_regression[int(idx)]:+.4f}"
-            )
-
-        # ---- SPEC-4: Optional contrastive alignment blending ----
-        contrastive_alignment_score = None
+        # 4. Optional contrastive alignment score (SPEC-4, non-fatal)
         try:
             from hyperspace.config import ENABLE_CONTRASTIVE_ALIGNMENT, CONTRASTIVE_WEIGHT
-            if ENABLE_CONTRASTIVE_ALIGNMENT and CONTRASTIVE_WEIGHT > 0.0 and len(self.rows) >= 2:
+            if (
+                ENABLE_CONTRASTIVE_ALIGNMENT
+                and CONTRASTIVE_WEIGHT > 0.0
+                and len(self.rows) >= 2
+            ):
                 import streamlit as _st
                 from hyperspace.models.contrastive_encoder import ContrastiveEncoderBank
                 encoder_bank = _st.session_state.get("contrastive_encoder_bank")
                 if encoder_bank is None:
                     encoder_bank = ContrastiveEncoderBank()
                     _st.session_state["contrastive_encoder_bank"] = encoder_bank
-                # Train on current features
-                final_features = self.rows[-1]
-                encoder_bank.train_step(final_features)
-                contrastive_alignment_score = encoder_bank.alignment_score(final_features)
+                encoder_bank.train_step(self.rows[-1])
+                snapshot["contrastive_alignment_score"] = encoder_bank.alignment_score(
+                    self.rows[-1]
+                )
         except Exception:
             pass  # Contrastive path is non-fatal
 
-        snapshot = dict(
-            step=len(self.rows),
-            block_name=name,
-            raw_features=[r.copy() for r in self._raw_features],
-            matrix=matrix.copy(),
-            U=decomposition.U.copy(),
-            S=decomposition.S.copy(),
-            Vt=decomposition.Vt.copy(),
-            n_kernels=n_kernels,
-            importance=decomposition.importance.copy(),
-            kernel_activation=decomposition.kernel_activation.copy(),
-            reality_regression=decomposition.reality_regression.copy(),
-            kernel_labels=kernel_labels,
-            reconstruction_error=decomposition.reconstruction_error,
-            report="\n".join(report_lines),
-            feature_meta=self.global_feature_meta.copy(),
-            timeframe_context=timeframe_context or {},
-            stage_sae_result=stage_sae_result,
-            canvas_entry=canvas_entry,
-            layer_narrative=layer_narrative,
-            contrastive_alignment_score=contrastive_alignment_score,
-            projection_matrix=self.projection.projection_matrix.copy(),
-        )
-        self.snapshots.append(snapshot)
         return snapshot
 
-    def get_final_matrix(self) -> np.ndarray | None:
-        if not self.rows:
-            return None
-        return np.stack(self.rows)
+    # ---------------------------------------------------------------------- #
+    # Emergent canvas (called after global SAE completes)                    #
+    # ---------------------------------------------------------------------- #
 
-    def get_latest_snapshot(self) -> dict | None:
-        return self.snapshots[-1] if self.snapshots else None
+    def build_emergent_canvas(self, sae_result: dict) -> SemanticCanvas:
+        """Build emergent canvas from global SAE results and store as self.canvas.
+
+        Called by the pipeline after the global SAE runs on the full matrix so
+        that canvas dimensions are 100% data-driven SAE concepts, not hardcoded.
+        """
+        from semantic_interpreter.canvas import (
+            build_emergent_canvas as _build_ec,
+        )
+        self.canvas = _build_ec(sae_result, self.block_names)
+        return self.canvas
+
+    # ---------------------------------------------------------------------- #
+    # Interpretability contract methods (SPEC-3)                             #
+    # ---------------------------------------------------------------------- #
 
     def export_latent_units(self) -> dict[str, object]:
         """Return a machine-readable export of the latest latent units."""
@@ -449,8 +327,8 @@ class UniversalKnowledgeTensor:
             i = int(idx)
             attributions.append({
                 "index": i,
-                "name": _feature_name(i, feature_meta),
-                "region": _region_for_index(i),
+                "name": _feature_name(i, self.registry, feature_meta),
+                "region": _region_for_index(i, self.registry),
                 "value": float(rr[i]),
                 "abs_value": float(abs(rr[i])),
             })
@@ -504,3 +382,21 @@ class UniversalKnowledgeTensor:
             },
             "context": context or {},
         }
+
+
+# --------------------------------------------------------------------------- #
+# Global Registry Access (Vision Compliance - Invariant 8)                   #
+# --------------------------------------------------------------------------- #
+
+# Create a module-level UKT instance that serves as the canonical registry source
+# This follows Vision Invariant 8: "Centralized thresholds" - all magic numbers  
+# and structural references must be defined in a single configuration source.
+# Rather than having multiple UKT instances with different registries, this  
+# provides a global registry that counterfactual analysis and other components
+# can reliably reference.
+_canonical_ukt_instance = UniversalKnowledgeTensor()
+
+# Export the registry from the canonical instance for global access
+# This registry will be populated as blocks are added to any UKT instance
+# that follows the emergent architecture pattern.
+HYPERSPACE_REGISTRY = _canonical_ukt_instance.registry

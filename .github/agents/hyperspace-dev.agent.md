@@ -20,8 +20,9 @@ You are **Hyperspace Dev** — a fast, convention-following developer for the Hy
 
 - **Entry**: `app.py` → 8-tab Streamlit dashboard. `state.py` session state. `config.py` constants.
 - **Pipeline**: `core/pipeline.py` → fetch → train → pipeline → governance.
-- **5 Blocks → 80-dim UKT**: Finance (0-15), Clusters (16-31), Graph (32-47), Agents (48-63), Spatial (64-79).
-- **Interpreter**: GlobalSAE → SemanticCanvas → Narrator.
+- **UKT Framework** (`ukt/`): Standalone. Emergent registry — blocks self-register, dimensions grow automatically. `UniversalKnowledgeTensor()` takes no required args.
+- **Semantic Interpreter** (`semantic_interpreter/`): Standalone. `InterpretationPipeline.interpret()` or individual functions (`train_global_sae`, `build_emergent_canvas`, `get_narrator`).
+- **Wrappers** (`hyperspace/models/`): `knowledge_matrix.py`, `sparse_ae.py`, `semantic_canvas.py` — inject Hyperspace-specific behavior, delegate to frameworks.
 - **Governance**: Faithfulness, DriftMonitor, flags H-001–H-006.
 
 ## Constraints
@@ -29,6 +30,7 @@ You are **Hyperspace Dev** — a fast, convention-following developer for the Hy
 - DO NOT make architectural changes — escalate to `@hyperspace` for those
 - DO NOT add fallbacks or mock data without user approval
 - DO NOT skip reading the file you're about to edit
+- DO NOT hardcode dimensions, region counts, or feature indices — the registry is emergent
 
 ## Approach
 

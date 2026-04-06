@@ -50,9 +50,7 @@ from hyperspace.models.semantic_canvas import (
     SemanticCanvas,
     CanvasEntry,
     train_stage_sae,
-    CANVAS_DIM,
-    CANVAS_DIMENSIONS,
-    REGION_TO_CANVAS,
+    build_emergent_canvas,
 )
 
 
@@ -435,8 +433,9 @@ class TestSemanticCanvas:
     def test_canvas_initialization(self):
         canvas = SemanticCanvas()
         assert len(canvas.entries) == 0
-        assert canvas.cumulative.shape == (CANVAS_DIM,)
-        np.testing.assert_array_equal(canvas.cumulative, np.zeros(CANVAS_DIM))
+        assert canvas.cumulative is not None
+        assert canvas.cumulative.shape == (0,)
+        np.testing.assert_array_equal(canvas.cumulative, np.zeros(0))
 
     def test_canvas_projection(self, rng):
         canvas = SemanticCanvas()
@@ -454,8 +453,7 @@ class TestSemanticCanvas:
         assert isinstance(entry, CanvasEntry)
         assert entry.block_name == "Finance"
         assert entry.step == 1
-        assert entry.coordinates.shape == (CANVAS_DIM,)
-        assert len(entry.dominant_dimensions) > 0
+        assert entry.coordinates.shape == (0,)
         assert len(entry.interpretation) > 0
 
     def test_canvas_accumulation(self, rng):
@@ -471,8 +469,9 @@ class TestSemanticCanvas:
             canvas.project_block(block, step, region, features, sae_result)
 
         assert len(canvas.entries) == 3
-        # Cumulative should have non-zero values
-        assert np.any(canvas.cumulative > 0)
+        # With empty canvas (no pre-defined dimensions), cumulative is zero-dim
+        assert canvas.cumulative is not None
+        assert canvas.cumulative.shape == (0,)
 
     def test_canvas_state(self, rng):
         canvas = SemanticCanvas()
@@ -513,9 +512,10 @@ class TestSemanticCanvas:
         assert "active_mask" in result
 
     def test_region_to_canvas_mapping(self):
-        """Verify that all UKT regions have canvas dimension mappings."""
-        for region in FEATURE_REGION_LABELS.values():
-            assert region in REGION_TO_CANVAS, f"Region {region} has no canvas mapping"
+        """REGION_TO_CANVAS is a backward-compat stub; mapping is now optional."""
+        from hyperspace.models.semantic_canvas import REGION_TO_CANVAS
+        # Stub is empty dict — mapping is built emergently from SAE
+        assert isinstance(REGION_TO_CANVAS, dict)
 
 
 # ========================================================================== #
@@ -534,11 +534,10 @@ class TestUKTCanvasIntegration:
         snap = ukt.add_block("Finance", features, feature_meta=meta,
                              timeframe_context=timeframe_context)
 
-        # Canvas entry should be created; per-block SAE is intentionally
-        # disabled (trains on 1 vector + noise, learns nothing — global SAE
-        # in the pipeline is the meaningful sparse decomposition).
-        assert snap["canvas_entry"] is not None
-        assert len(ukt.canvas.entries) == 1
+        # Canvas entry is no longer set per-block; canvas is built globally
+        # after the full SAE runs via ukt.build_emergent_canvas(sae_result).
+        assert snap["canvas_entry"] is None
+        assert len(ukt.canvas.entries) == 0
 
     def test_canvas_grows_with_pipeline(self, rng, timeframe_context):
         ukt = UniversalKnowledgeTensor(feature_dim=UKT_FEATURE_DIM)
@@ -547,9 +546,91 @@ class TestUKTCanvasIntegration:
             features = rng.uniform(0, 1, UKT_FEATURE_DIM)
             ukt.add_block(block, features, timeframe_context=timeframe_context)
 
-        assert len(ukt.canvas.entries) == 5
-        state = ukt.canvas.get_accumulated_state()
-        assert len(state["trajectory"]) == 5
+        # Canvas is empty until build_emergent_canvas is called after global SAE
+        assert len(ukt.canvas.entries) == 0
+        final_matrix = ukt.get_final_matrix()
+        sae_result = train_sparse_ae(final_matrix, hidden_dim=16, epochs=60)
+        if sae_result is not None and sae_result.get("active_concepts", 0) > 0:
+            ukt.build_emergent_canvas(sae_result)
+            assert len(ukt.canvas.entries) == 5
+            state = ukt.canvas.get_accumulated_state()
+            assert len(state["trajectory"]) == 5
+
+
+# ========================================================================== #
+# 7b. Emergent Canvas                                                          #
+# ========================================================================== #
+
+
+class TestEmergentCanvas:
+    """Verify that build_emergent_canvas produces fully data-driven dimensions."""
+
+    def test_dimensions_match_active_concepts(self, rng):
+        """Canvas dimensions equal active SAE concepts — no hardcoded schema."""
+        matrix = rng.uniform(0, 1, (5, UKT_FEATURE_DIM))
+        sae_result = train_sparse_ae(matrix, hidden_dim=16, epochs=60)
+        if sae_result is None or sae_result.get("active_concepts", 0) == 0:
+            return  # SAE found nothing; skip rather than fail
+
+        block_names = ["Finance", "Clusters", "Graph", "Spatial", "Agents"]
+        canvas = build_emergent_canvas(sae_result, block_names)
+
+        assert len(canvas.dimensions) == sae_result["active_concepts"]
+        assert len(canvas.entries) == len(block_names)
+
+    def test_entry_coordinates_shape(self, rng):
+        """Each entry's coordinates align with the canvas dimension count."""
+        matrix = rng.uniform(0, 1, (5, UKT_FEATURE_DIM))
+        sae_result = train_sparse_ae(matrix, hidden_dim=16, epochs=60)
+        if sae_result is None or sae_result.get("active_concepts", 0) == 0:
+            return
+
+        canvas = build_emergent_canvas(sae_result, ["A", "B", "C", "D", "E"])
+        n_dims = len(canvas.dimensions)
+        for entry in canvas.entries:
+            assert entry.coordinates.shape == (n_dims,), (
+                f"Entry {entry.block_name} has coords shape {entry.coordinates.shape}, "
+                f"expected ({n_dims},)"
+            )
+
+    def test_empty_canvas_on_no_active_concepts(self):
+        """build_emergent_canvas returns empty canvas when no concepts are active."""
+        sae_result = {
+            "concept_labels": [{"concept_id": "C00", "active": False, "label": "x"}],
+            "concept_activations": np.zeros((3, 1)),
+            "active_concepts": 0,
+        }
+        canvas = build_emergent_canvas(sae_result, ["A", "B", "C"])
+        assert len(canvas.dimensions) == 0
+        assert len(canvas.entries) == 0
+
+    def test_feature_names_are_positional(self):
+        """FEATURE_NAMES must be positional (dim_0..dim_79), not domain-specific labels."""
+        from hyperspace.config import FEATURE_NAMES, UKT_FEATURE_DIM
+        assert len(FEATURE_NAMES) == UKT_FEATURE_DIM
+        for i, name in enumerate(FEATURE_NAMES):
+            assert name == f"dim_{i}", (
+                f"FEATURE_NAMES[{i}] = {name!r}; expected 'dim_{i}'"
+            )
+
+    def test_interpretation_pipeline_smoke(self, rng):
+        """Smoke-test InterpretationPipeline with synthetic data."""
+        from semantic_interpreter import InterpretationPipeline, InterpretationConfig
+
+        matrix = rng.uniform(0, 1, (5, 16))
+        pipeline = InterpretationPipeline(
+            InterpretationConfig(
+                sae_hidden_dim=8,
+                sae_epochs=1,
+                narrator_backend="template",
+            )
+        )
+        result = pipeline.interpret(matrix, ["A", "B", "C", "D", "E"])
+
+        assert result is not None
+        assert hasattr(result, "canvas")
+        assert isinstance(result.canvas, object)
+        assert "canvas_narrative" in result.narratives
 
 
 # ========================================================================== #

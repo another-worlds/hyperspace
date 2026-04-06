@@ -37,7 +37,20 @@ Usage:
     snapshot = tensor.add_block("my_encoder", features)
     print(snapshot["kernel_labels"])
     print(snapshot["reality_regression"])
+
+Configuration bundle usage:
+    from ukt import UKTConfig, SharedProjection, create_ukt
+
+    config = UKTConfig(
+        registry=my_registry,
+        projection=SharedProjection(block_names=["enc", "dec"]),
+    )
+    tensor = create_ukt(config)
 """
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from typing import Callable
 
 from ukt.registry import FeatureRegionRegistry
 from ukt.tensor import UniversalKnowledgeTensor
@@ -55,14 +68,70 @@ from ukt.interfaces import (
     extract_all,
 )
 
+
+# --------------------------------------------------------------------------- #
+# Configuration bundle                                                         #
+# --------------------------------------------------------------------------- #
+
+@dataclass
+class UKTConfig:
+    """Configuration bundle for :func:`create_ukt`.
+
+    Bundles all optional constructor kwargs so callers can define a UKT setup
+    once and reuse or pass it around without threading individual kwargs.
+
+    Attributes:
+        registry: Feature region registry.  If None, a default 80-dim single-
+            region registry is created by the constructor.
+        projection: Optional :class:`SharedProjection` for adaptive cross-block
+            feature mixing.
+        normalizer: Optional callable ``(arr, registry) -> arr`` that replaces
+            the default per-region [0, 1] normalization.
+        on_snapshot: Optional callable ``(snapshot) -> snapshot | None`` called
+            after each snapshot is assembled.  Use to inject domain-specific
+            fields without subclassing.
+    """
+    registry: FeatureRegionRegistry | None = None
+    projection: SharedProjection | None = None
+    normalizer: Callable | None = None
+    on_snapshot: Callable | None = None
+
+
+def create_ukt(config: UKTConfig | None = None) -> UniversalKnowledgeTensor:
+    """Create a :class:`UniversalKnowledgeTensor` from a :class:`UKTConfig`.
+
+    Args:
+        config: Configuration bundle.  If None, defaults to
+            ``UKTConfig()`` which produces a plain UKT with a single 80-dim
+            region and no projection or hooks.
+
+    Returns:
+        Configured :class:`UniversalKnowledgeTensor` instance.
+    """
+    cfg = config or UKTConfig()
+    return UniversalKnowledgeTensor(
+        cfg.registry,
+        projection=cfg.projection,
+        normalizer=cfg.normalizer,
+        on_snapshot=cfg.on_snapshot,
+    )
+
+
 __all__ = [
+    # Core
     "UniversalKnowledgeTensor",
     "FeatureRegionRegistry",
     "HookExtractor",
+    # Config / factory
+    "UKTConfig",
+    "create_ukt",
+    # SVD / kernel utilities
     "decompose_svd",
     "label_kernel",
     "generate_kernel_narrative",
+    # Cross-block projection
     "SharedProjection",
+    # Stability
     "estimate_regression_stability",
     # Model interfaces
     "ModelInterface",

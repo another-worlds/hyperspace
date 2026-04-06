@@ -126,13 +126,11 @@ def initialize_agents_from_data(
         agents[name] = agent
 
     # Fill in missing alliances from hardcoded edges
-    from hyperspace.config import GEOPOLITICAL_EDGES
-    for src, dst, w, _, _ in GEOPOLITICAL_EDGES:
-        if src in agents and dst in agents:
-            if agents[src].alliances.get(dst, 0.0) == 0.0:
-                agents[src].alliances[dst] = w
-            if agents[dst].alliances.get(src, 0.0) == 0.0:
-                agents[dst].alliances[src] = w
+    # VISION COMPLIANCE FIX: Removed hardcoded GEOPOLITICAL_EDGES fallback
+    # This violates Vision Invariants 2 (Open Topology) and 6 (Regions Are Metadata Only)
+    # Agent relationships must emerge from data, not be predetermined by configuration
+    # If agreement_matrix is missing data, alliances remain at 0.0 and evolve via simulation
+    pass
 
     return agents
 

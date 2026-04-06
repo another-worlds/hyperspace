@@ -14,3 +14,4 @@ yfinance>=0.2.41,<1.0
 feedparser>=6.0.0,<7.0
 requests>=2.31.0,<3.0
 transformers>=4.36.0,<5.0
+sentencepiece>=0.1.99

@@ -29,7 +29,7 @@ from hyperspace.core.logging import log_sae_training
 from hyperspace.viz.cross_tab_nav import render_related_tabs
 from hyperspace.models.sparse_ae import train_sparse_ae, map_concepts_to_kernels
 from hyperspace.models.semantic_narrator import get_llm_health_status
-from hyperspace.models.semantic_canvas import CANVAS_DIMENSIONS
+from hyperspace.models.semantic_canvas import build_emergent_canvas
 from hyperspace.viz import kernel_viz
 
 
@@ -98,6 +98,9 @@ def render() -> None:
                         )
                         st.session_state.sae_result = sae_result
                         st.session_state.concept_kernel_map = concept_kernel_map
+                        st.session_state.semantic_canvas = build_emergent_canvas(
+                            sae_result, [s["block_name"] for s in snapshots]
+                        )
                 else:
                     st.warning("Run the full pipeline first to populate the UKT.")
                     return
@@ -127,7 +130,7 @@ def render() -> None:
 
             canvas_state = canvas.get_accumulated_state()
             coords = canvas_state["coordinates"]
-            dim_labels = [d["label"] for d in CANVAS_DIMENSIONS]
+            dim_labels = [d["label"] for d in canvas_state.get("dimensions", [])]
             _radar_hash = hash_ndarray(coords, "radar")
 
             def _make_radar_fig():
@@ -436,7 +439,7 @@ def render() -> None:
                 _canvas_adv = st.session_state.get("semantic_canvas")
                 if _canvas_adv is not None:
                     _canvas_state_adv = _canvas_adv.get_accumulated_state()
-                    _dim_labels_adv = [d["label"] for d in CANVAS_DIMENSIONS]
+                    _dim_labels_adv = [d["label"] for d in _canvas_state_adv.get("dimensions", [])]
                     trajectory = _canvas_state_adv.get("trajectory", [])
                     if len(trajectory) > 1:
                         traj_matrix = np.array([t["state"] for t in trajectory])

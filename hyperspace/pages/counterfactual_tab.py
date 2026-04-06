@@ -44,10 +44,10 @@ def _run_counterfactual_ukt(
     or None if not enough blocks remain.
     """
     from hyperspace.models.knowledge_matrix import (
-        _normalize_features,
-        _DEFAULT_BLOCK_FEATURE_RANGES,
+        _symmetric_normalize,
     )
     from ukt.projection import SharedProjection
+    from ukt.registry import FeatureRegionRegistry
     from ukt.kernels import decompose_svd
 
     block_names = [s["block_name"] for s in snapshots]
@@ -58,26 +58,54 @@ def _run_counterfactual_ukt(
     # Get raw features from the final snapshot (which stores all blocks' raw features)
     final_snap = snapshots[-1]
     raw_features = final_snap.get("raw_features")
+    # Use the snapshot's registry — it has the actual region layout from the run
+    snap_registry = final_snap.get("_registry")
 
     if raw_features is None:
-        # Fallback for snapshots without raw_features (legacy)
-        full_matrix = final_snap["matrix"]
-        sub_matrix = full_matrix[kept_indices, :]
-    else:
-        # Rebuild projection from scratch with only the remaining blocks
-        # Use block names for the new projection topology
-        kept_block_names = [block_names[i] for i in kept_indices]
-        projection = SharedProjection(block_names=kept_block_names)
-        for idx in kept_indices:
-            bn = block_names[idx]
-            normalized = _normalize_features(raw_features[idx])
-            projection.observe(bn, normalized)
+        # VISION COMPLIANCE: No legacy fallback allowed (Invariant 4: Full Replay)  
+        # Matrix slicing would miss coupling terms that full replay would recalculate
+        # All snapshots from current UKT implementation include raw_features
+        raise ValueError(
+            f"Counterfactual analysis requires raw_features in snapshot. "
+            f"Legacy snapshots without raw feature data cannot provide "
+            f"vision-compliant full replay analysis."
+        )
 
-        # Re-project remaining blocks through the rebuilt projection
-        rows = []
-        for idx in kept_indices:
-            rows.append(projection.project(_normalize_features(raw_features[idx])))
-        sub_matrix = np.stack(rows)
+    # Rebuild a fresh registry from the kept blocks to mirror what the pipeline
+    # would have produced without the removed block.
+    cf_registry = FeatureRegionRegistry()
+    feature_dim = 0
+    for idx in kept_indices:
+        bn = block_names[idx]
+        feat_len = len(raw_features[idx])
+        cf_registry.register(bn, feature_dim, feature_dim + feat_len)
+        feature_dim += feat_len
+
+    # Embed raw features at their region offsets (mirroring tensor._embed_at_region)
+    # then normalize — exactly as the main pipeline does.
+    def _embed(idx: int) -> np.ndarray:
+        bn = block_names[idx]
+        region = cf_registry.regions[bn]
+        vec = np.zeros(feature_dim, dtype=float)
+        raw = np.asarray(raw_features[idx], dtype=float).flatten()
+        vec[region.start:region.end] = raw[:region.dim]
+        return vec
+
+    kept_block_names = [block_names[i] for i in kept_indices]
+    projection = SharedProjection(block_names=kept_block_names)
+    normalized_rows = []
+    for idx in kept_indices:
+        bn = block_names[idx]
+        embedded = _embed(idx)
+        normalized = _symmetric_normalize(embedded, cf_registry)
+        normalized_rows.append(normalized)
+        projection.observe(bn, normalized)
+
+    # Re-project remaining blocks through the rebuilt projection
+    rows = []
+    for nr in normalized_rows:
+        rows.append(projection.project(nr))
+    sub_matrix = np.stack(rows)
 
     kept_names = [block_names[i] for i in kept_indices]
 
@@ -112,13 +140,13 @@ def _run_counterfactual_ukt(
     )
 
 
-def _region_color_for_index(idx: int) -> str:
+def _region_color_for_index(idx: int, registry=None) -> str:
     """Return the configured feature-region color for a feature index."""
-    from hyperspace.models.knowledge_matrix import HYPERSPACE_REGISTRY
-    # Auto-generate palette from registry order
     _PALETTE = ["#3498db", "#e67e22", "#2ecc71", "#e74c3c", "#9b59b6",
                 "#1abc9c", "#f39c12", "#8e44ad", "#2c3e50", "#d35400"]
-    for i, region in enumerate(HYPERSPACE_REGISTRY.ordered_regions):
+    if registry is None:
+        return "#95a5a6"
+    for i, region in enumerate(registry.ordered_regions):
         if region.start <= idx < region.end:
             return _PALETTE[i % len(_PALETTE)]
     return "#95a5a6"
@@ -128,6 +156,7 @@ def _plot_rr_diff(
     rr_original: np.ndarray,
     rr_counterfactual: np.ndarray,
     title: str = "Reality Regression: Original vs. Counterfactual",
+    registry=None,
 ) -> go.Figure:
     """Plot side-by-side reality regression comparison."""
     n = len(rr_original)
@@ -140,7 +169,7 @@ def _plot_rr_diff(
     colors_orig = []
     colors_cf = []
     for i in range(max_n):
-        c = _region_color_for_index(i)
+        c = _region_color_for_index(i, registry)
         colors_orig.append(c)
         colors_cf.append(c)
 
@@ -449,10 +478,12 @@ def render() -> None:
     # Main diff visualization
     st.markdown("### Reality Regression Comparison")
     _cf_fig_key = hash_params({"removed": removed, "kept": ",".join(kept)})
+    _snap_reg = final_snap.get("_registry")
     fig_diff = get_or_compute_figure(
         f"cf_rr_diff_{_cf_fig_key}",
         lambda: _plot_rr_diff(rr_orig, rr_cf,
-                               title=f"Reality Regression Diff ('{removed}' removed)"),
+                               title=f"Reality Regression Diff ('{removed}' removed)",
+                               registry=_snap_reg),
     )
     st.plotly_chart(fig_diff, use_container_width=True, key="cf_rr_diff")
     st.caption(
@@ -481,9 +512,13 @@ def render() -> None:
 
     # ── Domain-level impact summary (governance-readable) ────────────
     st.markdown("### Domain-Level Impact")
-    from hyperspace.models.knowledge_matrix import HYPERSPACE_REGISTRY
-    region_names = [r.name for r in HYPERSPACE_REGISTRY.ordered_regions]
-    region_bounds = [(r.start, r.end) for r in HYPERSPACE_REGISTRY.ordered_regions]
+    snap_registry = final_snap.get("_registry")
+    if snap_registry is not None:
+        region_names = [r.name for r in snap_registry.ordered_regions]
+        region_bounds = [(r.start, r.end) for r in snap_registry.ordered_regions]
+    else:
+        region_names = []
+        region_bounds = []
     impact_rows = []
     for rname, (lo, hi) in zip(region_names, region_bounds):
         orig_energy = float(np.abs(rr_orig[lo:min(hi, len(rr_orig))]).sum())

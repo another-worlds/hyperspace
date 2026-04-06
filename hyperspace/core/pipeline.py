@@ -24,7 +24,6 @@ from hyperspace.config import (
     GEOPOLITICAL_NODES,
     GOVERNANCE_FLAG_CODES,
     SCORECARD_THRESHOLDS,
-    UKT_FEATURE_DIM,
     FEATURE_FLAGS,
 )
 from hyperspace.core.types import (
@@ -49,8 +48,6 @@ from hyperspace.core.latent_versioning import (
 from hyperspace.models.knowledge_matrix import (
     UniversalKnowledgeTensor,
     estimate_reality_regression_stability,
-    FEATURE_REGION_LABELS,
-    HYPERSPACE_REGISTRY,
 )
 
 
@@ -135,7 +132,7 @@ class PipelineRunner:
         run_timestamp = datetime.now().strftime("%Y-%m-%d %H:%M UTC")
         timeframe_context = timeframe_context or {}
 
-        ukt = UniversalKnowledgeTensor(feature_dim=UKT_FEATURE_DIM)
+        ukt = UniversalKnowledgeTensor()
         snapshots: list[dict] = []
         data_sources: dict[str, str] = {}
 
@@ -284,7 +281,10 @@ class PipelineRunner:
 
         if final_matrix is not None:
             sae_result = train_sparse_ae(
-                final_matrix, hidden_dim=sae_hidden_dim, epochs=sae_epochs,
+                final_matrix,
+                hidden_dim=sae_hidden_dim,
+                epochs=sae_epochs,
+                registry=ukt.registry,
             )
             if sae_result is not None:
                 final_snap = ukt.get_latest_snapshot()
@@ -292,6 +292,9 @@ class PipelineRunner:
                     concept_kernel_map = map_concepts_to_kernels(
                         sae_result, final_snap,
                     )
+                # Build emergent canvas from global SAE — canvas dimensions are
+                # 100% data-driven SAE concepts, not hardcoded per-block projections.
+                ukt.build_emergent_canvas(sae_result)
 
         # ---- Cross-Block Interconnection: UVT + USE ----
         uvt_result = None
@@ -302,12 +305,10 @@ class PipelineRunner:
                 compute_universal_variance_tensor,
                 compute_universal_semantic_encoding,
             )
-            from hyperspace.models.knowledge_matrix import HYPERSPACE_REGISTRY
-
             active_block_names = [s["block_name"] for s in snapshots]
             uvt_result = compute_universal_variance_tensor(
                 final_matrix, n_heads=4, d_model=32, epochs=cross_block_epochs_uvt,
-                registry=HYPERSPACE_REGISTRY,
+                registry=ukt.registry,
                 block_names=active_block_names,
             )
 
@@ -316,7 +317,7 @@ class PipelineRunner:
                 use_result = compute_universal_semantic_encoding(
                     final_matrix, uvt_result,
                     canvas=ukt.canvas, semantic_dim=24, epochs=cross_block_epochs_use,
-                    registry=HYPERSPACE_REGISTRY,
+                    registry=ukt.registry,
                     block_names=active_block_names,
                 )
 
@@ -522,8 +523,11 @@ class PipelineRunner:
             version = compute_latent_version(
                 run_id=run_id,
                 timestamp=run_timestamp,
-                feature_dim=HYPERSPACE_REGISTRY.total_dim,
-                region_labels=FEATURE_REGION_LABELS,
+                feature_dim=ukt.feature_dim,
+                region_labels={
+                    (r.start, r.end): r.name
+                    for r in ukt.registry.ordered_regions
+                },
                 n_kernels=n_kernels,
                 shared_latent_active=shared_latent_enabled,
                 sae_result=sae_result,
@@ -548,7 +552,7 @@ class PipelineRunner:
                 run_id=run_id,
                 timestamp=run_timestamp,
                 reality_regression=final_snap.get(
-                    "reality_regression", np.zeros(UKT_FEATURE_DIM)
+                    "reality_regression", np.zeros(ukt.feature_dim or 1)
                 ),
                 kernel_importances=final_snap.get("importance", np.array([])),
                 mean_cosine_stability=mean_cos,
@@ -591,7 +595,7 @@ class PipelineRunner:
                     temporal_model = TemporalWorldModel()
                     _st.session_state["temporal_world_model"] = temporal_model
                 current_rr = snapshots[-1].get(
-                    "reality_regression", np.zeros(UKT_FEATURE_DIM),
+                    "reality_regression", np.zeros(ukt.feature_dim or 1),
                 )
                 # Update with previous prediction error if we have history
                 prev_rr = None

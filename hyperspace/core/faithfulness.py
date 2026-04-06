@@ -220,10 +220,8 @@ def check_feature_region_masking(
 ) -> list[InterventionResult]:
     """Verify that masking a feature region changes reality regression proportionally.
 
-    For each of the 5 UKT feature regions (0-15, 16-31, 32-47, 48-63, 64-79),
-    zero out that region in the final matrix and recompute the reality
-    regression vector. The region with the most energy in the original
-    regression should produce the largest change when masked.
+    Regions are derived from the emergent registry embedded in the latest
+    snapshot, so no fixed dimensionality or region count is assumed.
     """
     results: list[InterventionResult] = []
     if not snapshots:
@@ -235,12 +233,18 @@ def check_feature_region_masking(
     if matrix is None or rr is None:
         return results
 
-    # Region layout derived from the registry — not hardcoded.
-    from hyperspace.models.knowledge_matrix import HYPERSPACE_REGISTRY
-    regions = [
-        (r.name, r.start, r.end)
-        for r in HYPERSPACE_REGISTRY.ordered_regions
-    ]
+    # Region layout from the emergent registry stored in the snapshot.
+    # Fall back to a single full-width region when no registry is available.
+    snap_registry = snap.get("_registry")
+    if snap_registry is not None:
+        regions = [
+            (r.name, r.start, r.end)
+            for r in snap_registry.ordered_regions
+        ]
+    else:
+        # No registry — treat entire vector as one region (graceful degradation)
+        feat_dim = len(rr) if hasattr(rr, "__len__") else 1
+        regions = [("features", 0, feat_dim)]
 
     total_energy = float(np.sum(np.abs(rr))) + 1e-12
 

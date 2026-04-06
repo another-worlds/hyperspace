@@ -78,10 +78,10 @@ Data Sources (32+ keyless APIs)
    e. Re-project ALL blocks through updated P
    f. Stack into matrix → SVD decomposition
    g. Label all kernels (block scores via block_feature_ranges + source_block provenance)
-   h. Reset + replay Semantic Canvas for all blocks
-   i. Generate kernel narratives
-   j. Return snapshot
+   h. Generate kernel narratives
+   i. Return snapshot
 4. Append snapshot to results
+5. After all blocks: run global SAE on final matrix → `build_emergent_canvas(sae_result)` → canvas dims = active concepts
 ```
 
 #### Critical Invariant Implementations
@@ -94,14 +94,14 @@ The pipeline execution above implements several VISION critical invariants direc
 
 **Energy-based graceful degradation (VISION philosophy 5):** When a modality is absent or has near-zero energy, the energy-ratio coupling strength → 0 automatically. The coupling direction blends toward a pre-computed random orthogonal fallback: `block = α × data_block + (1-α) × fallback`, where `α = strength`. This means missing modalities decouple through pure mathematics — no special-case `if missing:` code paths exist or are needed.
 
-**Full replay after each block (VISION invariant 4):** After each block's projection matrix rebuild, ALL previously observed blocks are re-projected through the updated matrix (step 3e). The Semantic Canvas is also reset and replayed for all blocks (step 3h). No block retains stale coordinates from an earlier projection epoch.
+**Full replay after each block (VISION invariant 4):** After each block's projection matrix rebuild, ALL previously observed blocks are re-projected through the updated matrix (step 3e). No block retains stale coordinates from an earlier projection epoch. The Semantic Canvas is **not** built per-block — it is built once after the global SAE runs on the finished matrix, so canvas axes are fully emergent SAE concepts rather than pre-projection approximations.
 
 **Regions are provenance metadata only (VISION invariant 6):** `FeatureRegionRegistry` in `ukt/registry.py` maps block names to feature index ranges purely for naming, traceability, and per-block canvas slicing — done after projection, never during. The feature space is monolithic: projection couples blocks across the full 80-dim space without consulting region boundaries.
 
 ### Post-Block Analysis
 
 After all 5 blocks are added, the pipeline runs:
-1. SAE concept discovery (32 concepts, 80 epochs on final matrix)
+1. SAE concept discovery on final matrix → `build_emergent_canvas(sae_result, block_names)` — canvas dimensions = active SAE concepts, one entry per block from concept_activations rows
 2. Cross-block networks: UVT coupling matrix + USE semantic encoding
 3. Semantic narratives: canvas narrative, reality regression narrative, per-concept narratives
 4. Stability estimation (Monte Carlo: 8 noise runs, σ=0.01, bootstrap confidence intervals)
@@ -131,14 +131,21 @@ Overall confidence = passed_checks / total_checks. If confidence < 0.5, canvas a
 ```
 Machine Latent Space (80-dim projected features)
          │
-    Semantic Canvas    →  12 named dimensions, data-driven coordinates
-         │
     Sparse Autoencoders →  Concept discovery via L1-regularized autoencoders
          │
+    Semantic Canvas    →  Emergent dimensions (one per active SAE concept),
+         │                data-driven coordinates
     Narrator            →  Tiny-LLM (13M params) + template fallback
          │
     Human-Readable Narrative
 ```
+
+Canvas dimensions are NOT predefined. After the global SAE runs on the full
+projected matrix, each active concept becomes a canvas axis. The axis label
+is derived from the concept's dominant region and top feature loadings. The
+number of axes varies per run — typically 10–20 depending on how many
+concepts the SAE activates. Coupling between blocks is measured by
+SharedProjection's energy-based coupling weights, not by fixed constants.
 
 ---
 

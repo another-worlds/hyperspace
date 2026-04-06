@@ -63,13 +63,6 @@ def _get_narrator() -> LLMNarrator:
     return _narrator
 
 
-def is_llm_available() -> bool:
-    """Check whether the embedded Tiny-LLM loaded successfully."""
-    narrator = _get_narrator()
-    model, tokenizer = narrator._load_model()
-    return model is not None and tokenizer is not None
-
-
 def get_llm_health_status() -> dict[str, object]:
     """Return health status for diagnostics and UI display."""
     narrator = _get_narrator()

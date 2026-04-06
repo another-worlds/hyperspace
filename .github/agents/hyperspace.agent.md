@@ -28,8 +28,9 @@ Before making any **architectural** change, read `docs/VISION.md` and `docs/ARCH
 
 - **Entry**: `app.py` → Streamlit 8-tab dashboard. `state.py` for session state. `config.py` for all constants/thresholds.
 - **Pipeline**: `core/pipeline.py` → 4 stages: parallel fetch → parallel model train → canonical pipeline → governance.
-- **5 Blocks → 80-dim UKT**: Finance (TFT, 0-15), Clusters (BERTopic, 16-31), Graph (NetworkX, 32-47), Agents (sim, 48-63), Spatial (SVD, 64-79).
-- **Semantic Interpreter**: GlobalSAE → 32 sparse concepts → SemanticCanvas → Narrator.
+- **UKT Framework** (`ukt/`): Standalone, zero `hyperspace.*` imports. Emergent registry — blocks self-register as they arrive. `SharedProjection` starts with dim=0, auto-expands. No hardcoded dimensions, regions, or topology.
+- **Semantic Interpreter** (`semantic_interpreter/`): Standalone framework. `InterpretationPipeline.interpret()` chains: GlobalSAE → `build_emergent_canvas` → concept-kernel mapping → Narrator. Zero `hyperspace.*` imports.
+- **Hyperspace Wrappers** (`hyperspace/models/`): `knowledge_matrix.py` (UKT wrapper), `sparse_ae.py` (SAE wrapper), `semantic_canvas.py` (canvas wrapper). These inject Hyperspace-specific config (symmetric normalization, Streamlit caching, narrative enrichment) and delegate to the standalone frameworks.
 - **Governance**: Faithfulness checks, DriftMonitor (cosine similarity), flags H-001 to H-006, audit trail.
 - **Caching**: `core/caching.py` — SHA-256 hash-keyed session-state pattern. Extend this pattern for new caches.
 
@@ -47,9 +48,9 @@ Before making any **architectural** change, read `docs/VISION.md` and `docs/ARCH
 
 | What | Where | What's Wrong |
 |------|-------|-------------|
-| Semantic Canvas dimensions | `hyperspace/models/semantic_canvas.py:94-150` | 12 dimensions hardcoded — should be data-driven |
 | Tab UI implementations | `hyperspace/pages/*.py` | Oneshot scaffolding, never redesigned |
 | Narrator template fallback | `semantic_interpreter/narrator.py:186-386` | Acceptable degradation, but templates must not claim unsupported data |
+| Test file stale imports | `tests/test_full_pipeline_integration.py` | Many `UniversalKnowledgeTensor(feature_dim=X)` calls and `PipelineResult` TypedDict access warnings need cleanup |
 
 ## Approach
 

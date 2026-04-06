@@ -86,7 +86,8 @@ def _build_feature_chain(
         chain["feature_name"] = f"feature_{feature_idx}"
 
     # Source block (derived from feature index ranges)
-    from hyperspace.models.knowledge_matrix import _DEFAULT_BLOCK_FEATURE_RANGES
+    from hyperspace.models.knowledge_matrix import _DEFAULT_BLOCK_FEATURE_RANGES, BLOCK_REGION_MAP
+    from hyperspace.config import REGION_DESCRIPTIONS
     source_block = "unknown"
     block_description = "Unknown data source"
     for block_name, (start, end) in _DEFAULT_BLOCK_FEATURE_RANGES.items():
@@ -94,15 +95,12 @@ def _build_feature_chain(
             source_block = block_name
             break
 
-    # Map block to description
-    block_descriptions = {
-        "Finance": "Financial time-series attention weights (TFT)",
-        "Clusters": "News/document topic distribution (BERTopic)",
-        "Graph": "Geopolitical network centrality (NetworkX)",
-        "Agents": "Agent simulation resource/alliance dynamics",
-        "Spatial": "Multimodal spatial raster kernels (elevation, climate, World Bank)",
-    }
-    block_description = block_descriptions.get(source_block, block_description)
+    # Derive description from registry region (no hardcoded labels)
+    region_name = BLOCK_REGION_MAP.get(source_block, (None,))[0]
+    if region_name and region_name in REGION_DESCRIPTIONS:
+        block_description = REGION_DESCRIPTIONS[region_name].split(".")[0] + "."
+    elif source_block != "unknown":
+        block_description = f"{source_block} block features."
 
     chain["source_block"] = source_block
     chain["block_description"] = block_description
@@ -360,30 +358,12 @@ def render_kernel_policy_mode(kernel_labels: list[dict]) -> None:
 
 def _policy_block_description(block_name: str) -> str:
     """Return a one-sentence policy-friendly description of a block."""
-    descriptions = {
-        "Finance": (
-            "Financial market attention patterns reveal which historical time horizons "
-            "the forecasting model considers most relevant to current conditions."
-        ),
-        "Clusters": (
-            "The informational landscape — dominant themes in global news and reporting — "
-            "shapes this pattern through discourse concentration and topic salience."
-        ),
-        "Graph": (
-            "The architecture of alliances and rivalries among major geopolitical actors "
-            "determines which nodes hold structural power in the international system."
-        ),
-        "Agents": (
-            "The distribution of resources and stability of alliances after simulated "
-            "bounded-rational interactions among state actors reveals equilibrium tendencies."
-        ),
-        "Spatial": (
-            "Physical geography (elevation, climate) and macroeconomic indicators (GDP, "
-            "military spending, political stability) co-vary across the six geopolitical "
-            "nodes, revealing structural constraints on state capacity and conflict risk."
-        ),
-    }
-    return descriptions.get(block_name, "Signals from multiple data domains contribute to this pattern.")
+    from hyperspace.models.knowledge_matrix import BLOCK_REGION_MAP
+    from hyperspace.config import REGION_DESCRIPTIONS
+    region_name = BLOCK_REGION_MAP.get(block_name, (None,))[0]
+    if region_name and region_name in REGION_DESCRIPTIONS:
+        return REGION_DESCRIPTIONS[region_name]
+    return "Signals from multiple data domains contribute to this pattern."
 
 
 # --------------------------------------------------------------------------- #

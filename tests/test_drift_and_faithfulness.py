@@ -185,6 +185,51 @@ class TestDriftMonitor:
         loaded = DriftMonitor.load_from_disk(path)
         assert loaded.n_records == 3
 
+    def test_compute_drift_handles_dimension_expansion(self):
+        """Drift computation must survive UKT emergent dim growth (80→400)."""
+        monitor = DriftMonitor()
+        # Run 1: 80-dim (initial topology)
+        monitor.record_run(
+            run_id="R0", timestamp="T",
+            reality_regression=np.ones(80),
+            kernel_importances=np.array([0.5, 0.3, 0.2]),
+            mean_cosine_stability=0.9, n_kernels=3,
+        )
+        # Run 2: 400-dim (new blocks registered, feature_dim expanded)
+        expanded = np.zeros(400)
+        expanded[:80] = 1.0  # Same signal in old dims, zeros in new dims
+        monitor.record_run(
+            run_id="R1", timestamp="T",
+            reality_regression=expanded,
+            kernel_importances=np.array([0.4, 0.25, 0.15, 0.1, 0.1]),
+            mean_cosine_stability=0.88, n_kernels=5,
+        )
+        drift = monitor.compute_drift()
+        assert drift is not None
+        # Old signal identical in shared dims → high cosine similarity
+        assert drift.regression_cosine > 0.9
+        assert drift.regression_l2 >= 0.0
+        assert -1.0 <= drift.importance_cosine <= 1.0
+
+    def test_export_history_rows_handles_dimension_expansion(self):
+        """export_history_rows must not crash when vector dims differ."""
+        monitor = DriftMonitor()
+        monitor.record_run(
+            run_id="R0", timestamp="T",
+            reality_regression=np.ones(80),
+            kernel_importances=np.array([0.5, 0.5]),
+            mean_cosine_stability=0.9, n_kernels=2,
+        )
+        monitor.record_run(
+            run_id="R1", timestamp="T",
+            reality_regression=np.ones(200),
+            kernel_importances=np.array([0.3, 0.3, 0.2, 0.2]),
+            mean_cosine_stability=0.85, n_kernels=4,
+        )
+        rows = monitor.export_history_rows()
+        assert len(rows) == 2
+        assert rows[1]["regression_cosine_vs_prev"] is not None
+
 
 # --------------------------------------------------------------------------- #
 # Faithfulness checks tests                                                    #
@@ -248,8 +293,8 @@ class TestCanvasNarrativeGrounding:
         class MockCanvas:
             def __init__(self):
                 self.entries = [
-                    MockEntry({"market_momentum": 0.9, "volatility_regime": 0.1}),
-                    MockEntry({"market_momentum": 0.7, "cooperation_signal": 0.3}),
+                    MockEntry({"dim_0": 0.9, "dim_1": 0.1}),
+                    MockEntry({"dim_0": 0.7, "dim_2": 0.3}),
                 ]
 
         results = check_canvas_narrative_grounding(MockCanvas(), "test narrative")

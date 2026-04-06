@@ -67,10 +67,6 @@ class SemanticCanvas:
     cumulative: np.ndarray | None = field(default=None, repr=False)
 
     def __post_init__(self) -> None:
-        if not self.dimensions:
-            self.dimensions = _default_dimensions()
-        if not self.region_mapping:
-            self.region_mapping = _default_region_mapping()
         if self.cumulative is None:
             self.cumulative = np.zeros(len(self.dimensions))
 
@@ -300,34 +296,95 @@ class SemanticCanvas:
         return "\n".join(lines)
 
 
-# --------------------------------------------------------------------------- #
-# Default semantic dimensions (can be overridden for any domain)               #
-# --------------------------------------------------------------------------- #
+def build_emergent_canvas(
+    sae_result: dict,
+    block_names: list[str],
+) -> SemanticCanvas:
+    """Build a semantic canvas from global SAE results.
 
-def _default_dimensions() -> list[SemanticDimension]:
-    """Return a minimal set of generic semantic dimensions."""
-    return [
-        SemanticDimension("feature_strength", "Feature Strength",
-                          "Overall activation intensity of discovered features."),
-        SemanticDimension("feature_diversity", "Feature Diversity",
-                          "How many distinct feature patterns are active."),
-        SemanticDimension("cross_layer_coupling", "Cross-Layer Coupling",
-                          "Degree of feature correlation across network layers."),
-        SemanticDimension("sparsity_level", "Sparsity Level",
-                          "How concentrated the feature activations are."),
-    ]
+    Args:
+        sae_result: Dict from train_global_sae() containing concept_labels,
+            concept_activations, mean_activation, active_mask.
+        block_names: List of block names in pipeline order.
 
-
-def _default_region_mapping() -> dict[str, list[tuple[int, float]]]:
-    """Return a default region-to-canvas mapping for common region names.
-
-    Maps standard Hyperspace region names to the 4 default canvas dimensions
-    so that a bare SemanticCanvas() can project blocks meaningfully.
+    Returns:
+        SemanticCanvas with dimensions derived from active SAE concepts.
     """
-    return {
-        "temporal-pattern": [(0, 1.0), (2, 0.5)],
-        "semantic-embedding": [(1, 1.0), (2, 0.6)],
-        "structural-centrality": [(2, 1.0), (3, 0.4)],
-        "dynamic-agent": [(0, 0.5), (1, 0.7), (3, 1.0)],
-        "geospatial-kernel": [(2, 0.6), (3, 1.0)],
-    }
+    concept_labels = sae_result.get("concept_labels", []) or []
+    concept_activations = sae_result.get("concept_activations")
+
+    if concept_activations is None or not concept_labels:
+        return SemanticCanvas()
+
+    active_indices = [
+        i for i, c in enumerate(concept_labels)
+        if c.get("active", False)
+    ]
+    if not active_indices:
+        return SemanticCanvas()
+
+    dimensions = []
+    for idx in active_indices:
+        cl = concept_labels[idx]
+        dimensions.append(SemanticDimension(
+            key=cl.get("concept_id", f"C{idx:02d}"),
+            label=cl.get("label", cl.get("concept_id", f"C{idx:02d}")),
+            description=cl.get("narrative", ""),
+        ))
+
+    canvas = SemanticCanvas(dimensions=dimensions, region_mapping={})
+    n_active = len(active_indices)
+
+    for step_idx, block_name in enumerate(block_names):
+        if step_idx >= concept_activations.shape[0]:
+            break
+
+        coords = concept_activations[step_idx, active_indices].copy()
+        if canvas.cumulative is None:
+            canvas.cumulative = np.zeros(len(dimensions), dtype=float)
+        canvas.cumulative += coords
+
+        dominant_dimensions = [
+            dimensions[i].key for i, v in enumerate(coords) if v > 0.05
+        ]
+
+        evidence_by_name: dict[str, dict] = {}
+        for i, idx in enumerate(active_indices):
+            if coords[i] <= 0.05:
+                continue
+            top_features = concept_labels[idx].get("top_features", [])
+            for feat in top_features:
+                name = feat.get("name")
+                if not name:
+                    continue
+                loading = float(feat.get("loading", 0.0))
+                existing = evidence_by_name.get(name)
+                if existing is None or abs(loading) > abs(existing.get("loading", 0.0)):
+                    evidence_by_name[name] = {
+                        "index": feat.get("index"),
+                        "name": name,
+                        "loading": loading,
+                    }
+
+        feature_evidence = list(evidence_by_name.values())
+
+        entry = CanvasEntry(
+            block_name=block_name,
+            step=step_idx + 1,
+            coordinates=coords,
+            concept_activations=concept_activations[step_idx, :],
+            active_concepts=n_active,
+            dominant_dimensions=dominant_dimensions,
+            interpretation=(
+                f"Emergent concept activations for {block_name}: "
+                f"{', '.join(dominant_dimensions) if dominant_dimensions else 'none active'}"
+            ),
+            feature_evidence=feature_evidence,
+        )
+        canvas.entries.append(entry)
+
+    if canvas.cumulative is not None and canvas.cumulative.max() > 1e-8:
+        canvas.cumulative = canvas.cumulative / float(canvas.cumulative.max())
+
+    return canvas
+

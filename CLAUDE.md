@@ -14,7 +14,7 @@ This project is developed entirely through stateless LLM sessions. You have no m
 
 2. **Deviation accumulation** — Each session, you will be tempted to add fallbacks, workarounds, and local patches instead of fixing root causes. These compound across sessions into a codebase that no longer matches the vision. Follow these rules:
    - **Never add a fallback without asking.** If a computation fails, fix it. Do not silently substitute mock data or template output.
-   - **Never add hardcoded values for things that should be emergent.** Kernel count, kernel importance, cross-block coupling — these come from the data via SVD, not from constants.
+   - **Never add hardcoded values for things that should be emergent.** Kernel count, kernel importance, cross-block coupling, canvas dimensions, block labels, feature names — these come from the data via SVD/SAE/registry, not from constants. Every semantic label must be derived from computation.
    - **Fix root causes, not symptoms.** If a chart shows wrong data, trace the problem to its source. Do not patch the display layer.
    - **Do not incrementally patch broken foundations.** If a component was generated in a oneshot and never properly redesigned, say so. A clean rebuild of one component is better than 10 patches on a broken base.
 
@@ -22,9 +22,11 @@ This project is developed entirely through stateless LLM sessions. You have no m
 
 | What | Where | Status | What's Wrong |
 |------|-------|--------|-------------|
-| Semantic Canvas dimensions | `hyperspace/models/semantic_canvas.py:94-150` | Working scaffold | 12 dimensions hardcoded in `REGION_SEMANTIC_SPEC`. Should eventually be data-driven, not fixed strings. |
+| Semantic Canvas dimensions | `hyperspace/models/semantic_canvas.py` | **Complete** | Dimensions built entirely from active SAE concepts via `build_emergent_canvas()`. No per-block canvas replay. REGION_SEMANTIC_SPEC, CANVAS_COUPLING_*, _default_dimensions() all removed. |
 | Tab UI implementations | `hyperspace/pages/*.py` | Scaffolding | Generated in initial oneshot prompt, patched incrementally. Never redesigned from ground up. |
 | Narrator template fallback | `semantic_interpreter/narrator.py:186-386` | Acceptable for now | Template narratives substitute when LLM unavailable. Acceptable graceful degradation, but templates must never claim things the data doesn't support. |
+| Canvas coupling weights | `config.py` (was CANVAS_COUPLING_*) | **Removed** | Coupling now derived from SharedProjection energy-based weights, not hardcoded constants. |
+| Block/feature names | `config.py`, `semantic_canvas.py` | **Emergent** | Block labels and feature names are data-agnostic. Generic positional names enriched by runtime metadata. |
 
 ### MVP Priority (what matters for the demo)
 

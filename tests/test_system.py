@@ -159,11 +159,12 @@ class TestConfigConsistency:
             assert "label" in dim
             assert "desc" in dim
 
-    def test_region_to_canvas_covers_all_regions(self):
+    def test_region_to_canvas_is_optional(self):
         from hyperspace.models.semantic_canvas import REGION_TO_CANVAS
         from hyperspace.models.knowledge_matrix import FEATURE_REGION_LABELS
-        for region_name in FEATURE_REGION_LABELS.values():
-            assert region_name in REGION_TO_CANVAS, f"Region {region_name} not in REGION_TO_CANVAS"
+        if REGION_TO_CANVAS:
+            for region_name in FEATURE_REGION_LABELS.values():
+                assert region_name in REGION_TO_CANVAS
 
     def test_glossary_entries(self):
         from hyperspace.config import GLOSSARY

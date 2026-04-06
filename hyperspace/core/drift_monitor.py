@@ -161,16 +161,26 @@ class DriftMonitor:
         if not prior_records:
             return None
 
-        # Average prior-window regression vectors
-        prior_regressions = np.stack(
-            [r.reality_regression for r in prior_records]
+        # Average prior-window regression vectors (pad to common dim)
+        reg_dim = max(
+            current.reality_regression.shape[0],
+            *(r.reality_regression.shape[0] for r in prior_records),
         )
+        prior_regressions = np.stack([
+            np.pad(r.reality_regression, (0, reg_dim - len(r.reality_regression)))
+            for r in prior_records
+        ])
         prior_mean_reg = prior_regressions.mean(axis=0)
 
-        # Average prior-window importances
-        prior_importances = np.stack(
-            [r.kernel_importances for r in prior_records]
+        # Average prior-window importances (pad to common dim)
+        imp_dim = max(
+            current.kernel_importances.shape[0],
+            *(r.kernel_importances.shape[0] for r in prior_records),
         )
+        prior_importances = np.stack([
+            np.pad(r.kernel_importances, (0, imp_dim - len(r.kernel_importances)))
+            for r in prior_records
+        ])
         prior_mean_imp = prior_importances.mean(axis=0)
 
         # Average prior stability
@@ -181,19 +191,18 @@ class DriftMonitor:
             np.mean([r.n_kernels for r in prior_records])
         )
 
+        cur_reg, ref_reg = _pad_to_match(current.reality_regression, prior_mean_reg)
+        cur_imp, ref_imp = _pad_to_match(current.kernel_importances, prior_mean_imp)
+
         return DriftResult(
             regression_cosine=_cosine_sim(
                 current.reality_regression, prior_mean_reg
             ),
-            regression_l2=float(
-                np.linalg.norm(current.reality_regression - prior_mean_reg)
-            ),
+            regression_l2=float(np.linalg.norm(cur_reg - ref_reg)),
             importance_cosine=_cosine_sim(
                 current.kernel_importances, prior_mean_imp
             ),
-            importance_l2=float(
-                np.linalg.norm(current.kernel_importances - prior_mean_imp)
-            ),
+            importance_l2=float(np.linalg.norm(cur_imp - ref_imp)),
             stability_delta=current.mean_cosine_stability - prior_mean_stability,
             n_kernel_delta=current.n_kernels - prior_mean_nk,
             window_size=len(prior_records),
@@ -341,8 +350,26 @@ def _record_from_dict(d: dict[str, Any]) -> DriftRecord:
     )
 
 
+def _pad_to_match(a: np.ndarray, b: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """Zero-pad the shorter vector so both have equal length.
+
+    When the UKT expands its feature dimension (emergent block registration),
+    newer reality_regression vectors are longer than older ones.  Zero-padding
+    is semantically correct: the new dimensions represent features that did not
+    exist in earlier runs, so their historical value is 0.
+    """
+    if len(a) == len(b):
+        return a, b
+    target = max(len(a), len(b))
+    return (
+        np.pad(a, (0, target - len(a))) if len(a) < target else a,
+        np.pad(b, (0, target - len(b))) if len(b) < target else b,
+    )
+
+
 def _cosine_sim(a: np.ndarray, b: np.ndarray) -> float:
     """Cosine similarity between two vectors, with zero-guard."""
+    a, b = _pad_to_match(a, b)
     norm_a = np.linalg.norm(a)
     norm_b = np.linalg.norm(b)
     if norm_a < 1e-12 or norm_b < 1e-12:

@@ -12,7 +12,7 @@ The system exists to prove that **AI accountability and analytical power are not
 
 1. **Emergence over prescription.** The system does not define what patterns exist. It creates the conditions for patterns to emerge from data, then reports what it discovers. Kernels, couplings, and cross-domain links are never hardcoded — they are computed from evidence.
 
-2. **Interpretability as first-class architecture.** Interpretability is not a post-hoc overlay. It is woven into every layer: the feature space is monolithic with block-level provenance labels, projections are inspectable, kernels carry structured labels, and narratives are generated from measured quantities — not templates.
+2. **Interpretability as first-class architecture.** Interpretability is not a post-hoc overlay. It is woven into every layer: the feature space is monolithic with block-level provenance labels, projections are inspectable, kernels carry structured labels, canvas dimensions emerge from sparse concept discovery, and narratives are generated from measured quantities — not templates. No semantic label — kernel name, block label, canvas axis, concept ID — is hardcoded. All are derived from data.
 
 3. **Governance by design.** Every output is traceable from high-level narrative back to specific feature values, through documented mathematical transformations, with inspectable intermediate states. An auditor can reconstruct any conclusion from stored snapshots without re-running the system.
 
@@ -40,9 +40,9 @@ The UKT is the central analytical engine. It standardizes heterogeneous features
 
 ### The Semantic Interpretability Framework — Human Translation
 
-The Interpretability Framework sits downstream of the UKT and translates emergent structure into named coordinates and natural-language narratives. It provides three layers of explanation: a stable coordinate system (the Semantic Canvas), pattern labeling (kernel narratives), and contestability (counterfactual analysis).
+The Interpretability Framework sits downstream of the UKT and translates emergent structure into named coordinates and natural-language narratives. It provides three layers of explanation: an emergent coordinate system (the Semantic Canvas, whose axes are discovered SAE concepts), pattern labeling (kernel narratives grounded in SVD evidence), and contestability (counterfactual analysis).
 
-**The Interpretive Lens Contract:** The Semantic Canvas is a fixed interpretive frame, not a learning system. Its dimensions are defined by domain knowledge and remain stable across runs. What changes is the data-driven coordinates — these depend on the actual feature distribution. The Canvas provides a stable vocabulary for communicating emergent structure to humans. The UKT discovers structure; the Canvas translates it.
+**The Interpretive Lens Contract:** The Semantic Canvas is a fully emergent interpretive system. Its dimensions are discovered — not prescribed — from SAE concept decomposition of the projected feature space. Each run produces its own set of canvas axes corresponding to active sparse autoencoder concepts. What varies is both the dimensions themselves (which concepts emerge) and the coordinates (how strongly each concept activates). The Canvas translates emergent structure into human-readable coordinates; it does not impose structure. The UKT discovers kernels; the SAE discovers concepts; the Canvas names them.
 
 ---
 

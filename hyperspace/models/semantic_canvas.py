@@ -24,187 +24,32 @@ from semantic_interpreter.sae import (
     train_stage_sae,
 )
 
-# Import centralized coupling weights from config (VISION invariant 8)
-from hyperspace.config import (
-    CANVAS_COUPLING_VOLATILITY_FROM_FINANCE,
-    CANVAS_COUPLING_STRESS_FROM_FINANCE,
-    CANVAS_COUPLING_POWER_FROM_CLUSTERS,
-    CANVAS_COUPLING_POWER_FROM_GRAPH,
-    CANVAS_COUPLING_MOMENTUM_FROM_GRAPH,
-    CANVAS_COUPLING_STRESS_FROM_GRAPH,
-    CANVAS_COUPLING_POWER_FROM_AGENTS,
-    CANVAS_COUPLING_DIVERSITY_FROM_AGENTS,
-    CANVAS_COUPLING_COHESION_FROM_SPATIAL,
-)
 
 # --------------------------------------------------------------------------- #
-# Block-to-region mapping and block semantic specification                     #
+# Emergent canvas assembly from SAE concept discovery                       #
 # --------------------------------------------------------------------------- #
-# Each block owns one region; semantic specs are region-keyed but mapped to blocks
-BLOCK_TO_REGION: dict[str, str] = {
-    "Finance": "temporal-pattern",
-    "Clusters": "semantic-embedding",
-    "Graph": "structural-centrality",
-    "Agents": "dynamic-agent",
-    "Spatial": "geospatial-kernel",
-}
+# This module preserves the old API surface while removing hardcoded canvas
+# dimensions and coupling weights. A canvas is built from GlobalSAE concepts
+# at runtime.
 
-def _build_canvas_from_blocks(
-    block_order: list[str] | None = None,
-):
-    """Build CANVAS_DIMENSIONS and BLOCK_TO_CANVAS dynamically from blocks.
-
-    Args:
-        block_order: Ordered list of block names. If None, uses the
-            canonical order from BLOCK_TO_REGION keys.
-
-    Returns:
-        (dimensions_list, block_to_canvas_dict, canvas_dim_count)
-    """
-    if block_order is None:
-        block_order = list(BLOCK_TO_REGION.keys())
-
-    # 1. Collect all unique dimensions in block order (via their regions)
-    seen_keys: set[str] = set()
-    dimensions: list[dict[str, str]] = []
-    key_to_index: dict[str, int] = {}
-
-    for block_name in block_order:
-        region_name = BLOCK_TO_REGION.get(block_name)
-        if region_name is None:
-            continue
-        spec = REGION_SEMANTIC_SPEC.get(region_name)
-        if spec is None:
-            continue
-        for key, label, desc in spec["dimensions"]:
-            if key not in seen_keys:
-                key_to_index[key] = len(dimensions)
-                dimensions.append({"key": key, "label": label, "desc": desc})
-                seen_keys.add(key)
-
-    # 2. Build block-to-canvas projection mapping (same as region-to-canvas)
-    block_to_canvas: dict[str, list[tuple[int, float]]] = {}
-    for block_name in block_order:
-        region_name = BLOCK_TO_REGION.get(block_name)
-        if region_name is None:
-            continue
-        spec = REGION_SEMANTIC_SPEC.get(region_name)
-        if spec is None:
-            continue
-        links: list[tuple[int, float]] = []
-        # Primary dims at weight 1.0
-        for dim_key in spec["primary"]:
-            if dim_key in key_to_index:
-                links.append((key_to_index[dim_key], 1.0))
-        # Cross-domain coupling
-        for dim_key, weight in spec["coupling"]:
-            if dim_key in key_to_index:
-                links.append((key_to_index[dim_key], weight))
-        block_to_canvas[block_name] = links
-
-    return dimensions, block_to_canvas, len(dimensions)
-
-REGION_SEMANTIC_SPEC: dict[str, dict] = {  # Keyed by region name (for backward compat)
-    "temporal-pattern": {
-        "dimensions": [
-            ("market_momentum", "Market Momentum",
-             "Strength and direction of short-term financial momentum signals."),
-            ("temporal_memory", "Temporal Memory Depth",
-             "How far back the system looks — short memory vs long historical patterns."),
-            ("volatility_regime", "Volatility Regime",
-             "Market stability vs turbulence; regime shift signals."),
-        ],
-        "primary": ["market_momentum", "temporal_memory"],
-        "coupling": [("volatility_regime", CANVAS_COUPLING_VOLATILITY_FROM_FINANCE),
-                      ("systemic_stress", CANVAS_COUPLING_STRESS_FROM_FINANCE)],
-    },
-    "semantic-embedding": {
-        "dimensions": [
-            ("information_focus", "Information Focus",
-             "Whether the information landscape is dominated by a single narrative or fragmented."),
-            ("narrative_diversity", "Narrative Diversity",
-             "Breadth of distinct informational themes in the discourse environment."),
-        ],
-        "primary": ["information_focus", "narrative_diversity"],
-        "coupling": [("power_concentration", CANVAS_COUPLING_POWER_FROM_CLUSTERS)],
-    },
-    "structural-centrality": {
-        "dimensions": [
-            ("alliance_polarity", "Alliance Polarity",
-             "Unipolar (one dominant bloc) vs multipolar (competing blocs) structure."),
-            ("network_cohesion", "Network Cohesion",
-             "Density and clustering of the geopolitical relationship graph."),
-            ("power_concentration", "Power Concentration",
-             "How concentrated resources and influence are among actors."),
-        ],
-        "primary": ["alliance_polarity", "network_cohesion"],
-        "coupling": [("power_concentration", CANVAS_COUPLING_POWER_FROM_GRAPH),
-                      ("market_momentum", CANVAS_COUPLING_MOMENTUM_FROM_GRAPH),
-                      ("systemic_stress", CANVAS_COUPLING_STRESS_FROM_GRAPH)],
-    },
-    "dynamic-agent": {
-        "dimensions": [
-            ("cooperation_signal", "Cooperation Signal",
-             "Net positive alignment and cooperative dynamics between agents."),
-            ("competition_signal", "Competition Signal",
-             "Net negative alignment, rivalry, and zero-sum dynamics."),
-        ],
-        "primary": ["cooperation_signal", "competition_signal"],
-        "coupling": [("power_concentration", CANVAS_COUPLING_POWER_FROM_AGENTS),
-                      ("narrative_diversity", CANVAS_COUPLING_DIVERSITY_FROM_AGENTS)],
-    },
-    "geospatial-kernel": {
-        "dimensions": [
-            ("geographic_coupling", "Geographic Coupling",
-             "Co-variance of physical and socioeconomic factors across geopolitical nodes."),
-            ("systemic_stress", "Systemic Stress",
-             "Aggregate pressure across conflict, economic, and political dimensions."),
-        ],
-        "primary": ["geographic_coupling", "systemic_stress"],
-        "coupling": [("network_cohesion", CANVAS_COUPLING_COHESION_FROM_SPATIAL)],
-    },
-}
-
-# Build at import time using the canonical block order
-CANVAS_DIMENSIONS, BLOCK_TO_CANVAS, CANVAS_DIM = _build_canvas_from_blocks()
-
-# Backward compatibility: REGION_TO_CANVAS maps regions to dimensions
-# (used by knowledge_matrix.py in canvas replay)
-REGION_TO_CANVAS: dict[str, list[tuple[int, float]]] = {}
-for block_name, region_name in BLOCK_TO_REGION.items():
-    if block_name in BLOCK_TO_CANVAS:
-        REGION_TO_CANVAS[region_name] = BLOCK_TO_CANVAS[block_name]
-
-
-def _build_hyperspace_dimensions() -> list[SemanticDimension]:
-    """Convert Hyperspace dimension dicts to standalone SemanticDimension objects."""
-    return [
-        SemanticDimension(key=d["key"], label=d["label"], description=d["desc"])
-        for d in CANVAS_DIMENSIONS
-    ]
+from semantic_interpreter.canvas import build_emergent_canvas  # re-export
 
 
 class SemanticCanvas(_StandaloneCanvas):
-    """Hyperspace-configured Semantic Canvas with block-derived dimensions.
+    """Hyperspace Semantic Canvas with emergent dimensions.
 
-    Dimensions and block-to-canvas projection are auto-built from
-    BLOCK_SEMANTIC_SPEC (derived from regional specs). Canvas maps each block
-    to its semantic dimensions via BLOCK_TO_CANVAS.
+    This class preserves the legacy API while supporting fully emergent
+    dimensions from SAE concept extraction.
     """
 
-    def __init__(self) -> None:
-        # Use block order from BLOCK_TO_REGION
-        dims = CANVAS_DIMENSIONS
-        # Include both block-name and region-name keys so project_block()
-        # works whether called with block name or region name.
-        mapping = dict(BLOCK_TO_CANVAS)
-        mapping.update(REGION_TO_CANVAS)
+    def __init__(
+        self,
+        dimensions: list[SemanticDimension] | None = None,
+        region_mapping: dict[str, list[tuple[int, float]]] | None = None,
+    ) -> None:
         super().__init__(
-            dimensions=[
-                SemanticDimension(key=d["key"], label=d["label"], description=d["desc"])
-                for d in dims
-            ],
-            region_mapping=mapping,
+            dimensions=dimensions or [],
+            region_mapping=region_mapping or {},
         )
 
     # ------------------------------------------------------------------ #
@@ -289,3 +134,11 @@ class SemanticCanvas(_StandaloneCanvas):
             "dominant_narrative": dom,
             "context": context or {},
         }
+
+
+# Backward-compatibility placeholders for existing consumer code
+CANVAS_DIMENSIONS: list[dict] = []
+CANVAS_DIM: int = 0
+BLOCK_TO_CANVAS: dict[str, list[tuple[int, float]]] = {}
+REGION_TO_CANVAS: dict[str, list[tuple[int, float]]] = {}
+

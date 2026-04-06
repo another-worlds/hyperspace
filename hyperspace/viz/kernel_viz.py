@@ -61,16 +61,19 @@ def plot_reality_regression(snapshot: dict) -> go.Figure:
     rr = snapshot["reality_regression"]
     n = len(rr)
 
-    # Block-based feature coloring (from knowledge_matrix's _DEFAULT_BLOCK_FEATURE_RANGES)
+    # Build block coloring dynamically from registry-derived feature ranges.
     from hyperspace.models.knowledge_matrix import _DEFAULT_BLOCK_FEATURE_RANGES
 
+    _BLOCK_PALETTE = ["#3498db", "#e67e22", "#2ecc71", "#e74c3c", "#9b59b6",
+                      "#1abc9c", "#f39c12", "#8e44ad", "#d35400", "#27ae60"]
+    _sorted_blocks = sorted(
+        _DEFAULT_BLOCK_FEATURE_RANGES.items(), key=lambda x: x[1][1]
+    )
     block_map = [
-        (16, "#3498db", "Finance"),       # temporal-pattern: [0:16]
-        (32, "#e67e22", "Clusters"),      # semantic-embedding: [16:32]
-        (48, "#2ecc71", "Graph"),         # structural-centrality: [32:48]
-        (64, "#e74c3c", "Agents"),        # dynamic-agent: [48:64]
-        (80, "#9b59b6", "Spatial"),       # geospatial-kernel: [64:80]
+        (end, _BLOCK_PALETTE[i % len(_BLOCK_PALETTE)], bname)
+        for i, (bname, (start, end)) in enumerate(_sorted_blocks)
     ]
+
     colors = []
     blocks = []
     for i in range(n):
@@ -104,18 +107,13 @@ def plot_reality_regression(snapshot: dict) -> go.Figure:
         yaxis_title="Weight",
         xaxis_tickangle=-45,
     )
-    # Add block annotations
+    # Add block annotations dynamically
     annotation_y = float(np.max(np.abs(rr))) * 1.1
-    fig.add_annotation(x=8,  y=annotation_y, text="Finance",
-                       showarrow=False, font=dict(color="#3498db", size=10))
-    fig.add_annotation(x=24, y=annotation_y, text="Clusters",
-                       showarrow=False, font=dict(color="#e67e22", size=10))
-    fig.add_annotation(x=40, y=annotation_y, text="Graph",
-                       showarrow=False, font=dict(color="#2ecc71", size=10))
-    fig.add_annotation(x=56, y=annotation_y, text="Agents",
-                       showarrow=False, font=dict(color="#e74c3c", size=10))
-    fig.add_annotation(x=72, y=annotation_y, text="Spatial",
-                       showarrow=False, font=dict(color="#9b59b6", size=10))
+    for i, (bname, (start, end)) in enumerate(_sorted_blocks):
+        mid = (start + end) / 2
+        color = _BLOCK_PALETTE[i % len(_BLOCK_PALETTE)]
+        fig.add_annotation(x=mid, y=annotation_y, text=bname,
+                           showarrow=False, font=dict(color=color, size=10))
     return fig
 
 

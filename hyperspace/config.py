@@ -524,21 +524,10 @@ DRIFT_IMPORTANCE_COSINE_THRESHOLD: float = 0.80
 DRIFT_STABILITY_DELTA_THRESHOLD: float = -0.10
 
 # --------------------------------------------------------------------------- #
-# Semantic Canvas coupling weights                                             #
+# Semantic Canvas coupling weights
 # --------------------------------------------------------------------------- #
-# Cross-domain coupling strength between blocks and canvas dimensions.
-# Primary dimensions use weight 1.0 (implicit). These weights control how
-# much each block's features activate NON-primary canvas dimensions.
-# Named for auditability per VISION invariant 8 (centralized thresholds).
-CANVAS_COUPLING_VOLATILITY_FROM_FINANCE: float = 0.8
-CANVAS_COUPLING_STRESS_FROM_FINANCE: float = 0.3
-CANVAS_COUPLING_POWER_FROM_CLUSTERS: float = 0.4
-CANVAS_COUPLING_POWER_FROM_GRAPH: float = 0.5
-CANVAS_COUPLING_MOMENTUM_FROM_GRAPH: float = 0.3
-CANVAS_COUPLING_STRESS_FROM_GRAPH: float = 0.4
-CANVAS_COUPLING_POWER_FROM_AGENTS: float = 0.5
-CANVAS_COUPLING_DIVERSITY_FROM_AGENTS: float = 0.3
-CANVAS_COUPLING_COHESION_FROM_SPATIAL: float = 0.3
+# Coupling weights are now computed via the SharedProjection energy-based
+# mechanism. Explicit static constants removed under the emergence contract.
 
 # --------------------------------------------------------------------------- #
 # Disk-based API data cache (survives app restarts)                            #
@@ -602,97 +591,10 @@ PIPELINE_STEPS: list[str] = [
 # --------------------------------------------------------------------------- #
 # Semantic feature names: human-readable labels for each UKT feature index    #
 # --------------------------------------------------------------------------- #
-FEATURE_NAMES: list[str] = [
-    # 0-15: temporal-pattern region (populated by Finance / TFT)
-    "attention_recent_1d",      # 0  — attention weight on most-recent encoder step
-    "attention_recent_2d",      # 1
-    "attention_recent_3d",      # 2
-    "attention_mid_week",       # 3  — attention on ~5-day horizon
-    "attention_mid_2wk",        # 4
-    "attention_mid_month",      # 5
-    "attention_long_6wk",       # 6
-    "attention_long_2mo",       # 7
-    "attention_long_quarter",   # 8
-    "attention_decay_fast",     # 9
-    "attention_decay_slow",     # 10
-    "attention_regime_shift",   # 11 — attention spike at regime boundary
-    "attention_trend_strength", # 12
-    "attention_volatility",     # 13
-    "attention_tail_15",        # 14
-    "attention_tail_16",        # 15
-
-    # 16-31: semantic-embedding region (populated by Clusters / BERTopic)
-    "topic_share_dominant",     # 16 — fraction of docs in largest topic
-    "topic_share_2nd",          # 17
-    "topic_share_3rd",          # 18
-    "topic_share_4th",          # 19
-    "topic_share_5th",          # 20
-    "topic_share_6th",          # 21
-    "topic_share_minor",        # 22
-    "topic_share_outlier",      # 23
-    "encoder_var_imp_1",        # 24 — TFT encoder variable importance
-    "encoder_var_imp_2",        # 25
-    "encoder_var_imp_3",        # 26
-    "macro_gdp_growth",         # 27 — finance macro: normalized GDP growth rate
-    "macro_inflation",          # 28 — finance macro: normalized inflation rate
-    "macro_fx_rate",            # 29 — finance macro: normalized FX rate vs USD
-    "macro_cpi_inflation",      # 30 — finance macro: normalized CPI inflation
-    "macro_market_cap_gdp",     # 31 — finance macro: normalized market cap / GDP
-
-    # 32-47: structural-centrality region (populated by Graph engine)
-    "centrality_node_0",        # 32 — flattened node centrality (degree, betw, eig, pr)
-    "centrality_node_1",        # 33
-    "centrality_node_2",        # 34
-    "centrality_node_3",        # 35
-    "centrality_node_4",        # 36
-    "centrality_node_5",        # 37
-    "centrality_node_6",        # 38
-    "centrality_node_7",        # 39
-    "centrality_node_8",        # 40
-    "centrality_node_9",        # 41
-    "centrality_node_10",       # 42
-    "centrality_node_11",       # 43
-    "centrality_node_12",       # 44
-    "centrality_node_13",       # 45
-    "centrality_node_14",       # 46
-    "centrality_node_15",       # 47
-
-    # 48-63: dynamic-agent region (populated by Agent simulation)
-    "graph_density",            # 48
-    "graph_avg_clustering",     # 49
-    "graph_n_communities",      # 50
-    "agent_res_share_0",        # 51 — normalized resource share per agent
-    "agent_res_share_1",        # 52
-    "agent_res_share_2",        # 53
-    "agent_res_share_3",        # 54
-    "agent_res_share_4",        # 55
-    "alliance_eigen_1",         # 56 — top eigenvalue of alliance matrix
-    "alliance_eigen_2",         # 57
-    "alliance_eigen_3",         # 58
-    "alliance_eigen_4",         # 59
-    "alliance_eigen_5",         # 60
-    "alliance_eigen_6",         # 61
-    "alliance_eigen_7",         # 62
-    "alliance_eigen_8",         # 63
-
-    # 64-79: geospatial-kernel region (populated by Spatial raster SVD)
-    "spatial_kernel_importance_0",   # 64 — normalised singular values (cross-layer kernels)
-    "spatial_kernel_importance_1",   # 65
-    "spatial_kernel_importance_2",   # 66
-    "spatial_kernel_importance_3",   # 67
-    "spatial_kernel_importance_4",   # 68
-    "spatial_kernel_importance_5",   # 69
-    "node_spatial_loading_USA",      # 70 — dominant kernel node loading per country
-    "node_spatial_loading_Russia",   # 71
-    "node_spatial_loading_China",    # 72
-    "node_spatial_loading_Britain",  # 73
-    "node_spatial_loading_India",    # 74
-    "node_spatial_loading_Brazil",   # 75
-    "spatial_summary_elevation",     # 76 — mean normalised elevation across nodes
-    "spatial_summary_temperature",   # 77 — mean normalised temperature across nodes
-    "spatial_summary_conflict",      # 78 — mean normalised conflict density across nodes
-    "spatial_summary_economic",      # 79 — mean normalised economic score across nodes
-]
+# In an emergent architecture, feature labels are derived from the active
+# feature metadata and registry. As a stable fallback we expose positional
+# names.
+FEATURE_NAMES: list[str] = [f"dim_{i}" for i in range(UKT_FEATURE_DIM)]
 
 # Region-level semantic descriptions for human reports
 REGION_DESCRIPTIONS: dict[str, str] = {

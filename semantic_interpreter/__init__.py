@@ -52,6 +52,7 @@ from semantic_interpreter.canvas import (
     SemanticCanvas,
     SemanticDimension,
     CanvasEntry,
+    build_emergent_canvas,
 )
 from semantic_interpreter.sae import (
     StageSAE,
@@ -66,11 +67,17 @@ from semantic_interpreter.narrator import (
     LLMNarrator,
     get_narrator,
 )
+from semantic_interpreter.pipeline import (
+    InterpretationConfig,
+    InterpretationResult,
+    InterpretationPipeline,
+)
 
 __all__ = [
     "SemanticCanvas",
     "SemanticDimension",
     "CanvasEntry",
+    "build_emergent_canvas",
     "StageSAE",
     "GlobalSAE",
     "train_stage_sae",
@@ -80,4 +87,7 @@ __all__ = [
     "TemplateNarrator",
     "LLMNarrator",
     "get_narrator",
+    "InterpretationConfig",
+    "InterpretationResult",
+    "InterpretationPipeline",
 ]

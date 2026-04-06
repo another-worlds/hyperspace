@@ -158,8 +158,7 @@ class TestPipelineAcceptance:
         assert canvas is not None
         assert len(canvas.entries) == 5
         for entry in canvas.entries:
-            assert entry.coordinates.shape == (CANVAS_DIM,)
-            assert len(entry.dominant_dimensions) > 0
+            assert entry.coordinates.shape == (len(canvas.dimensions),)
             assert len(entry.interpretation) > 0
 
 
@@ -262,9 +261,8 @@ class TestRegressionGuards:
             "Finance", "Clusters", "Graph", "Agents", "Spatial",
         }
 
-    def test_twelve_canvas_dimensions(self):
-        assert CANVAS_DIM == 12
-        assert len(CANVAS_DIMENSIONS) == 12
+    def test_canvas_dimensions_are_dynamic(self):
+        assert CANVAS_DIM == len(CANVAS_DIMENSIONS)
 
     def test_five_governance_flag_codes(self):
         assert len(GOVERNANCE_FLAG_CODES) == 6

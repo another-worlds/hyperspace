@@ -45,7 +45,6 @@ import numpy as np
 # Pass a restricted topology set to __init__ to limit coupling if needed.
 
 DEFAULT_TOPOLOGY: None = None  # Sentinel: means "all pairs"
-FEATURE_DIM: int = 80  # Monolithic feature space dimension
 
 
 def _random_orthogonal(n: int, rng: np.random.Generator) -> np.ndarray:
@@ -79,10 +78,13 @@ class SharedProjection:
     couple. Everything else (strength, direction) comes from data.
 
     Args:
-        block_names: List of block names that may be observed (e.g.,
-            ["finance", "clusters", "graph", "agents", "spatial"]).
+        block_names: Optional list of known block names (pre-topology).  When
+            omitted, blocks self-register as they are observed — emergent mode.
         topology: Set of (source_block, target_block) pairs that can couple.
             If None, all block pairs can couple (data-driven strength gates weak).
+        dim: Initial feature-space dimension.  Use ``0`` (default) for emergent
+            mode where the dimension is inferred from the first observed block
+            and expands as new blocks with different feature counts arrive.
         seed: Random seed for the orthogonal fallback basis.
     """
 
@@ -90,52 +92,103 @@ class SharedProjection:
         self,
         block_names: list[str] | None = None,
         topology: set[tuple[str, str]] | None = DEFAULT_TOPOLOGY,
+        dim: int = 0,
         seed: int = 2025,
     ):
-        self.block_names = block_names or []
-        self.dim = FEATURE_DIM  # Monolithic 80-dim space
+        self.block_names = list(block_names or [])
+        self.dim = dim
         self.seed = seed
+        self._rng = np.random.default_rng(self.seed)
 
         # Full topology: all directed block pairs. Data-driven strength
         # gates weak couplings to near-zero, so no need to restrict.
         if topology is None:
-            self.topology = {
+            self.topology: set[tuple[str, str]] = {
                 (src, tgt)
                 for src in self.block_names
                 for tgt in self.block_names
                 if src != tgt
             }
         else:
-            self.topology = topology
+            self.topology = set(topology)
         self._block_features: dict[str, np.ndarray] = {}
-        self._P = np.eye(self.dim)
+        self._P: np.ndarray | None = np.eye(self.dim) if self.dim > 0 else None
         self._P_inv: np.ndarray | None = None
 
-        # Pre-compute fallback orthogonal bases for each block pair
-        # Used when feature vectors are too weak for reliable direction estimation
-        rng = np.random.default_rng(self.seed)
+        # Fallback orthogonal bases are computed on-demand (not pre-allocated)
+        # so that they resize correctly when dim expands.
         self._fallback_bases: dict[tuple[str, str], np.ndarray] = {}
         for src in self.block_names:
             for tgt in self.block_names:
                 if src != tgt:
                     self._fallback_bases[(src, tgt)] = _random_orthogonal(
-                        self.dim, rng,
+                        self.dim, self._rng,
                     )
+
+    def _ensure_dim(self, new_dim: int) -> None:
+        """Expand the projection space to ``new_dim`` if it is larger than current."""
+        if new_dim <= self.dim:
+            return
+        old_dim = self.dim
+        self.dim = new_dim
+        # Expand projection matrix: embed old P in the top-left, identity elsewhere
+        new_P = np.eye(new_dim)
+        if self._P is not None and old_dim > 0:
+            new_P[:old_dim, :old_dim] = self._P
+        self._P = new_P
+        self._P_inv = None
+        # Re-pad stored block feature vectors
+        for k, v in self._block_features.items():
+            self._block_features[k] = np.pad(v, (0, new_dim - old_dim))
+        # Invalidate cached fallback bases (wrong size now)
+        self._fallback_bases.clear()
+
+    def _get_fallback_basis(self, src: str, tgt: str) -> np.ndarray:
+        """Return (or compute) the orthogonal fallback basis for a block pair."""
+        key = (src, tgt)
+        cached = self._fallback_bases.get(key)
+        if cached is None or cached.shape[0] != self.dim:
+            self._fallback_bases[key] = _random_orthogonal(self.dim, self._rng)
+        return self._fallback_bases[key]
 
     def observe(self, block_name: str, features: np.ndarray) -> None:
         """Record a block's features and rebuild the projection.
 
+        The projection self-expands when ``features`` is longer than the current
+        dimension (emergent mode).  New blocks are automatically added to the
+        coupling topology so the data drives all cross-block relationships.
+
         Args:
-            block_name: The block name (e.g., "finance", "clusters", "graph", "agents", "spatial").
-            features: The block's full 80-dim feature vector (sparse, with non-zeros in the block's feature range).
+            block_name: The block name (any string identifier).
+            features: The block's feature vector (any length ≥ 1).
         """
-        if len(features) != self.dim:
-            raise ValueError(f"Expected feature vector of dimension {self.dim}, got {len(features)}")
+        n = len(features)
+        if self.dim == 0:
+            # Lazy initialization: infer dim from the very first block
+            self.dim = n
+            self._P = np.eye(n)
+        elif n > self.dim:
+            self._ensure_dim(n)
+        elif n < self.dim:
+            features = np.pad(features, (0, self.dim - n))
+        # Auto-register new block into topology
+        if block_name not in self.block_names:
+            for existing in self.block_names:
+                self.topology.add((existing, block_name))
+                self.topology.add((block_name, existing))
+            self.block_names.append(block_name)
         self._block_features[block_name] = features.copy()
         self._rebuild()
 
     def _rebuild(self) -> None:
-        """Rebuild the projection matrix from all observed block features."""
+        """Rebuild the projection matrix from all observed block features.
+
+        Coupling contribution is **linear** in strength: ``P += block`` where
+        ``block = strength * data + (1 - strength) * fallback``.  The energy
+        ratio already gates weak couplings toward the safe orthogonal fallback,
+        so applying strength as an additional outer multiplier would create
+        unintended quadratic suppression of data-driven coupling.
+        """
         P = np.eye(self.dim)
 
         for src_name, tgt_name in self.topology:
@@ -157,18 +210,18 @@ class SharedProjection:
                 continue
 
             # Direction from data: rank-1 projection along dominant feature directions
-            # across the full 80-dim monolithic space.
+            # across the full monolithic feature space.
             # Blend ratio is data-driven: strong signals (strength≈1) get mostly
             # data-driven direction; weak signals get mostly orthogonal fallback.
             v_src = f_src / e_src
             v_tgt = f_tgt / e_tgt
             data_block = np.outer(v_tgt, v_src)
-            fallback = self._fallback_bases[(src_name, tgt_name)]
+            fallback = self._get_fallback_basis(src_name, tgt_name)
             alpha = strength  # Data confidence tracks coupling strength
             block = alpha * data_block + (1.0 - alpha) * fallback
 
-            # Add to full projection matrix (strength-scaled outer product)
-            P += strength * block
+            # Linear gating: strength controls blend ratio only, not magnitude.
+            P += block
 
         self._P = P
         self._P_inv = None  # Invalidate cache
@@ -188,7 +241,16 @@ class SharedProjection:
 
         Returns:
             ``(feature_dim,)`` projected vector with cross-region mixing.
+            Returns the input unchanged when the projection has not yet been
+            initialized (dim == 0).
         """
+        if self._P is None or self.dim == 0:
+            return features
+        n = len(features)
+        if n < self.dim:
+            features = np.pad(features, (0, self.dim - n))
+        elif n > self.dim:
+            features = features[:self.dim]
         return self._P @ features
 
     def back_project(self, projected: np.ndarray) -> np.ndarray:
@@ -197,8 +259,20 @@ class SharedProjection:
 
     @property
     def projection_matrix(self) -> np.ndarray:
-        """The full projection matrix P (copy for safety)."""
+        """The full projection matrix P (copy for safety).
+
+        Returns an empty ``(0, 0)`` array when no blocks have been observed yet.
+        """
+        if self._P is None:
+            return np.eye(0)
         return self._P.copy()
+
+    @staticmethod
+    def _energy_ratio(f_a: np.ndarray, f_b: np.ndarray) -> float:
+        """Compute the energy-based coupling strength between two feature vectors."""
+        e_a = float(np.linalg.norm(f_a))
+        e_b = float(np.linalg.norm(f_b))
+        return min(e_a, e_b) / (max(e_a, e_b) + 1e-8)
 
     @property
     def active_couplings(self) -> list[CouplingInfo]:
@@ -207,11 +281,10 @@ class SharedProjection:
         for src_name, tgt_name in sorted(self.topology):
             if src_name not in self._block_features or tgt_name not in self._block_features:
                 continue
-            f_src = self._block_features[src_name]
-            f_tgt = self._block_features[tgt_name]
-            e_src = float(np.linalg.norm(f_src))
-            e_tgt = float(np.linalg.norm(f_tgt))
-            strength = min(e_src, e_tgt) / (max(e_src, e_tgt) + 1e-8)
+            strength = self._energy_ratio(
+                self._block_features[src_name],
+                self._block_features[tgt_name],
+            )
             if strength > 1e-6:
                 couplings.append(CouplingInfo(
                     source_block=src_name,

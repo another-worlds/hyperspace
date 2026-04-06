@@ -288,29 +288,38 @@ class LLMNarrator(NarratorBackend):
 
         try:
             import torch
-            from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeout
+            import threading
+            import queue
 
             inputs = tokenizer.encode(prompt, return_tensors="pt",
                                       truncation=True, max_length=400)
 
-            def _run_generation():
-                with torch.no_grad():
-                    outputs = model.generate(
-                        inputs,
-                        max_new_tokens=max_tokens or self.max_new_tokens,
-                        do_sample=False,
-                        pad_token_id=tokenizer.eos_token_id,
-                    )
-                return outputs
+            result_queue: queue.Queue = queue.Queue()
 
-            executor = ThreadPoolExecutor(max_workers=1)
-            future = executor.submit(_run_generation)
-            executor.shutdown(wait=False)
+            def _run_generation():
+                try:
+                    with torch.no_grad():
+                        outputs = model.generate(
+                            inputs,
+                            max_new_tokens=max_tokens or self.max_new_tokens,
+                            do_sample=True,
+                            temperature=self.temperature,
+                            pad_token_id=tokenizer.eos_token_id,
+                        )
+                    result_queue.put((True, outputs))
+                except Exception as e:
+                    result_queue.put((False, e))
+
+            thread = threading.Thread(target=_run_generation, daemon=True)
+            thread.start()
+
             try:
-                outputs = future.result(timeout=self._generation_timeout)
+                success, data = result_queue.get(timeout=self._generation_timeout)
+                if not success:
+                    raise data
+                outputs = data
                 self._timeout_count = 0  # Reset on success
-            except FuturesTimeout as e:
-                future.cancel()
+            except queue.Empty:
                 self._timeout_count += 1
                 logger.warning(
                     "LLM generation timeout (%ss) for %s (count %d/%d)",
