@@ -27,10 +27,12 @@ Per CLAUDE.md, three things matter for the demo. All three are operational:
 - Cross-block coupling is derived from `SharedProjection` energy weights, not constants.
 - Block and feature names are data-agnostic (generic positional names enriched by runtime metadata from the registry).
 
-### 2.2 Total interpretability — ✅ Working
-- Every claim is traceable: narrative → kernel → SVD → features → raw data.
+### 2.2 Total interpretability — ⚠ Working for provenance, broken at the interpretation layer
+- **Provenance chain is intact.** Every number is traceable: narrative → kernel → SVD → features → raw data. An engineer-auditor can reconstruct any printed value from stored snapshots.
+- **Interpretation link is hollow in the default state.** When the `arnir0/Tiny-LLM` narrator is unavailable (which is the current default state), the system silently falls back to `TemplateNarrator`, which is a provenance formatter, not an interpreter. Template output collapses cross-block concepts into single-block labels (`"primarily encodes Finance information"`) that contradict the very evidence printed alongside them. See VISION.md invariants 5, 9, 10 and CLAUDE.md "Grammar rules for interpretive text".
+- **Upstream cause:** `semantic_interpreter/sae.py:243-277` (`label_concepts`) destroys the cross-block signature at the labeling step itself via `argmax` over per-block loading sums. No downstream narrator — template or LLM — can recover what the SAE labeler already threw away.
 - Interpretability registry (`hyperspace/core/interpretability_registry.py`) provides feature-name lookups used in hover templates and axis labels across all charts.
-- Sparse autoencoder (`hyperspace/models/sparse_ae.py`) + contrastive encoder + mechanistic probes provide layered explanations.
+- Sparse autoencoder (`hyperspace/models/sparse_ae.py`) + contrastive encoder + mechanistic probes provide layered explanations at the provenance level.
 - Kernel library (`hyperspace/core/kernel_library.py`) persists labeled kernels for reuse across runs.
 - Drift monitor and faithfulness checks gate claims against data.
 
@@ -114,9 +116,15 @@ From CLAUDE.md's debt table, the only item not yet fully retired:
 | Item | Location | Status |
 |------|----------|--------|
 | Tab UI implementations | `hyperspace/pages/*.py` | Scaffolding — generated in initial oneshot, patched incrementally, not redesigned from the ground up. Phase 3–4 compliance passes have brought them into policy compliance, but a proper per-tab redesign has not been undertaken. |
-| Narrator template fallback | `semantic_interpreter/narrator.py:186–386` | Acceptable for now — graceful degradation when LLM unavailable. Templates must not claim things the data does not support; this invariant is currently respected. |
+| Narrator template fallback | `semantic_interpreter/narrator.py:76–195` | **Hard failure** — see CLAUDE.md debt table and VISION.md invariants 5, 9, 10. Not acceptable as graceful degradation; governance pipeline must refuse to emit a System Summary when the LLM is down. Template output is a provenance formatter, not an interpreter, and cannot describe cross-block emergent concepts. |
+| SAE concept labeling collapses cross-block structure | `semantic_interpreter/sae.py:243–277` | **Bug — violates Emergence Contract.** `label_concepts` computes `dominant_region` via `argmax` over per-block absolute-loading sums and uses that as the concept's interpretive name. Cross-block signature is destroyed at the labeling step itself. Tracked in CLAUDE.md debt table and ARCHITECTURE.md "SAE Concept Label Data Contract". |
+| Stale ARCHITECTURE.md prose | `docs/ARCHITECTURE.md:138, 145` | Minor doc drift. L138 describes narrator as "Tiny-LLM (13M params) + template fallback" and L145 says canvas axis label is "derived from the concept's dominant region" — both contradict the new Governance Narrative Contract and SAE Concept Label Data Contract sections in the same file. Flagged for cleanup in a follow-up doc pass; not blocking. |
 
 Everything else previously listed as debt (canvas dimensions, coupling weights, block/feature names, thresholds, contrast, uncached computation) has been addressed.
+
+### Known interpretability gaps
+
+The Phase-5 doctrine updates introduced four enforceable grammar rules for interpretive text (see CLAUDE.md "Grammar rules for interpretive text"): no "{kernel/concept} encodes {block}" sentences, no single-block labels on multi-block concepts, no "System Summary" when the LLM is down, and no interpretive verbs in template output. The current template narrator and SAE labeler both violate rules 1–4; the LLMNarrator, when online, can in principle comply with all four but only if it is given the full cross-block concept signature as structured input — which currently it is not, because the SAE labeler pre-collapses the signature upstream. Fixing these gaps is a code change deferred to a separate work item so the doctrine commit has its own reviewable surface.
 
 ---
 
