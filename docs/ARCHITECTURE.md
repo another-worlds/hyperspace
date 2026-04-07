@@ -147,6 +147,59 @@ number of axes varies per run — typically 10–20 depending on how many
 concepts the SAE activates. Coupling between blocks is measured by
 SharedProjection's energy-based coupling weights, not by fixed constants.
 
+### Governance Narrative Contract
+
+A narrator implementation is considered **governance-grade** iff every
+narrative it emits carries all five of the following fields. A narrative
+missing any field is incomplete and must not be presented as a governance
+output. This contract is conceptual — the current code does not yet
+materialize these fields as structured data; this section documents the
+target shape. See VISION.md invariants 5 and 9.
+
+- `anchor`: `{event_id, timestamp, decision_or_forecast_reference}` — the
+  decision, forecast, or event the narrative explains. A "state of the
+  system" summary with no anchor is not a governance output.
+- `direction`: `{source: "reality_regression" | "counterfactual", vector, sign}`
+  — the direction of influence, drawn from the reality-regression vector
+  or counterfactual deltas, not from SVD co-variance alone. Co-variation
+  is not causation.
+- `temporal`: `{activation_time, delta_from_prior_run}` — when the pattern
+  activated, and how it differs from the previous snapshot. Drift deltas
+  and cross-run stability live here.
+- `cross_item_synthesis`: `List[{concept_a, concept_b, relation}]` — how
+  the active concepts relate to each other and to the dominant kernels.
+  Parallel independent bullets do not satisfy this field.
+- `feature_evidence`: `List[{feature_name, block, loading}]` — top
+  supporting features resolved through the registry to human-meaningful
+  names, not bare indices like `Finance_19`.
+
+This contract is distinct from the **InterpretableModule Contract** (see
+"Architecture Specifications — SPEC-3" below), which governs the shape of
+*block-level adapter outputs*. The Governance Narrative Contract governs
+the shape of *downstream narrator outputs* and is enforced at the
+interpretation layer, not the block layer. The two should not be merged.
+
+### SAE Concept Label Data Contract
+
+SAE concept labels must preserve the full signed cross-block signature as
+structured data: `{block_name: signed_contribution}`, one entry per block
+region, with signs preserved. The `dominant_region` field, if present, is
+a **non-authoritative provenance hint** and must never be used as the
+concept's display name or the subject of an interpretive sentence.
+Downstream code that treats `dominant_region` as a semantic label is in
+violation of this contract.
+
+**Reference violation:** `semantic_interpreter/sae.py:243-277`
+(`label_concepts`) currently computes `dominant_region` via `argmax` over
+per-block absolute-loading sums and then embeds it in a template string
+`"primarily encodes {dominant_region} information"`. This collapses a
+genuinely cross-block emergent concept to a single-block label before any
+narrator sees it. The cross-block signature is destroyed at the labeling
+step itself, and no downstream narrator — template or LLM — can recover
+it. Tracked in CLAUDE.md "Known Technical Debt". See VISION.md invariants
+5, 9, 10 and the UKT subsection ("Kernels are features of information,
+not sources of it").
+
 ---
 
 ## UKT Feature Layout

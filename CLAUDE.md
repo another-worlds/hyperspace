@@ -24,14 +24,24 @@ This project is developed entirely through stateless LLM sessions. You have no m
 |------|-------|--------|-------------|
 | Semantic Canvas dimensions | `hyperspace/models/semantic_canvas.py` | **Complete** | Dimensions built entirely from active SAE concepts via `build_emergent_canvas()`. No per-block canvas replay. REGION_SEMANTIC_SPEC, CANVAS_COUPLING_*, _default_dimensions() all removed. |
 | Tab UI implementations | `hyperspace/pages/*.py` | Scaffolding | Generated in initial oneshot prompt, patched incrementally. Never redesigned from ground up. |
-| Narrator template fallback | `semantic_interpreter/narrator.py:186-386` | Acceptable for now | Template narratives substitute when LLM unavailable. Acceptable graceful degradation, but templates must never claim things the data doesn't support. |
+| Narrator template fallback | `semantic_interpreter/narrator.py:76-195` | **HARD FAILURE — blocks interpretability** | **Symptom:** "System Summary" presents kernel/concept claims while the LLM status line directly above reads "unavailable". Template narratives are NOT acceptable graceful degradation. They are structurally incapable of describing emergent cross-block concepts: they can only slot-fill per-concept strings ("primarily encodes {dominant_region}") that collapse a cross-domain signature into a single-block label, erasing the exact cross-block relationships that define an emergent concept. See VISION.md invariants 5, 9, 10 and Philosophy 2. LLM unavailability must be treated as a hard failure in the governance pipeline, not a fallback. |
+| SAE concept labeling collapses cross-block structure | `semantic_interpreter/sae.py:243-277` (`label_concepts`) | **Bug — violates Emergence Contract** | **Symptom:** concept sentence says *"primarily encodes {block} information"* while the top-3 loadings printed on the next line span multiple blocks with mixed sign. `dominant_region` is computed as `argmax` over per-block absolute-loading sums, then the concept is described as "primarily encodes {region} information". This forces a genuinely cross-block emergent concept into a single-block label before any narrator sees it. The UKT thesis (kernels/concepts span blocks) is lost at the labeling step itself. Fix: label concepts by their **cross-block signature** (signed contributions from each region), not a single dominant region. See VISION.md invariant 10. |
 | Canvas coupling weights | `config.py` (was CANVAS_COUPLING_*) | **Removed** | Coupling now derived from SharedProjection energy-based weights, not hardcoded constants. |
 | Block/feature names | `config.py`, `semantic_canvas.py` | **Emergent** | Block labels and feature names are data-agnostic. Generic positional names enriched by runtime metadata. |
+
+### Grammar rules for interpretive text
+
+Enforceable by code review on any narrator, SAE labeler, or UI string that describes a kernel or concept. Violations correspond to concrete debt items in the table above.
+
+1. **Never write "{kernel/concept} encodes {block} information."** Kernels and concepts are cross-block by construction (VISION.md UKT subsection, invariant 10). This sentence shape is a category error — it puts the kernel in the grammatical position of a source when the kernel is a *feature of* the integrated information across sources. Correct form: *"K0 is the axis along which Finance and Graph features co-vary."*
+2. **Never assign a single-block label to a concept whose top-k loadings span >1 block.** If a concept's top 3 loadings are from Finance, Agents, and Graph, no label may reduce it to any one of those three. Preserve the full signed cross-block signature as structured data; the label is the signature, not an argmax over it.
+3. **Never emit a "System Summary" when the LLM health check reports `unavailable`.** Surface a governance error in its place. Template output is not a fallback for interpretation — it is a provenance formatter only. See VISION.md invariant 9.
+4. **Templates may emit verbatim provenance** (loadings, activations, variance shares, feature names from the registry). **Templates must not emit interpretive verbs** — no "encodes", "indicates", "represents", "drives", "primarily", "strongly suggests". Those verbs make claims that a template cannot justify; only an LLM narrator with access to the full cross-block signature and the reality-regression direction may use them.
 
 ### MVP Priority (what matters for the demo)
 
 1. **Universal kernels that emerge from real data** — The SVD path works. This is the core. Protect it.
-2. **Total interpretability** — Every claim traceable: narrative → kernel → SVD → features → raw data. No gaps in the chain.
+2. **Total interpretability** — Every claim traceable: narrative → kernel → SVD → features → raw data. No gaps in the chain. Traceability of provenance is necessary but not sufficient: the narrative link itself must carry semantic content a non-engineer can audit. A provenance dump in sentence form does not satisfy interpretability even if every number in it is reproducible.
 3. **Governance** — Every output auditable, contestable, with counterfactual support.
 4. Everything else (UI polish, caching, parallel speedups) is secondary to these three.
 

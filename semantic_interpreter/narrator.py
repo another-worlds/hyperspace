@@ -6,8 +6,32 @@ Supports multiple backends:
   - LLMNarrator: uses a small language model for richer narratives
   - Custom backends: implement NarratorBackend protocol
 
-The narrator is pluggable — use templates for speed, LLMs for richness,
-or write your own backend for domain-specific language.
+The narrator is pluggable at the protocol level. However, templates and
+LLMs are NOT interchangeable speed/richness knobs — they serve different
+roles in the interpretability framework.
+
+⚠ Contract — read before modifying either backend.
+
+TemplateNarrator is a **provenance formatter**, not an interpreter. It is
+permitted to list measured quantities (loadings, activations, variance
+shares, feature names from the registry) in sentence form. It is NOT
+permitted to emit interpretive verbs ("encodes", "indicates",
+"represents", "drives", "primarily", "strongly suggests") or single-block
+labels for cross-block concepts. Any sentence of the form
+"{kernel/concept} encodes {block} information" is a category error and
+must not be emitted by any backend — it puts the kernel in the
+grammatical position of a source when the kernel is a *feature of* the
+integrated information across sources.
+
+LLMNarrator is the **interpreter**. When the LLMNarrator is unavailable,
+the governance pipeline must raise a hard failure — TemplateNarrator is
+not a fallback for interpretation. Emitting a "System Summary" while the
+LLM status line reads "unavailable" is a governance violation, not
+graceful degradation.
+
+See VISION.md invariants 5, 9, 10, the UKT "Kernels are features of
+information, not sources of it" paragraph, and CLAUDE.md "Grammar rules
+for interpretive text" for the full doctrine.
 """
 from __future__ import annotations
 

@@ -38,11 +38,15 @@ The UKT is the central analytical engine. It standardizes heterogeneous features
 
 **The Emergence Contract:** Kernels are NOT pre-defined. They emerge from the structure in the data. The pipeline does not name them, the blocks do not determine them, and the projection topology does not restrict which blocks can couple. The only structural prior is the block feature allocation (which features belong to which block for provenance); everything else — coupling strength, coupling direction, kernel count, kernel importance — comes from the data.
 
+**Kernels are features of information, not sources of it.** A kernel is a learned direction in the shared projected feature space — a pattern along which multiple blocks co-vary. Block names that appear attached to a kernel (e.g. "K0 (Finance 0.60, Graph 0.27)") are a *provenance decomposition* of where the kernel's mass falls, not a statement of what the kernel is "about." Any sentence that puts a kernel in the grammatical position of a subject with a topic — "K0 encodes Finance," "K0 is a finance kernel" — mis-frames a cross-block regularity as a single-block source and silently erases the emergent structure the UKT exists to discover. The correct grammar puts the kernel in the predicate's object position: "K0 is the axis along which Finance and Graph features co-vary." Sources are the data blocks; kernels are regularities the system found in the joint signal those sources produced.
+
 ### The Semantic Interpretability Framework — Human Translation
 
 The Interpretability Framework sits downstream of the UKT and translates emergent structure into named coordinates and natural-language narratives. It provides three layers of explanation: an emergent coordinate system (the Semantic Canvas, whose axes are discovered SAE concepts), pattern labeling (kernel narratives grounded in SVD evidence), and contestability (counterfactual analysis).
 
 **The Interpretive Lens Contract:** The Semantic Canvas is a fully emergent interpretive system. Its dimensions are discovered — not prescribed — from SAE concept decomposition of the projected feature space. Each run produces its own set of canvas axes corresponding to active sparse autoencoder concepts. What varies is both the dimensions themselves (which concepts emerge) and the coordinates (how strongly each concept activates). The Canvas translates emergent structure into human-readable coordinates; it does not impose structure. The UKT discovers kernels; the SAE discovers concepts; the Canvas names them.
+
+The "features of information, not sources of it" grammar rule from the UKT subsection above applies verbatim to SAE concepts. A concept whose top loadings span multiple blocks is not a concept "about" the dominant block; it is a concept *of the joint pattern* across those blocks. Labels that collapse this to a single block are a violation of both the Emergence Contract and the Interpretive Lens Contract.
 
 ---
 
@@ -58,7 +62,13 @@ These properties must hold in every version of the system. Violating any of them
 
 4. **Full replay after each block.** When a new block arrives and the projection matrix is rebuilt, ALL blocks are re-projected through the updated matrix. No block retains stale coordinates from an earlier projection epoch.
 
-5. **Faithful narratives.** Every claim in a kernel narrative is backed by a measured quantity from the SVD decomposition. Narrative shape reflects kernel complexity (single-block, two-block coupling, multi-block pattern).
+5. **Faithful narratives.** Every claim in a kernel narrative is backed by a measured quantity from the SVD decomposition. Narrative shape reflects kernel complexity (single-block, two-block coupling, multi-block pattern). A governance-grade narrative must contain all of the following; a narrative missing any of them is incomplete and must not be presented as a governance output:
+
+   (a) **Anchor** — the decision, forecast, or event this narrative explains (not a free-floating "state of the system" summary).
+   (b) **Direction of influence** — drawn from the reality-regression vector or counterfactual deltas, not from SVD co-variance alone. Co-variation is not causation; the narrative must cite the actual gradient/counterfactual signal when making directional claims.
+   (c) **Temporal context** — when the pattern activated, and whether it is a change from the prior run (drift deltas, stability across snapshots).
+   (d) **Cross-item synthesis** — how the active concepts relate to each other and to the dominant kernels. Parallel independent bullets ("C05 is X. C01 is Y. C00 is Z.") are not synthesis; the narrative must describe relationships between items.
+   (e) **World-grounded feature names** — resolved through the feature registry to human-meaningful terms, not bare indices like `Finance_19` or `Agents_74`.
 
 8. **Regions are provenance metadata only.** Block-to-feature-range mappings exist for provenance tracking and feature naming, never for structural enforcement. No block "owns" reserved indices; the feature space is monolithic.
 
@@ -67,6 +77,19 @@ These properties must hold in every version of the system. Violating any of them
 7. **Snapshot preservation.** Each analytical step produces a snapshot containing raw features, projected matrix, SVD decomposition, kernel labels, canvas entries, stability estimates, and the projection matrix. Any interpretation can be reconstructed from its snapshot.
 
 8. **Centralized thresholds.** All magic numbers used in governance and display logic are defined in a single configuration source with descriptive names, making them auditable and consistent.
+
+9. **LLM narration is a vital, non-optional part of the interpretability framework.** The language model (currently `arnir0/Tiny-LLM`, but the role, not the identity, is what matters) is the only component in the pipeline capable of translating emergent cross-block structure into language that a non-engineer can audit. Templates cannot perform this role, for three structural reasons:
+
+   1. **Emergent concepts are cross-block by construction.** A concept that loads (+0.137) on a Finance feature, (+0.103) on an Agents feature, and (-0.093) on a Graph feature is, by definition, not a "Finance concept" — it is a relationship between Finance, Agents, and Graph. A template can only slot-fill a single label per concept and therefore must collapse the concept to its single most-dominant block. That collapse silently destroys the exact structure the UKT was built to discover.
+   2. **Synthesis across concepts requires a language model.** A faithful narrative must relate multiple kernels and concepts to one another ("when K0 shifts in this direction, concept C05 rises together with C01, implying …"). This is synthesis, not slot-filling. Templates are per-item; they have no mechanism for cross-item reasoning.
+   3. **Governance audiences are non-engineers.** Policy officers, auditors, and UN stakeholders do not read loading matrices. The narrative layer is the only interface through which they can interrogate the system's conclusions. If that layer is a statistics stitch, the interpretability chain is complete on paper (narrative → kernel → SVD → features → data) but broken in practice, because the "narrative" link carries no semantic content beyond what a spreadsheet would.
+
+   Consequences for implementation:
+   - LLM unavailability **must be treated as a hard failure in the governance pipeline**, not a silent fallback. The system should refuse to emit a "System Summary" if the LLM is down, and must never present template output as if it were LLM-generated interpretation.
+   - Templates are acceptable **only for auxiliary provenance text** (e.g., listing top feature loadings verbatim), never for claims about what a concept, kernel, or reality-regression direction *means*.
+   - Concept labels produced by the SAE must preserve their cross-block signature (signed contributions per block) as structured data. The narrator, given that structured signature and an LLM, produces the human-readable claim. The SAE does not get to decide the concept's semantic label.
+
+10. **Label–evidence consistency.** No narrative sentence may assign a single-block label to a concept or kernel whose top feature loadings span multiple blocks. If the evidence printed alongside a label would, on its own, falsify the label, the label is not allowed to be emitted. This rule applies to templates and LLM output alike. A concrete example of the failure mode this invariant exists to prevent: a sentence that reads *"C05 primarily encodes Finance information"* printed directly above the evidence *"Top feature loadings: Finance_19 (+0.137), Agents_3 (+0.103), Graph_36 (−0.093)"* — three top features spanning three blocks with mixed sign, labeled as a single-block "Finance" concept. The evidence on the next line falsifies the label on the previous line. That sentence must never be emitted.
 
 ---
 
