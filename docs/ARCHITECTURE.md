@@ -147,6 +147,28 @@ number of axes varies per run — typically 10–20 depending on how many
 concepts the SAE activates. Coupling between blocks is measured by
 SharedProjection's energy-based coupling weights, not by fixed constants.
 
+### Governance Narrative Contract (VISION invariants 5, 9, 10)
+
+A narrator implementation is "governance-grade" if and only if its output contains all five of the following fields. Any output missing a field must not be presented to governance audiences.
+
+| Field | Source | Content |
+|-------|--------|---------|
+| **anchor** | Pipeline run metadata | `{event_id, timestamp, decision_or_forecast_reference}` — which decision, forecast, or event this narrative explains |
+| **direction** | Reality regression / counterfactual engine | `{source: "reality_regression" \| "counterfactual", vector, sign}` — direction of influence, not just co-variance |
+| **temporal** | KernelMemory / DriftMonitor | `{activation_time, delta_from_prior_run}` — when the pattern activated and whether it changed |
+| **cross_item_synthesis** | LLM narrator (cannot be templated) | `List[{concept_a, concept_b, relation}]` — how active concepts relate to each other and to kernels |
+| **feature_evidence** | FeatureRegionRegistry | `List[{feature_name, block, loading}]` — world-grounded names resolved from registry, not bare indices |
+
+When the LLM narrator is unavailable, the system must emit the provenance fields (anchor, temporal, feature_evidence) as a raw provenance table and explicitly withhold the interpretive fields (direction, cross_item_synthesis) with a governance error. It must not substitute template-generated interpretive text. See VISION.md invariant 9.
+
+### SAE Concept-Labeling Data Contract
+
+SAE concept labels produced by `sae.py:label_concepts()` must preserve the **full signed cross-block signature** as structured data: `{block_name: signed_contribution}` for every registered block region. The `dominant_region` field, if present, is a non-authoritative provenance hint — it records which block region has the largest sum of absolute loadings — and must **never** be used as the concept's display name or as the subject of an interpretive sentence.
+
+Downstream code that treats `dominant_region` as a semantic label is in violation of this contract (VISION invariant 10). A concept whose top-3 feature loadings span multiple blocks with mixed sign is a **cross-block pattern**, not a member of whichever block won the argmax.
+
+**Current status**: `sae.py:252-275` violates this contract. It emits `"primarily encodes {dominant_region} information"` — a single-block interpretive claim manufactured by argmax. This is logged in CLAUDE.md as a known bug.
+
 ---
 
 ## UKT Feature Layout

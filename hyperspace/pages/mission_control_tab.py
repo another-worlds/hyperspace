@@ -129,7 +129,10 @@ def render() -> None:
                         return "color: #34d399; font-weight: bold"
                     return "color: #ff6b6b; font-weight: bold"
 
-                styled_df = sc_df.style.applymap(_style_status, subset=["Status"])
+                try:
+                    styled_df = sc_df.style.map(_style_status, subset=["Status"])
+                except AttributeError:
+                    styled_df = sc_df.style.applymap(_style_status, subset=["Status"])
                 st.dataframe(styled_df, use_container_width=True, hide_index=True)
 
                 # Contract compliance

@@ -55,7 +55,7 @@ def _get_narrator() -> LLMNarrator:
             pass  # Non-Streamlit context; caching disabled
         _narrator = LLMNarrator(
             model_name="arnir0/Tiny-LLM",
-            max_new_tokens=60,
+            max_new_tokens=3000,
             temperature=0.7,
             cache_fn=cache_fn,
             generation_timeout=30.0,

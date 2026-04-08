@@ -79,6 +79,8 @@ def init_session_state() -> None:
         latent_version=None,
         # B1: Policy language mode toggle
         policy_language_mode=False,
+        # Main dashboard navigation
+        active_main_tab="Mission Control",
         # A1: Per-kernel contest annotations dict[kernel_id -> str]
         kernel_annotations={},
         # C1: Multi-stakeholder annotations list[dict]
@@ -168,4 +170,5 @@ def reset_pipeline() -> None:
     st.session_state.stakeholder_annotations = []
     st.session_state.counterfactual_result = None
     st.session_state.counterfactual_removed_block = None
+    st.session_state.active_main_tab = "Mission Control"
     # Note: policy_language_mode persists across resets (user preference)

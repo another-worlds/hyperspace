@@ -409,7 +409,7 @@ def check_concept_ablation(
 
     # Check first concept's region
     first_concept = active_labels[0]
-    concept_region = first_concept.get("dominant_region", "unknown")
+    concept_region = first_concept.get("dominant_region_hint", first_concept.get("dominant_region", "unknown"))
 
     # Soft check: concept and kernel share same region
     region_match = concept_region == dominant_kernel_region

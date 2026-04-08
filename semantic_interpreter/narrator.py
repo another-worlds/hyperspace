@@ -8,6 +8,16 @@ Supports multiple backends:
 
 The narrator is pluggable — use templates for speed, LLMs for richness,
 or write your own backend for domain-specific language.
+
+GOVERNANCE WARNING (VISION.md invariants 5, 9, 10):
+  TemplateNarrator is a provenance formatter, NOT an interpreter. It is
+  permitted to list measured quantities (loadings, activations, variance
+  shares) in sentence form. It is NOT permitted to emit interpretive verbs
+  ("encodes", "indicates", "represents", "drives") or single-block labels
+  for cross-block concepts. When LLMNarrator is unavailable, the governance
+  pipeline must raise a hard failure — TemplateNarrator is not a fallback
+  for interpretation. See VISION.md invariants 5, 9, 10 and CLAUDE.md
+  Grammar Rules for Interpretive Text.
 """
 from __future__ import annotations
 
@@ -22,6 +32,51 @@ logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from semantic_interpreter.canvas import SemanticCanvas, CanvasEntry
+
+
+# --------------------------------------------------------------------------- #
+# Few-shot exemplars for instruction-style prompts                             #
+# Gold-standard examples that teach the model register, structure, and depth.  #
+# --------------------------------------------------------------------------- #
+
+_EXEMPLARS: dict[str, str] = {
+    "canvas": (
+        "### Example\n"
+        "Data: K0 (45.2% var, Finance 0.61, Graph 0.27), equity_volatility_7d_zscore "
+        "(+0.41), trade_centrality (+0.33). C02 active across temporal-pattern and "
+        "structural-centrality. 5 layers.\n\n"
+        "Summary: Financial volatility and geopolitical network centrality jointly drive "
+        "45% of the signal — when markets stress, the most connected actors shift "
+        "position. This cross-domain coupling means market instability is structurally "
+        "linked to alliance dynamics, not isolated.\n\n"
+    ),
+    "kernel": (
+        "### Example\n"
+        "Data: K1 22.8% var. topic_diversity_entropy (+0.52), sentiment_mean_30d "
+        "(-0.31), geo_event_density (+0.19).\n\n"
+        "Interpretation: News diversity and sentiment move inversely — broadening topics "
+        "coincide with dropping sentiment and concentrated geopolitical events, linking "
+        "media fragmentation to on-the-ground activity.\n\n"
+    ),
+    "concept": (
+        "### Example\n"
+        "Data: C05 activation 0.73. equity_volatility_7d_zscore (+0.41), "
+        "bond_spread_delta (-0.28). Cross-block: temporal (+0.38), semantic (+0.22), "
+        "structural (-0.11).\n\n"
+        "Explanation: This concept links market stress to news sentiment and network "
+        "structure across three domains — a genuine cross-domain signal, not a "
+        "single-source artifact.\n\n"
+    ),
+    "reality": (
+        "### Example\n"
+        "Data: equity_volatility_7d_zscore [temporal] +0.041, trade_centrality "
+        "[structural] +0.030. Region energy: temporal 0.089, structural 0.065.\n\n"
+        "Assessment: Temporal market features dominate but structural network dynamics "
+        "reinforce the signal. The negative topic-entropy loading means narrowing news "
+        "coverage accompanies instability — monitor equity-volatility / trade-centrality "
+        "coupling as an early warning.\n\n"
+    ),
+}
 
 
 # --------------------------------------------------------------------------- #
@@ -113,9 +168,9 @@ class TemplateNarrator(NarratorBackend):
 
         if dominant:
             for d in dominant:
-                strength = "strongly" if d["value"] > 0.7 else "moderately"
+                # Emit provenance only, no interpretive verbs (CLAUDE.md Grammar Rules #4)
                 parts.append(
-                    f"The analysis {strength} indicates {d['label'].lower()} "
+                    f"Concept {d['label'].lower()} active "
                     f"(score: {d['value']:.2f})."
                 )
 
@@ -147,22 +202,42 @@ class TemplateNarrator(NarratorBackend):
         features = kernel_label.get("top_features", [])
 
         feat_desc = ", ".join(f['name'] for f in features[:3])
+        # Provenance only: variance explained and feature loadings (Grammar Rule #4)
         return (
-            f"Kernel {kernel_label.get('kernel_id', '?')} explains "
-            f"{importance:.1%} of variance, driven primarily by {region} "
-            f"patterns from {block}. Key features: {feat_desc}."
+            f"Kernel {kernel_label.get('kernel_id', '?')}: "
+            f"{importance:.1%} variance explained. "
+            f"Top loadings from {block}: {feat_desc}."
         )
 
     def narrate_concept(self, concept_label: dict, canvas: "SemanticCanvas") -> str | None:
         cid = concept_label.get("concept_id", "C??")
-        region = concept_label.get("dominant_region", "unknown").replace("-", " ")
         activation = concept_label.get("mean_activation", 0)
         features = concept_label.get("top_features", [])
-        feat_desc = ", ".join(f['name'] for f in features[:3])
-        return (
-            f"Concept {cid} encodes {region} patterns "
-            f"(activation: {activation:.4f}), loading on: {feat_desc}."
-        )
+        
+        # Check if cross-block signature is available (new format)
+        cross_block_sig = concept_label.get("cross_block_signature", {})
+        if cross_block_sig:
+            # Show cross-block signature instead of single dominant region
+            sig_parts = []
+            for region, contrib in cross_block_sig.items():
+                if abs(contrib) > 0.01:  # Only show meaningful contributions
+                    sig_parts.append(f"{region} ({contrib:+.2f})")
+            sig_desc = ", ".join(sig_parts) if sig_parts else "no significant loadings"
+            feat_desc = ", ".join(f['name'] for f in features[:2])
+            # Provenance only: activation, loadings, no interpretive verbs
+            return (
+                f"Concept {cid}: activation {activation:.4f}. "
+                f"Cross-block signature: {sig_desc}. "
+                f"Top features: {feat_desc}."
+            )
+        else:
+            # Fallback for old format (until all concepts updated)
+            region = concept_label.get("dominant_region_hint", "unknown").replace("-", " ")
+            feat_desc = ", ".join(f['name'] for f in features[:3])
+            return (
+                f"Concept {cid}: activation {activation:.4f}, "
+                f"loading on: {feat_desc} (provenance: {region})."
+            )
 
     def narrate_reality_regression(
         self, snapshot: dict, canvas: "SemanticCanvas",
@@ -215,7 +290,7 @@ class LLMNarrator(NarratorBackend):
     def __init__(
         self,
         model_name: str = "arnir0/Tiny-LLM",
-        max_new_tokens: int = 60,
+        max_new_tokens: int = 3000,
         temperature: float = 0.7,
         cache_fn: Any = None,
         generation_timeout: float = 30.0,
@@ -291,8 +366,17 @@ class LLMNarrator(NarratorBackend):
             import threading
             import queue
 
-            inputs = tokenizer.encode(prompt, return_tensors="pt",
-                                      truncation=True, max_length=400)
+            inputs = tokenizer(prompt, return_tensors="pt",
+                               truncation=True, max_length=768,
+                               return_attention_mask=True)
+            input_ids = inputs["input_ids"]
+            attention_mask = inputs["attention_mask"]
+
+            # Respect model's context window: leave room for generation
+            model_max_len = getattr(model.config, "max_position_embeddings", 1024)
+            input_len = input_ids.shape[1]
+            budget = max(model_max_len - input_len, 32)
+            actual_max_tokens = min(max_tokens or self.max_new_tokens, budget)
 
             result_queue: queue.Queue = queue.Queue()
 
@@ -300,8 +384,9 @@ class LLMNarrator(NarratorBackend):
                 try:
                     with torch.no_grad():
                         outputs = model.generate(
-                            inputs,
-                            max_new_tokens=max_tokens or self.max_new_tokens,
+                            input_ids,
+                            attention_mask=attention_mask,
+                            max_new_tokens=actual_max_tokens,
                             do_sample=True,
                             temperature=self.temperature,
                             pad_token_id=tokenizer.eos_token_id,
@@ -331,41 +416,144 @@ class LLMNarrator(NarratorBackend):
                 return None
 
             full_text = tokenizer.decode(outputs[0], skip_special_tokens=True)
-            continuation = full_text[len(tokenizer.decode(inputs[0],
+            continuation = full_text[len(tokenizer.decode(input_ids[0],
                                                           skip_special_tokens=True)):]
             return _postprocess(continuation)
         except Exception as exc:
             logger.error("LLM generation failed: %s", exc, exc_info=True)
             return None
 
+    def _refine(self, draft: str, context: str = "") -> str:
+        """Second-pass refinement: tighten a draft narrative.
+
+        Asks the model to improve an existing draft by making it more
+        specific, removing hedging, and grounding claims in evidence.
+        Returns the original draft if refinement fails or produces garbage.
+        """
+        prompt = (
+            f"### Draft narrative\n{draft}\n\n"
+            f"{context}"
+            f"### Instructions\n"
+            f"Rewrite the draft above to be more specific and direct. "
+            f"Replace vague phrases with concrete feature names and percentages. "
+            f"Remove hedging words (may, could, might, possibly, seems). "
+            f"Keep the same meaning but make every sentence testable against the data. "
+            f"Preserve factual claims from the draft — do not invent new findings.\n\n"
+            f"Revised:"
+        )
+        result = self._generate(prompt)
+        if result and self._passes_quality_gate(result):
+            return result
+        return draft
+
+    def _passes_quality_gate(self, text: str) -> bool:
+        """Check if generated text passes the quality gate.
+
+        Returns True if text is coherent enough to display.
+        """
+        alpha_chars = sum(c.isalpha() for c in text)
+        alpha_ratio = alpha_chars / max(len(text), 1)
+        tokens = text.split()
+        real_words = sum(1 for t in tokens if sum(c.isalpha() for c in t) >= 3)
+        word_ratio = real_words / max(len(tokens), 1)
+        return alpha_ratio >= 0.5 and word_ratio >= 0.5
+
     def narrate_canvas(
         self,
         canvas: "SemanticCanvas",
         kernel_labels: list[dict] | None = None,
     ) -> str | None:
-        prompt = canvas.format_for_narrator(kernel_labels=kernel_labels)
-        # Add explicit kernel summary for probabilistic model context
+        # --- Phase 1: Generate intermediate concept & kernel narratives ---
+        # This gives the model its own intermediate reasoning to synthesize from,
+        # rather than just raw numbers (VISION invariant 9: cross-item reasoning).
+        intermediate_parts = []
+
+        # Concept mini-narratives
+        concept_labels = []
+        for entry in canvas.entries:
+            if hasattr(entry, 'concept_activations'):
+                # Pull from session state if available
+                break
+        # Try to get concept labels from canvas dimensions
+        state = canvas.get_accumulated_state()
+        active_dims = [
+            d for d in state.get("dominant_narrative", [])
+            if d.get("value", 0) > 0.05
+        ]
+        if active_dims:
+            for d in active_dims[:5]:
+                intermediate_parts.append(
+                    f"- {d['label']} (score {d['value']:.2f}): {d.get('desc', 'no description')}"
+                )
+
+        # Kernel mini-narratives (generate each, then feed into synthesis)
+        kernel_summaries = []
         if kernel_labels:
             top_kernels = sorted(
                 kernel_labels,
                 key=lambda k: k.get("importance", 0),
                 reverse=True,
             )[:3]
-            kernel_info = "\n\nTop emergent kernels:\n"
             for kl in top_kernels:
-                contrib = kl.get("contributing_blocks", [])
-                contrib_desc = ", ".join(f"{b} ({v:.2f})" for b, v in contrib[:2])
-                kernel_info += (
-                    f"- {kl.get('kernel_id', '?')} ({kl.get('importance', 0.0):.1%} variance) "
-                    f"contributions: {contrib_desc or 'single-block'}; "
-                    f"top features: {', '.join(f['name'] for f in kl.get('top_features', [])[:3])}.\n"
-                )
-            prompt = prompt + kernel_info
+                mini = self.narrate_kernel(kl, canvas)
+                if mini and self._passes_quality_gate(mini):
+                    kernel_summaries.append(mini)
+                else:
+                    # Fallback: structured provenance
+                    contrib = kl.get("contributing_blocks", [])
+                    contrib_desc = ", ".join(f"{b} ({v:.2f})" for b, v in contrib[:2])
+                    feats = ", ".join(f['name'] for f in kl.get('top_features', [])[:3])
+                    kernel_summaries.append(
+                        f"{kl.get('kernel_id', '?')}: {kl.get('importance', 0):.1%} variance, "
+                        f"blocks: {contrib_desc or 'single-block'}, features: {feats}."
+                    )
 
-        result = self._generate(prompt, max_tokens=80)
+        # --- Phase 2: Assemble synthesis prompt with intermediate reasoning ---
+        prompt = canvas.format_for_narrator(kernel_labels=kernel_labels)
+
+        if kernel_summaries:
+            prompt += "\n\n### Kernel interpretations (generated above)\n"
+            for i, ks in enumerate(kernel_summaries):
+                prompt += f"{i+1}. {ks}\n"
+
+        if intermediate_parts:
+            prompt += "\n\n### Active concept signals\n"
+            prompt += "\n".join(intermediate_parts)
+
+        # Few-shot exemplar
+        prompt += "\n\n" + _EXEMPLARS["canvas"]
+
+        prompt += (
+            "### Instructions\n"
+            "Now write a 3-5 sentence analytical summary that synthesizes the kernel "
+            "interpretations and concept signals above. Explain how the different data "
+            "domains interact — do not describe each kernel separately. Address a "
+            "non-technical governance audience. Use specific feature names and percentages. "
+            "Be direct about what the data shows and its policy implications.\n\n"
+            "Summary:"
+        )
+
+        result = self._generate(prompt)
         if result is None:
             logger.info("narrate_canvas: LLM not available, using template fallback")
             return self._fallback.narrate_canvas(canvas, kernel_labels=kernel_labels)
+
+        if not self._passes_quality_gate(result):
+            logger.warning(
+                "narrate_canvas: LLM output failed quality gate, using template fallback",
+            )
+            return self._fallback.narrate_canvas(canvas, kernel_labels=kernel_labels)
+
+        # --- Phase 3: Refinement pass ---
+        result = self._refine(
+            result,
+            context=(
+                f"The narrative is about a cross-domain intelligence analysis with "
+                f"{len(canvas.entries)} data sources and "
+                f"{len(kernel_summaries)} emergent kernels.\n\n"
+            ),
+        )
+
         return result
 
     def narrate_layer(self, entry: "CanvasEntry", canvas: "SemanticCanvas") -> str | None:
@@ -389,9 +577,13 @@ class LLMNarrator(NarratorBackend):
             f"The {entry.block_name} analysis stage processed its data and "
             f"{dim_description}.{prior_context}\n"
             f"{entry.active_concepts} sparse concepts were discovered.\n\n"
-            f"The {entry.block_name} layer reveals that"
+            f"### Instructions\n"
+            f"Write 2-3 sentences explaining what the {entry.block_name} layer contributed "
+            f"to the overall analysis. Be specific about signal strengths and which "
+            f"semantic dimensions were activated. Address a governance audience.\n\n"
+            f"Analysis:"
         )
-        result = self._generate(prompt, max_tokens=60)
+        result = self._generate(prompt)
         return result or self._fallback.narrate_layer(entry, canvas)
 
     def narrate_kernel(self, kernel_label: dict, canvas: "SemanticCanvas") -> str | None:
@@ -412,19 +604,28 @@ class LLMNarrator(NarratorBackend):
             canvas_context = f" The semantic canvas shows dominant signals in {' and '.join(dim_strs)}."
 
         prompt = (
-            f"Neural network kernel interpretation:\n\n"
+            f"Kernel analysis data:\n\n"
             f"Kernel {kernel_label.get('kernel_id', '?')} explains "
             f"{importance:.1%} of the total variance. "
             f"Driven by {region} patterns from {block}. "
             f"Top loadings: {feat_desc}.{canvas_context}\n\n"
-            f"In plain language, this kernel represents"
+            f"{_EXEMPLARS['kernel']}"
+            f"### Instructions\n"
+            f"Write 2-4 sentences explaining what this kernel means for a governance audience. "
+            f"Name the specific data domains that interact in this kernel and explain "
+            f"what their co-variance implies. Use the feature names directly. "
+            f"Do not say 'this kernel represents' — say what it reveals about the data.\n\n"
+            f"Interpretation:"
         )
-        result = self._generate(prompt, max_tokens=60)
-        return result or self._fallback.narrate_kernel(kernel_label, canvas)
+        result = self._generate(prompt)
+        if result and self._passes_quality_gate(result):
+            result = self._refine(result)
+            return result
+        return self._fallback.narrate_kernel(kernel_label, canvas)
 
     def narrate_concept(self, concept_label: dict, canvas: "SemanticCanvas") -> str | None:
         cid = concept_label.get("concept_id", "C??")
-        region = concept_label.get("dominant_region", "unknown").replace("-", " ")
+        region = concept_label.get("dominant_region_hint", concept_label.get("dominant_region", "unknown")).replace("-", " ")
         activation = concept_label.get("mean_activation", 0)
         features = concept_label.get("top_features", [])
 
@@ -432,14 +633,30 @@ class LLMNarrator(NarratorBackend):
             f"{f['name']} ({f['loading']:+.3f})" for f in features[:3]
         )
 
+        # Include cross-block signature if available
+        cross_sig = concept_label.get("cross_block_signature", {})
+        sig_desc = ""
+        if cross_sig:
+            sig_parts = [f"{r} ({v:+.2f})" for r, v in cross_sig.items() if abs(v) > 0.01]
+            if sig_parts:
+                sig_desc = f" Cross-block signature: {', '.join(sig_parts)}."
+
         prompt = (
-            f"Sparse Autoencoder concept analysis:\n\n"
-            f"Concept {cid} is a pattern discovered in the {region} region. "
-            f"Mean activation: {activation:.4f}. Loadings: {feat_desc}.\n\n"
-            f"This concept captures the idea that"
+            f"SAE concept data:\n\n"
+            f"Concept {cid} — mean activation: {activation:.4f}. "
+            f"Primary provenance: {region}. Top loadings: {feat_desc}.{sig_desc}\n\n"
+            f"{_EXEMPLARS['concept']}"
+            f"### Instructions\n"
+            f"Write 2-3 sentences explaining what pattern this concept captures. "
+            f"If it spans multiple data domains, explain the cross-domain interaction. "
+            f"Use specific feature names. Address a non-technical audience.\n\n"
+            f"Explanation:"
         )
-        result = self._generate(prompt, max_tokens=50)
-        return result or self._fallback.narrate_concept(concept_label, canvas)
+        result = self._generate(prompt)
+        if result and self._passes_quality_gate(result):
+            result = self._refine(result)
+            return result
+        return self._fallback.narrate_concept(concept_label, canvas)
 
     def narrate_reality_regression(
         self, snapshot: dict, canvas: "SemanticCanvas",
@@ -483,21 +700,32 @@ class LLMNarrator(NarratorBackend):
             ) + "."
 
         prompt = (
-            f"Final reality assessment — feature synthesis:\n\n"
+            f"Reality regression data:\n\n"
             f"After integrating {n_kernels} data domains, the system computed a "
             f"unified reality regression vector.\n\n"
             f"Top features: {'; '.join(top_feats[:3])}.\n"
             f"Region energy: {'; '.join(region_lines)}."
             f"{canvas_text}{kernel_infos}\n\n"
-            f"The overall assessment is that"
+            f"{_EXEMPLARS['reality']}"
+            f"### Instructions\n"
+            f"Write 3-5 sentences synthesizing this reality assessment for a "
+            f"governance audience. Explain which features dominate, which data domains "
+            f"drive the conclusions, and what this means in practical terms. "
+            f"Cite specific percentages and feature names. Be direct and concrete.\n\n"
+            f"Assessment:"
         )
-        result = self._generate(prompt, max_tokens=80)
+        result = self._generate(prompt)
         if result is None:
             logger.info("narrate_reality_regression: LLM not available, using template fallback")
             return self._fallback.narrate_reality_regression(
                 snapshot, canvas, feature_name_fn, region_for_index_fn, region_bounds,
             )
-        return result
+        if self._passes_quality_gate(result):
+            result = self._refine(result)
+            return result
+        return self._fallback.narrate_reality_regression(
+            snapshot, canvas, feature_name_fn, region_for_index_fn, region_bounds,
+        )
 
 
 # --------------------------------------------------------------------------- #
@@ -516,8 +744,8 @@ def _postprocess(text: str) -> str:
     result = ' '.join(sentences)
 
     final_sentences = re.split(r'(?<=[.!?])\s+', result)
-    if len(final_sentences) > 3:
-        result = ' '.join(final_sentences[:3])
+    if len(final_sentences) > 10:
+        result = ' '.join(final_sentences[:10])
 
     return result.strip()
 

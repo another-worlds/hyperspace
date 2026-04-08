@@ -212,8 +212,9 @@ else:
 
     st.markdown("---")
 
-    # Tabs — spec-aligned: 0-6 per CLAUDE.md + Counterfactual (contestability)
-    tabs = st.tabs([
+    # Stateful tab navigation. Streamlit's native tabs reset to the first tab
+    # on rerun, which breaks button-driven workflows inside the interpreter.
+    tab_labels = [
         "Mission Control",
         "Finance-Neural Block",
         "Informational Cluster Mapping",
@@ -222,24 +223,32 @@ else:
         "Semantic Interpreter",
         "Hyperspace Pipeline",
         "⚖ Counterfactual",
-    ])
-
-    tab_modules = [
-        (tabs[0], "Mission Control", mission_control_tab),
-        (tabs[1], "Finance-Neural Block", finance_tab),
-        (tabs[2], "Informational Cluster Mapping", clusters_tab),
-        (tabs[3], "Politics-Military Block", politics_tab),
-        (tabs[4], "Agentic Simulation", agents_tab),
-        (tabs[5], "Semantic Interpreter", interpreter_tab),
-        (tabs[6], "Hyperspace Pipeline", pipeline_tab),
-        (tabs[7], "Counterfactual", counterfactual_tab),
     ]
-    for tab, name, module in tab_modules:
-        with tab:
-            try:
-                module.render()
-            except Exception as exc:
-                st.error(f"{name} tab encountered an error: {exc}")
+    tab_modules = {
+        "Mission Control": ("Mission Control", mission_control_tab),
+        "Finance-Neural Block": ("Finance-Neural Block", finance_tab),
+        "Informational Cluster Mapping": (
+            "Informational Cluster Mapping", clusters_tab,
+        ),
+        "Politics-Military Block": ("Politics-Military Block", politics_tab),
+        "Agentic Simulation": ("Agentic Simulation", agents_tab),
+        "Semantic Interpreter": ("Semantic Interpreter", interpreter_tab),
+        "Hyperspace Pipeline": ("Hyperspace Pipeline", pipeline_tab),
+        "⚖ Counterfactual": ("Counterfactual", counterfactual_tab),
+    }
+    current_tab = st.segmented_control(
+        "Hyperspace Navigation",
+        options=tab_labels,
+        default=st.session_state.get("active_main_tab", "Mission Control"),
+        key="active_main_tab",
+        width="stretch",
+    )
+
+    selected_name, selected_module = tab_modules[current_tab]
+    try:
+        selected_module.render()
+    except Exception as exc:
+        st.error(f"{selected_name} tab encountered an error: {exc}")
 
     # Reset button
     st.markdown("---")

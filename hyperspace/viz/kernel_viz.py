@@ -61,18 +61,35 @@ def plot_reality_regression(snapshot: dict) -> go.Figure:
     rr = snapshot["reality_regression"]
     n = len(rr)
 
-    # Build block coloring dynamically from registry-derived feature ranges.
-    from hyperspace.models.knowledge_matrix import _DEFAULT_BLOCK_FEATURE_RANGES
-
+    # Build block coloring from registry in snapshot or use defaults
+    default_regions = {
+        "temporal-pattern": (0, 16, "#3498db"),
+        "semantic-embedding": (16, 24, "#e67e22"), 
+        "tft-extended": (24, 27, "#2ecc71"),
+        "macro": (27, 32, "#e74c3c"),
+        "structural-centrality": (32, 48, "#9b59b6"),
+        "dynamic-agent": (48, 64, "#1abc9c"),
+        "geospatial-kernel": (64, 80, "#f39c12")
+    }
+    
     _BLOCK_PALETTE = ["#3498db", "#e67e22", "#2ecc71", "#e74c3c", "#9b59b6",
                       "#1abc9c", "#f39c12", "#8e44ad", "#d35400", "#27ae60"]
-    _sorted_blocks = sorted(
-        _DEFAULT_BLOCK_FEATURE_RANGES.items(), key=lambda x: x[1][1]
-    )
-    block_map = [
-        (end, _BLOCK_PALETTE[i % len(_BLOCK_PALETTE)], bname)
-        for i, (bname, (start, end)) in enumerate(_sorted_blocks)
-    ]
+    
+    if 'registry' in snapshot and snapshot['registry'] is not None:
+        registry = snapshot['registry']
+        # Build mapping from actual registry
+        block_map = []
+        for i, (name, region) in enumerate(registry.regions.items()):
+            color = _BLOCK_PALETTE[i % len(_BLOCK_PALETTE)]
+            block_map.append((region.end, color, name))
+        block_map.sort(key=lambda x: x[0])  # Sort by end index
+    else:
+        # Use default regions
+        block_map = [
+            (end, color, name) 
+            for name, (start, end, color) in default_regions.items()
+        ]
+        block_map.sort(key=lambda x: x[0])
 
     colors = []
     blocks = []
@@ -82,6 +99,10 @@ def plot_reality_regression(snapshot: dict) -> go.Figure:
                 colors.append(color)
                 blocks.append(label)
                 break
+        else:
+            # If no region found, use default
+            colors.append("#95a5a6")
+            blocks.append("unknown")
 
     feature_labels = FEATURE_NAMES[:n] if n <= len(FEATURE_NAMES) else [
         FEATURE_NAMES[i] if i < len(FEATURE_NAMES) else f"feature_{i}"

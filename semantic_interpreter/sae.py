@@ -240,19 +240,24 @@ def _label_concepts(
     """
     concept_labels = []
     for c in range(hidden_dim):
-        # Determine dominant region
-        dominant = "features"
+        # Preserve full cross-block signature (VISION invariant 10)
+        cross_block_signature = {}
+        dominant_region_hint = "features"  # Provenance hint only
         region_desc = ""
         top_features: list[dict] = []
 
         if registry is not None:
-            region_scores = {}
+            # Compute signed contributions per region (preserve structure)
             for name, region in registry.regions.items():
-                score = float(np.abs(concept_vectors[c, region.start:region.end]).sum())
-                region_scores[name] = score
-            if region_scores:
-                dominant = max(region_scores, key=region_scores.get)
-                region_obj = registry.regions.get(dominant)
+                # Use signed sum to preserve direction, not just magnitude
+                signed_contrib = float(concept_vectors[c, region.start:region.end].sum())
+                cross_block_signature[name] = signed_contrib
+            
+            # Dominant region is just a provenance hint (never used as semantic label)
+            if cross_block_signature:
+                region_scores = {name: abs(contrib) for name, contrib in cross_block_signature.items()}
+                dominant_region_hint = max(region_scores, key=region_scores.get)
+                region_obj = registry.regions.get(dominant_region_hint)
                 region_desc = region_obj.description if region_obj else ""
 
         # Top 3 feature loadings
@@ -267,23 +272,24 @@ def _label_concepts(
 
         feat_strs = [f"'{f['name']}' ({f['loading']:+.3f})" for f in top_features]
         status = "ACTIVE" if active_mask[c] else "dormant"
+        
+        # Generate provenance-only narrative (no interpretive claims)
         narrative = (
-            f"Concept C{c:02d} [{status}] — primarily encodes "
-            f"{dominant.replace('-', ' ')} information "
-            f"(activation: {mean_activation[c]:.4f}).\n"
+            f"Concept C{c:02d} [{status}] — activation: {mean_activation[c]:.4f}. "
             f"Top feature loadings: {', '.join(feat_strs)}."
         )
         if region_desc:
-            narrative += f"\nRegion: {region_desc}"
+            narrative += f" Provenance: {region_desc}"
 
         concept_labels.append(dict(
             concept_id=f"C{c:02d}",
             concept_idx=c,
-            dominant_region=dominant,
+            cross_block_signature=cross_block_signature,  # Full structured signature
+            dominant_region_hint=dominant_region_hint,   # Provenance only
             mean_activation=float(mean_activation[c]),
             active=bool(active_mask[c]),
             top_features=top_features,
-            label=f"C{c:02d}: {dominant.replace('-', ' ')} ({status})",
+            label=f"C{c:02d} ({status})",  # No block name in label
             narrative=narrative,
         ))
 

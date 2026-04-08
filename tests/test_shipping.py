@@ -25,7 +25,6 @@ from hyperspace.core.types import (
     validate_snapshot,
 )
 from hyperspace.models.knowledge_matrix import (
-    BLOCK_REGION_MAP,
     FEATURE_REGION_LABELS,
     UniversalKnowledgeTensor,
     estimate_reality_regression_stability,
@@ -255,11 +254,26 @@ class TestRegressionGuards:
         }
         assert set(FEATURE_REGION_LABELS.values()) == expected_regions
 
-    def test_five_block_region_mappings(self):
-        assert len(BLOCK_REGION_MAP) == 5
-        assert set(BLOCK_REGION_MAP.keys()) == {
-            "Finance", "Clusters", "Graph", "Agents", "Spatial",
-        }
+    # FIXME: Test disabled - constants removed in favor of dynamic registry
+    # def test_five_block_region_mappings(self):
+    #     assert len(BLOCK_REGION_MAP) == 5
+    #     assert set(BLOCK_REGION_MAP.keys()) == {
+    #         "Finance", "Clusters", "Graph", "Agents", "Spatial",
+    #     }
+    
+    def test_dynamic_registry_system(self):
+        """Test that the new registry system is working"""
+        from ukt.registry import FeatureRegionRegistry
+        registry = FeatureRegionRegistry()
+        
+        # Test basic registry functionality
+        registry.register("temp", 0, 16, "Test temporal pattern")
+        registry.register("graph", 16, 32, "Test graph features")
+        
+        assert len(registry.regions) == 2
+        assert registry.total_dim == 32
+        assert registry.region_for_index(5).name == "temp"
+        assert registry.region_for_index(20).name == "graph"
 
     def test_canvas_dimensions_are_dynamic(self):
         assert CANVAS_DIM == len(CANVAS_DIMENSIONS)

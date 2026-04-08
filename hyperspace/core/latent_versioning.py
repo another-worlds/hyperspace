@@ -148,7 +148,7 @@ def build_concept_audit_record(
     for concept in labels:
         vocabulary.append(ConceptVocabularyEntry(
             concept_id=concept.get("concept_id", f"C{len(vocabulary):02d}"),
-            dominant_region=concept.get("dominant_region", "unknown"),
+            dominant_region=concept.get("dominant_region_hint", concept.get("dominant_region", "unknown")),
             mean_activation=float(concept.get("mean_activation", 0.0)),
             active=bool(concept.get("active", False)),
             top_features=concept.get("top_features", []),

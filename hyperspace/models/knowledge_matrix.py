@@ -203,6 +203,7 @@ class UniversalKnowledgeTensor(_UKTFramework):
 
         # 2. Add backward-compatible extra fields
         snapshot["raw_features"] = [r.copy() for r in self._hs_raw_features]
+        snapshot["registry"] = self.registry  # Store registry for downstream access
         if self.projection is not None:
             snapshot["projection_matrix"] = self.projection.projection_matrix.copy()
         snapshot.setdefault("stage_sae_result", None)

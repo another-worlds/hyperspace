@@ -80,29 +80,59 @@ def _build_feature_chain(
 
     # Basic feature identity
     chain["feature_index"] = feature_idx
-    if feature_idx < len(FEATURE_NAMES):
-        chain["feature_name"] = FEATURE_NAMES[feature_idx]
+    
+    # Get feature name from registry if available
+    if snapshots:
+        final_snap = snapshots[-1]
+        if 'registry' in final_snap and final_snap['registry'] is not None:
+            registry = final_snap['registry']
+            chain["feature_name"] = registry.feature_name(feature_idx)
+        else:
+            # Fallback to FEATURE_NAMES or generic name
+            if feature_idx < len(FEATURE_NAMES):
+                chain["feature_name"] = FEATURE_NAMES[feature_idx]
+            else:
+                chain["feature_name"] = f"feature_{feature_idx}"
     else:
-        chain["feature_name"] = f"feature_{feature_idx}"
+        # No snapshots available, use fallback
+        if feature_idx < len(FEATURE_NAMES):
+            chain["feature_name"] = FEATURE_NAMES[feature_idx]
+        else:
+            chain["feature_name"] = f"feature_{feature_idx}"
 
-    # Source block (derived from feature index ranges)
-    from hyperspace.models.knowledge_matrix import _DEFAULT_BLOCK_FEATURE_RANGES, BLOCK_REGION_MAP
+    # Source block/region (derive from registry in snapshot)
     from hyperspace.config import REGION_DESCRIPTIONS
     source_block = "unknown"
     block_description = "Unknown data source"
-    for block_name, (start, end) in _DEFAULT_BLOCK_FEATURE_RANGES.items():
-        if start <= feature_idx < end:
-            source_block = block_name
-            break
-
-    # Derive description from registry region (no hardcoded labels)
-    region_name = BLOCK_REGION_MAP.get(source_block, (None,))[0]
-    if region_name and region_name in REGION_DESCRIPTIONS:
-        block_description = REGION_DESCRIPTIONS[region_name].split(".")[0] + "."
-    elif source_block != "unknown":
-        block_description = f"{source_block} block features."
-
+    region_name = "unknown"
+    
+    # Get registry from snapshot to determine feature region
+    if snapshots:
+        final_snap = snapshots[-1]
+        # Check for registry in snapshot or use fallback feature naming
+        if 'registry' in final_snap and final_snap['registry'] is not None:
+            from ukt.registry import FeatureRegionRegistry
+            registry = final_snap['registry']
+            region_obj = registry.region_for_index(feature_idx)
+            if region_obj:
+                region_name = region_obj.name
+                source_block = region_obj.name  # Use region name as block identifier
+                block_description = region_obj.description or f"{region_name} features."
+            else:
+                # Feature index not in any registered region
+                chain["feature_name"] = f"feature_{feature_idx}"
+        elif 'feature_meta' in final_snap:
+            # Fallback: try to derive from feature metadata
+            feature_meta = final_snap.get('feature_meta', {})
+            if feature_idx in feature_meta:
+                meta = feature_meta[feature_idx]
+                region_name = meta.get('region', 'unknown')
+                source_block = region_name
+                if region_name and region_name in REGION_DESCRIPTIONS:
+                    block_description = REGION_DESCRIPTIONS[region_name].split(".")[0] + "."
+    
     chain["source_block"] = source_block
+    chain["region_name"] = region_name
     chain["block_description"] = block_description
 
     # Metadata from final snapshot
@@ -358,11 +388,29 @@ def render_kernel_policy_mode(kernel_labels: list[dict]) -> None:
 
 def _policy_block_description(block_name: str) -> str:
     """Return a one-sentence policy-friendly description of a block."""
-    from hyperspace.models.knowledge_matrix import BLOCK_REGION_MAP
     from hyperspace.config import REGION_DESCRIPTIONS
-    region_name = BLOCK_REGION_MAP.get(block_name, (None,))[0]
-    if region_name and region_name in REGION_DESCRIPTIONS:
-        return REGION_DESCRIPTIONS[region_name]
+    
+    # Use fallback descriptions since we don't have snapshots context here
+    # This provides basic mapping from block names to descriptions
+    region_descriptions = {
+        "finance-neural": "Financial market analysis and forecasting.",
+        "informational": "News sentiment and topic analysis.", 
+        "politics-military": "Political alliance and military cooperation analysis.",
+        "agentic": "Multi-agent resource allocation and cooperation modeling.",
+        "temporal-pattern": "Time-series pattern analysis.",
+        "semantic-embedding": "Natural language processing features.",
+        "structural-centrality": "Network structure and centrality analysis.",
+        "dynamic-agent": "Agent behavior and resource dynamics.",
+        "geospatial-kernel": "Geographic and spatial pattern analysis."
+    }
+    
+    if block_name in region_descriptions:
+        return region_descriptions[block_name]
+    
+    # Try to find in REGION_DESCRIPTIONS if available
+    if block_name in REGION_DESCRIPTIONS:
+        return REGION_DESCRIPTIONS[block_name]
+        
     return "Signals from multiple data domains contribute to this pattern."
 
 

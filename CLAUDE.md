@@ -24,16 +24,27 @@ This project is developed entirely through stateless LLM sessions. You have no m
 |------|-------|--------|-------------|
 | Semantic Canvas dimensions | `hyperspace/models/semantic_canvas.py` | **Complete** | Dimensions built entirely from active SAE concepts via `build_emergent_canvas()`. No per-block canvas replay. REGION_SEMANTIC_SPEC, CANVAS_COUPLING_*, _default_dimensions() all removed. |
 | Tab UI implementations | `hyperspace/pages/*.py` | Scaffolding | Generated in initial oneshot prompt, patched incrementally. Never redesigned from ground up. |
-| Narrator template fallback | `semantic_interpreter/narrator.py:186-386` | Acceptable for now | Template narratives substitute when LLM unavailable. Acceptable graceful degradation, but templates must never claim things the data doesn't support. |
+| Narrator template fallback | `semantic_interpreter/narrator.py:186-386` | **HARD FAILURE** | Template narratives substitute when LLM unavailable. This is NOT acceptable graceful degradation — templates slot-fill one block label per concept via argmax, destroying cross-block structure (VISION invariant 9). **Symptom**: System Summary presents kernel/concept claims while LLM status line reads 'unavailable'. Must abort governance output, not substitute a template. |
+| SAE concept label collapse | `semantic_interpreter/sae.py:252-275` | **BUG** | `label_concepts()` picks dominant block by argmax over per-block ∆|loading| sums and emits "primarily encodes {block} information." This discards the cross-block signed signature before the narrator runs. **Symptom**: Concept sentence says 'primarily encodes {block}' while the top-3 loadings printed on the next line span multiple blocks with mixed sign. Must preserve full per-region signed contributions as structured data. |
 | Canvas coupling weights | `config.py` (was CANVAS_COUPLING_*) | **Removed** | Coupling now derived from SharedProjection energy-based weights, not hardcoded constants. |
 | Block/feature names | `config.py`, `semantic_canvas.py` | **Emergent** | Block labels and feature names are data-agnostic. Generic positional names enriched by runtime metadata. |
 
 ### MVP Priority (what matters for the demo)
 
 1. **Universal kernels that emerge from real data** — The SVD path works. This is the core. Protect it.
-2. **Total interpretability** — Every claim traceable: narrative → kernel → SVD → features → raw data. No gaps in the chain.
+2. **Total interpretability** — Every claim traceable: narrative → kernel → SVD → features → raw data. No gaps in the chain. Traceability of provenance is necessary but not sufficient — the narrative link itself must carry semantic content a non-engineer can audit; a provenance dump in sentence form does not satisfy interpretability even if every number in it is reproducible.
 3. **Governance** — Every output auditable, contestable, with counterfactual support.
 4. Everything else (UI polish, caching, parallel speedups) is secondary to these three.
+
+### Grammar Rules for Interpretive Text
+
+These rules are directly enforceable in code review and apply to all narrative output surfaces (narrator, interpreter tab, reports, tooltips).
+
+1. **Never write "{kernel/concept} encodes {block} information."** Kernels and concepts are cross-block by construction; this sentence shape is a category error that frames a cross-block regularity as a single-block source.
+2. **Never assign a single-block label to a concept whose top-k loadings span >1 block.** The label must either carry the full signed cross-block signature or be withheld entirely.
+3. **Never emit a "System Summary" when the LLM health check reports unavailable.** Surface a governance error instead. See VISION.md invariant 9.
+4. **Templates may emit verbatim provenance** (loadings, activations, variance shares). **Templates must not emit interpretive verbs** ("encodes", "indicates", "represents", "drives"). Interpretive synthesis requires the LLM narrator.
+5. **Feature names must be world-grounded.** Use registry-resolved names (`equity_volatility_7d_zscore`) not raw indices (`Finance_19`) in any governance-facing text.
 
 ---
 
