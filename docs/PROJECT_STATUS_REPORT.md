@@ -114,7 +114,7 @@ All charts now compliant with hovertemplate and WCAG AA requirements.
 From CLAUDE.md's debt table, the only item not yet fully retired:
 
 | Item | Location | Status |
-|------|----------|--------|
+|------|----------|---------|
 | Tab UI implementations | `hyperspace/pages/*.py` | Scaffolding — generated in initial oneshot, patched incrementally, not redesigned from the ground up. Phase 3–4 compliance passes have brought them into policy compliance, but a proper per-tab redesign has not been undertaken. |
 | Narrator template fallback | `semantic_interpreter/narrator.py:76–195` | **Hard failure** — see CLAUDE.md debt table and VISION.md invariants 5, 9, 10. Not acceptable as graceful degradation; governance pipeline must refuse to emit a System Summary when the LLM is down. Template output is a provenance formatter, not an interpreter, and cannot describe cross-block emergent concepts. |
 | SAE concept labeling collapses cross-block structure | `semantic_interpreter/sae.py:243–277` | **Bug — violates Emergence Contract.** `label_concepts` computes `dominant_region` via `argmax` over per-block absolute-loading sums and uses that as the concept's interpretive name. Cross-block signature is destroyed at the labeling step itself. Tracked in CLAUDE.md debt table and ARCHITECTURE.md "SAE Concept Label Data Contract". |

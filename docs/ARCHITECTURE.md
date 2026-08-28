@@ -135,14 +135,17 @@ Machine Latent Space (80-dim projected features)
          │
     Semantic Canvas    →  Emergent dimensions (one per active SAE concept),
          │                data-driven coordinates
-    Narrator            →  Tiny-LLM (13M params) + template fallback
-         │
+    Narrator            →  LLMNarrator (arnir0/Tiny-LLM, 13M params) — the
+         │                 interpreter. TemplateNarrator is a provenance
+         │                 formatter only; it is not a fallback for
+         │                 interpretation (see Governance Narrative Contract).
     Human-Readable Narrative
 ```
 
 Canvas dimensions are NOT predefined. After the global SAE runs on the full
 projected matrix, each active concept becomes a canvas axis. The axis label
-is derived from the concept's dominant region and top feature loadings. The
+must preserve the concept's **full signed cross-block signature** (see SAE
+Concept Label Data Contract below) — not a single dominant-region name. The
 number of axes varies per run — typically 10–20 depending on how many
 concepts the SAE activates. Coupling between blocks is measured by
 SharedProjection's energy-based coupling weights, not by fixed constants.
